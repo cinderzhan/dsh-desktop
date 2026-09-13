@@ -526,15 +526,16 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   // On Windows the titleBarOverlay reserves the top-right 140px caption strip
   // for min/max/close and desktop paints its own ≡ menu button (44px)
   // immediately to its left. Upstream client-ui does not know about any of
-  // that: it draws the conversation header from y=0 x=0, so the header's
-  // trailing action cluster (file explorer, more, preview toggles) either
-  // sits under the system caption or gets clipped by desktop's menu view.
-  // Hoist only that cluster out of the header via the stable `data-slot`
-  // hook and pin it just below the caption at the window's right edge — the
-  // rest of the layout (sidebar top, session title, tabs) stays exactly where
-  // upstream drew it.
-  const windowsHeaderPinTop = WINDOWS_TITLEBAR_HEIGHT + 6
-  const windowsHeaderPinRight = 12
+  // that: it draws the conversation header's trailing button groups
+  // (actions/utilities/corner data-slots — file explorer, more, screen,
+  // sidebar-right toggle) at y=10-40, which the system caption then overlaps
+  // for 26 vertical pixels. Nudge only those three groups down past the
+  // caption strip via `transform: translateY` so they still lay themselves
+  // out horizontally as flex siblings — the rest of the header (title,
+  // breadcrumb, tabs, sidebar top) stays untouched, and React never sees a
+  // DOM move to fight back. Trigger the shift with a body-level attribute
+  // so upstream can render freely before the paint applies.
+  const windowsHeaderShiftPx = WINDOWS_TITLEBAR_HEIGHT - 6
   const isDark = await window.webContents.executeJavaScript(
     `(() => {
       if (${process.platform === 'darwin'}) {
@@ -559,18 +560,16 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
         }
       }
       if (${process.platform === 'win32'}) {
-        let style = document.getElementById('dsh-desktop-windows-header-pin')
+        document.body.setAttribute('data-desktop-platform', 'win32')
+        let style = document.getElementById('dsh-desktop-windows-header-shift')
         if (!style) {
           style = document.createElement('style')
-          style.id = 'dsh-desktop-windows-header-pin'
+          style.id = 'dsh-desktop-windows-header-shift'
           style.textContent =
-            '[data-slot="conversation.session.header.corner"]{' +
-              'position:fixed !important;' +
-              'top:${windowsHeaderPinTop}px !important;' +
-              'right:${windowsHeaderPinRight}px !important;' +
-              'margin:0 !important;' +
-              'z-index:30 !important;' +
-              'background:transparent;' +
+            'body[data-desktop-platform="win32"] [data-slot="conversation.session.header.actions"],' +
+            'body[data-desktop-platform="win32"] [data-slot="conversation.session.header.utilities"],' +
+            'body[data-desktop-platform="win32"] [data-slot="conversation.session.header.corner"]{' +
+              'transform:translateY(${windowsHeaderShiftPx}px) !important;' +
             '}'
           document.head.appendChild(style)
         }
