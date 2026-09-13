@@ -144,7 +144,11 @@ import {
 } from './state/plugin-market-check'
 import { upgradePluginToGeneration } from './state/plugin-upgrade'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
-import { windowsMenuViewBounds } from './windows-menu-view'
+import {
+  WINDOWS_CAPTION_CONTROLS_WIDTH,
+  WINDOWS_MENU_BUTTON_WIDTH,
+  windowsMenuViewBounds
+} from './windows-menu-view'
 import { shouldKeepRunningInBackground } from './close-to-tray'
 import {
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
@@ -522,6 +526,18 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   // matches the first rendered frame. The transparent drag strip restores the
   // native window gesture without adding a visual titlebar or covering the
   // traffic lights and right-side header actions.
+  //
+  // On Windows the titleBarOverlay hands the top-right 140px caption strip and
+  // the 36px height above the content to the OS. Upstream client-ui draws its
+  // header from y=0 x=0 with no knowledge of that, so a button in the top-right
+  // ends up under the min/max/close buttons and any button inside the 36px
+  // band gets caption-clicked instead of clicked. Reserve that height on the
+  // html element and keep body at 100% of what remains so the whole layout —
+  // sidebar included — starts below the caption controls. The middle of the
+  // titlebar becomes a drag strip that leaves the caption strip and the
+  // desktop-owned menu button untouched.
+  const windowsTitlebarInset = WINDOWS_TITLEBAR_HEIGHT
+  const windowsCaptionReserve = WINDOWS_CAPTION_CONTROLS_WIDTH + WINDOWS_MENU_BUTTON_WIDTH
   const isDark = await window.webContents.executeJavaScript(
     `(() => {
       if (${process.platform === 'darwin'}) {
@@ -537,6 +553,34 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
             left: '80px',
             right: '220px',
             height: '24px',
+            background: 'transparent',
+            pointerEvents: 'auto',
+            userSelect: 'none'
+          })
+          dragRegion.style.setProperty('-webkit-app-region', 'drag')
+          document.body.appendChild(dragRegion)
+        }
+      }
+      if (${process.platform === 'win32'}) {
+        const inset = ${windowsTitlebarInset}
+        const captionReserve = ${windowsCaptionReserve}
+        document.documentElement.style.setProperty('height', '100vh')
+        document.documentElement.style.setProperty('box-sizing', 'border-box')
+        document.documentElement.style.setProperty('padding-top', inset + 'px')
+        document.body.style.setProperty('height', '100%')
+        document.body.style.setProperty('box-sizing', 'border-box')
+        let dragRegion = document.getElementById('dsh-desktop-drag-region')
+        if (!dragRegion) {
+          dragRegion = document.createElement('div')
+          dragRegion.id = 'dsh-desktop-drag-region'
+          dragRegion.setAttribute('aria-hidden', 'true')
+          Object.assign(dragRegion.style, {
+            position: 'fixed',
+            zIndex: '18',
+            top: '0',
+            left: '0',
+            right: captionReserve + 'px',
+            height: inset + 'px',
             background: 'transparent',
             pointerEvents: 'auto',
             userSelect: 'none'
