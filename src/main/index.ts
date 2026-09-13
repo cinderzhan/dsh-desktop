@@ -144,11 +144,7 @@ import {
 } from './state/plugin-market-check'
 import { upgradePluginToGeneration } from './state/plugin-upgrade'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
-import {
-  WINDOWS_CAPTION_CONTROLS_WIDTH,
-  WINDOWS_MENU_BUTTON_WIDTH,
-  windowsMenuViewBounds
-} from './windows-menu-view'
+import { windowsMenuViewBounds } from './windows-menu-view'
 import { shouldKeepRunningInBackground } from './close-to-tray'
 import {
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
@@ -527,17 +523,18 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   // native window gesture without adding a visual titlebar or covering the
   // traffic lights and right-side header actions.
   //
-  // On Windows the titleBarOverlay hands the top-right 140px caption strip and
-  // the 36px height above the content to the OS. Upstream client-ui draws its
-  // header from y=0 x=0 with no knowledge of that, so a button in the top-right
-  // ends up under the min/max/close buttons and any button inside the 36px
-  // band gets caption-clicked instead of clicked. Reserve that height on the
-  // html element and keep body at 100% of what remains so the whole layout —
-  // sidebar included — starts below the caption controls. The middle of the
-  // titlebar becomes a drag strip that leaves the caption strip and the
-  // desktop-owned menu button untouched.
-  const windowsTitlebarInset = WINDOWS_TITLEBAR_HEIGHT
-  const windowsCaptionReserve = WINDOWS_CAPTION_CONTROLS_WIDTH + WINDOWS_MENU_BUTTON_WIDTH
+  // On Windows the titleBarOverlay reserves the top-right 140px caption strip
+  // for min/max/close and desktop paints its own ≡ menu button (44px)
+  // immediately to its left. Upstream client-ui does not know about any of
+  // that: it draws the conversation header from y=0 x=0, so the header's
+  // trailing action cluster (file explorer, more, preview toggles) either
+  // sits under the system caption or gets clipped by desktop's menu view.
+  // Hoist only that cluster out of the header via the stable `data-slot`
+  // hook and pin it just below the caption at the window's right edge — the
+  // rest of the layout (sidebar top, session title, tabs) stays exactly where
+  // upstream drew it.
+  const windowsHeaderPinTop = WINDOWS_TITLEBAR_HEIGHT + 6
+  const windowsHeaderPinRight = 12
   const isDark = await window.webContents.executeJavaScript(
     `(() => {
       if (${process.platform === 'darwin'}) {
@@ -562,31 +559,20 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
         }
       }
       if (${process.platform === 'win32'}) {
-        const inset = ${windowsTitlebarInset}
-        const captionReserve = ${windowsCaptionReserve}
-        document.documentElement.style.setProperty('height', '100vh')
-        document.documentElement.style.setProperty('box-sizing', 'border-box')
-        document.documentElement.style.setProperty('padding-top', inset + 'px')
-        document.body.style.setProperty('height', '100%')
-        document.body.style.setProperty('box-sizing', 'border-box')
-        let dragRegion = document.getElementById('dsh-desktop-drag-region')
-        if (!dragRegion) {
-          dragRegion = document.createElement('div')
-          dragRegion.id = 'dsh-desktop-drag-region'
-          dragRegion.setAttribute('aria-hidden', 'true')
-          Object.assign(dragRegion.style, {
-            position: 'fixed',
-            zIndex: '18',
-            top: '0',
-            left: '0',
-            right: captionReserve + 'px',
-            height: inset + 'px',
-            background: 'transparent',
-            pointerEvents: 'auto',
-            userSelect: 'none'
-          })
-          dragRegion.style.setProperty('-webkit-app-region', 'drag')
-          document.body.appendChild(dragRegion)
+        let style = document.getElementById('dsh-desktop-windows-header-pin')
+        if (!style) {
+          style = document.createElement('style')
+          style.id = 'dsh-desktop-windows-header-pin'
+          style.textContent =
+            '[data-slot="conversation.session.header.corner"]{' +
+              'position:fixed !important;' +
+              'top:${windowsHeaderPinTop}px !important;' +
+              'right:${windowsHeaderPinRight}px !important;' +
+              'margin:0 !important;' +
+              'z-index:30 !important;' +
+              'background:transparent;' +
+            '}'
+          document.head.appendChild(style)
         }
       }
       if (document.body.hasAttribute('data-ds-dark-theme')) return true
