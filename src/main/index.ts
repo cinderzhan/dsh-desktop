@@ -1584,6 +1584,14 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<n
     case 'check-for-updates':
       await checkForUpdates(true)
       break
+    case 'export-session':
+      await contents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('button[class*="sessionLogButton"]')
+          if (btn instanceof HTMLButtonElement) btn.click()
+        })()`
+      ).catch(showUnexpectedError)
+      break
     case 'undo':
       contents.undo()
       break

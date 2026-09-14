@@ -48,37 +48,39 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')")
   })
 
-  it('positions trailing header actions and utilities below the caption strip on Windows', async () => {
+  it('integrates session export into the application menu and defines titlebar safe-inset variables', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
     const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+    const menuPreload = await readFile('src/preload/windows-menu.ts', 'utf8')
+    const sidebarPatch = await readFile(
+      'patches/@deepseek-ai+dsh-client-ui-sidebar-right+0.1.5-rc.2.patch',
+      'utf8'
+    )
 
-    // Relative header container with room for Row 1 and Row 2
-    expect(preload).toContain('[data-slot="conversation.session.header"] > header')
-    expect(preload).toContain('position: relative !important;')
-    expect(preload).toContain('min-height: 76px !important;')
+    // Standard CSS variable declarations for safe titlebar insets
+    expect(preload).toContain('--dsh-titlebar-safe-inset-top: 36px;')
+    expect(preload).toContain('--dsh-titlebar-safe-inset-right:')
+
+    // Sidebar right patch adopts the standard variable
+    expect(sidebarPatch).toContain('var(--dsh-titlebar-safe-inset-top, 0px)')
+
+    // Session log export in header is hidden in favor of application menu
+    expect(preload).toContain('[class*="headerUtilities"]')
+    expect(preload).toContain('display: none !important;')
 
     // Row 1 breadcrumb/title row reserves space to stay clear of min/max/close and menu button
     expect(preload).toContain('[data-slot="conversation.session.header"] > header > div:first-child')
     expect(preload).toContain('padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;')
 
-    // Right sidebar toggle button is positioned directly below min/max/close (36px + 2px = 38px)
-    expect(preload).toContain('[data-conversation-header-corner]')
-    expect(preload).toContain('top: 38px !important;')
-    expect(preload).toContain('right: 20px !important;')
-
-    // Utilities (file explorer / open-in-app, session log export) sit to the left of corner button or at edge when empty
-    expect(preload).toContain('[class*="headerUtilities"]')
-    expect(preload).toContain('right: 56px !important;')
-    expect(preload).toContain('right: 20px !important;')
-
-    // Tabs row reserves trailing space so tabs never collide with the action cluster
-    expect(preload).toContain('div[role="tablist"]')
-    expect(preload).toContain('padding-right: 180px !important;')
-
-    // Right sidebar (when expanded) offsets below 36px titlebar controls
+    // Right sidebar offsets below titlebar safe-inset
     expect(preload).toContain('[data-sidebar-right-panel]')
-    expect(preload).toContain('top: 36px !important;')
-    expect(preload).toContain('height: calc(100% - 36px) !important;')
+    expect(preload).toContain('var(--dsh-titlebar-safe-inset-top, 36px)')
+
+    // Application menu includes export-session command
+    expect(desktopMenuCommands).toContain('export-session')
+    expect(menuPreload).toContain("command: 'export-session'")
+    expect(menuPreload).toContain("zh ? '导出 Session 日志…' : 'Export Session Log…'")
+    expect(main).toContain("case 'export-session':")
 
     // No broken CSS transform injections on display:contents slot anchors
     expect(main).not.toContain('dsh-desktop-windows-header-shift')
