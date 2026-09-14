@@ -67,7 +67,7 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain('right: 20px !important;')
 
     // Utilities (file explorer / open-in-app, session log export) sit to the left of corner button or at edge when empty
-    expect(preload).toContain('div:has(> [data-slot="conversation.session.header.utilities"])')
+    expect(preload).toContain('[class*="headerUtilities"]')
     expect(preload).toContain('right: 56px !important;')
     expect(preload).toContain('right: 20px !important;')
 

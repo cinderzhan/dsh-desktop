@@ -68,7 +68,7 @@ function installLayout(document: Document): void {
       box-sizing: border-box !important;
     }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[data-conversation-header-corner],
-    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div:has(> [data-slot="conversation.session.header.corner"]) {
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerCorner"] {
       position: absolute !important;
       top: 38px !important;
       right: 20px !important;
@@ -77,7 +77,7 @@ function installLayout(document: Document): void {
       display: flex !important;
       align-items: center !important;
     }
-    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div:has(> [data-slot="conversation.session.header.utilities"]) {
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"] {
       position: absolute !important;
       top: 38px !important;
       right: 56px !important;
@@ -87,8 +87,10 @@ function installLayout(document: Document): void {
       align-items: center !important;
       gap: 8px !important;
     }
-    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div:has(> [data-slot="conversation.session.header.utilities"]):has(+ [data-conversation-header-corner]:empty),
-    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div:has(> [data-slot="conversation.session.header.utilities"]):has(+ div:empty) {
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ [data-conversation-header-corner]:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ [class*="headerCorner"]:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ div:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:last-child {
       right: 20px !important;
     }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[role="tablist"] {
