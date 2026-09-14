@@ -247,6 +247,8 @@ describe('Harness launch contract', () => {
         env: {
           PATH: '/usr/bin',
           DSH_HOME: '/Users/tester/Library/Application Support/dsh-desktop/harness',
+          NODE_COMPILE_CACHE:
+            '/Users/tester/Library/Application Support/dsh-desktop/harness/cache/compile-cache',
           NO_COLOR: '1',
           npm_config_side_effects_cache: 'false',
           PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false'

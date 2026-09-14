@@ -174,6 +174,37 @@ describe('diagnostic event integration', () => {
     expect(queued(service, dir).map(r => r.kind).sort()).toEqual(['gpu-crash', 'main-crash', 'renderer-crash'])
     app.emit('will-quit'); expect(existsSync(join(dir, 'state', 'session.json'))).toBe(false)
   })
+  it('suppresses unclean-exit report when previous session was healthy', () => {
+    const { service, options, dir } = fixture()
+    writeFileSync(options.logPath, '[desktop] endpoint http://127.0.0.1:43129\n[desktop] Harness is ready\n[desktop] cleared 1 stale Harness authentication cookie(s)\n')
+    service.beginSession()
+    const next = new DesktopService(options)
+    next.beginSession()
+    expect(next.pending()).toHaveLength(0)
+  })
+  it('discards a pending report by eventId', () => {
+    const { service } = fixture()
+    const eventId = service.capture('startup-failure', 'recoverable error')
+    expect(service.pending()).toHaveLength(1)
+    expect(service.discard(eventId)).toBe(true)
+    expect(service.pending()).toHaveLength(0)
+  })
+  it('discards transient plugin failure report when recovery succeeds and runtime reaches ready', async () => {
+    const { service, dir } = fixture()
+    const app = new EventEmitter()
+    const diagnostics = attachDiagnostics(app, service); disposers.push(() => diagnostics.dispose())
+    const failedSnapshot = {
+      phase: 'failed' as const,
+      message: 'plugin error',
+      logs: [],
+      pluginFailures: [{ stage: 'import' as const, packageName: 'test-plugin', message: 'failed', chain: [] }]
+    }
+    diagnostics.runtimeChanged(failedSnapshot, async () => {})
+    await vi.waitFor(() => expect(service.pending()).toHaveLength(1))
+    // User or safe mode recovers and launches successfully
+    diagnostics.runtimeChanged({ phase: 'ready', message: 'ready', logs: [] }, async () => {})
+    expect(service.pending()).toHaveLength(0)
+  })
 })
 
 it('waits for the actual Harness file stream before capturing its final error', async () => {
