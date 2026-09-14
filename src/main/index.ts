@@ -522,20 +522,6 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   // matches the first rendered frame. The transparent drag strip restores the
   // native window gesture without adding a visual titlebar or covering the
   // traffic lights and right-side header actions.
-  //
-  // On Windows the titleBarOverlay reserves the top-right 140px caption strip
-  // for min/max/close and desktop paints its own ≡ menu button (44px)
-  // immediately to its left. Upstream client-ui does not know about any of
-  // that: it draws the conversation header's trailing button groups
-  // (actions/utilities/corner data-slots — file explorer, more, screen,
-  // sidebar-right toggle) at y=10-40, which the system caption then overlaps
-  // for 26 vertical pixels. Nudge only those three groups down past the
-  // caption strip via `transform: translateY` so they still lay themselves
-  // out horizontally as flex siblings — the rest of the header (title,
-  // breadcrumb, tabs, sidebar top) stays untouched, and React never sees a
-  // DOM move to fight back. Trigger the shift with a body-level attribute
-  // so upstream can render freely before the paint applies.
-  const windowsHeaderShiftPx = WINDOWS_TITLEBAR_HEIGHT - 6
   const isDark = await window.webContents.executeJavaScript(
     `(() => {
       if (${process.platform === 'darwin'}) {
@@ -557,21 +543,6 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
           })
           dragRegion.style.setProperty('-webkit-app-region', 'drag')
           document.body.appendChild(dragRegion)
-        }
-      }
-      if (${process.platform === 'win32'}) {
-        document.body.setAttribute('data-desktop-platform', 'win32')
-        let style = document.getElementById('dsh-desktop-windows-header-shift')
-        if (!style) {
-          style = document.createElement('style')
-          style.id = 'dsh-desktop-windows-header-shift'
-          style.textContent =
-            'body[data-desktop-platform="win32"] [data-slot="conversation.session.header.actions"],' +
-            'body[data-desktop-platform="win32"] [data-slot="conversation.session.header.utilities"],' +
-            'body[data-desktop-platform="win32"] [data-slot="conversation.session.header.corner"]{' +
-              'transform:translateY(${windowsHeaderShiftPx}px) !important;' +
-            '}'
-          document.head.appendChild(style)
         }
       }
       if (document.body.hasAttribute('data-ds-dark-theme')) return true

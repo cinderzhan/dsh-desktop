@@ -48,6 +48,38 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')")
   })
 
+  it('positions trailing header actions and utilities below the caption strip on Windows', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+
+    // Relative header container with room for Row 1 and Row 2
+    expect(preload).toContain('[data-slot="conversation.session.header"] > header')
+    expect(preload).toContain('position: relative !important;')
+    expect(preload).toContain('min-height: 76px !important;')
+
+    // Row 1 breadcrumb/title row reserves space to stay clear of min/max/close and menu button
+    expect(preload).toContain('[data-slot="conversation.session.header"] > header > div:first-child')
+    expect(preload).toContain('padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;')
+
+    // Right sidebar toggle button is positioned directly below min/max/close (36px + 2px = 38px)
+    expect(preload).toContain('[data-conversation-header-corner]')
+    expect(preload).toContain('top: 38px !important;')
+    expect(preload).toContain('right: 20px !important;')
+
+    // Utilities (file explorer / open-in-app, session log export) sit to the left of corner button or at edge when empty
+    expect(preload).toContain('div:has(> [data-slot="conversation.session.header.utilities"])')
+    expect(preload).toContain('right: 56px !important;')
+    expect(preload).toContain('right: 20px !important;')
+
+    // Tabs row reserves trailing space so tabs never collide with the action cluster
+    expect(preload).toContain('div[role="tablist"]')
+    expect(preload).toContain('padding-right: 180px !important;')
+
+    // No broken CSS transform injections on display:contents slot anchors
+    expect(main).not.toContain('dsh-desktop-windows-header-shift')
+    expect(main).not.toContain('transform:translateY')
+  })
+
   it('accepts only the fixed menu command allowlist', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
 
