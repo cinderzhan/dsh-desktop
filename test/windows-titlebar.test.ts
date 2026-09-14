@@ -64,9 +64,16 @@ describe('Windows titlebar menu', () => {
     // Sidebar right patch adopts the standard variable
     expect(sidebarPatch).toContain('var(--dsh-titlebar-safe-inset-top, 0px)')
 
-    // Session log export in header is hidden in favor of application menu
+    // Header container and row 2 action cluster (utilities & corner) below titlebar strip
+    expect(preload).toContain('[data-slot="conversation.session.header"] > header')
+    expect(preload).toContain('min-height: 76px !important;')
+    expect(preload).toContain('[data-conversation-header-corner]')
+    expect(preload).toContain('top: 38px !important;')
+    expect(preload).toContain('right: 20px !important;')
     expect(preload).toContain('[class*="headerUtilities"]')
-    expect(preload).toContain('display: none !important;')
+    expect(preload).toContain('right: 56px !important;')
+    expect(preload).toContain('div[role="tablist"]')
+    expect(preload).toContain('padding-right: 180px !important;')
 
     // Row 1 breadcrumb/title row reserves space to stay clear of min/max/close and menu button
     expect(preload).toContain('[data-slot="conversation.session.header"] > header > div:first-child')
