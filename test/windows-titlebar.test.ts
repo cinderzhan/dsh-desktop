@@ -75,6 +75,11 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain('div[role="tablist"]')
     expect(preload).toContain('padding-right: 180px !important;')
 
+    // Right sidebar (when expanded) offsets below 36px titlebar controls
+    expect(preload).toContain('[data-sidebar-right-panel]')
+    expect(preload).toContain('top: 36px !important;')
+    expect(preload).toContain('height: calc(100% - 36px) !important;')
+
     // No broken CSS transform injections on display:contents slot anchors
     expect(main).not.toContain('dsh-desktop-windows-header-shift')
     expect(main).not.toContain('transform:translateY')

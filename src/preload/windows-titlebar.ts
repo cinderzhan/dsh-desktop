@@ -56,6 +56,13 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
     }
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel],
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel="fullscreen"],
+    body.dsh-desktop-windows-titlebar-layout [data-rightbar-col] > div,
+    body.dsh-desktop-windows-titlebar-layout [data-side="rightbar"] {
+      top: 36px !important;
+      height: calc(100% - 36px) !important;
+    }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
       position: relative !important;
       min-height: 76px !important;
