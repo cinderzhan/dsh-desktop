@@ -104,6 +104,11 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:last-child {
       right: 20px !important;
     }
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] button[aria-label="更多操作"],
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] button[aria-label="More actions"],
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] [class*="moreButton"] {
+      display: none !important;
+    }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[role="tablist"] {
       padding-right: 180px !important;
       box-sizing: border-box !important;

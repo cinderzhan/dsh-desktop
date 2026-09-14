@@ -1587,8 +1587,21 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<n
     case 'export-session':
       await contents.executeJavaScript(
         `(() => {
-          const btn = document.querySelector('button[class*="sessionLogButton"]')
-          if (btn instanceof HTMLButtonElement) btn.click()
+          const moreBtn = document.querySelector('button[aria-label="更多操作"], button[aria-label="More actions"], button[class*="moreButton"]')
+          if (moreBtn instanceof HTMLElement) {
+            moreBtn.click()
+            setTimeout(() => {
+              const item = document.querySelector('[role="menuitem"]')
+              if (item instanceof HTMLElement) item.click()
+            }, 50)
+            return true
+          }
+          const legacyBtn = document.querySelector('button[class*="sessionLogButton"]')
+          if (legacyBtn instanceof HTMLElement) {
+            legacyBtn.click()
+            return true
+          }
+          return false
         })()`
       ).catch(showUnexpectedError)
       break

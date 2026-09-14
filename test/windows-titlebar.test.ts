@@ -72,6 +72,8 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain('right: 20px !important;')
     expect(preload).toContain('[class*="headerUtilities"]')
     expect(preload).toContain('right: 56px !important;')
+    expect(preload).toContain('[class*="moreButton"]')
+    expect(preload).toContain('display: none !important;')
     expect(preload).toContain('div[role="tablist"]')
     expect(preload).toContain('padding-right: 180px !important;')
 
