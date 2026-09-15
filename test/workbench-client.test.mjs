@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyState, validateState } from '../packages/dsh-desktop-workbenches/state.mjs'
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
-let Workbenches, submissionAgentPrompt, copySubmissionPrompt
+let Workbenches, Market, submissionAgentPrompt, localWorkbenchAgentPrompt, reviewSubmissionAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
   window: { __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
@@ -12,7 +12,10 @@ vm.runInNewContext(code, {
       throw new Error(`Unexpected module ${name}`)
     })
     Workbenches = client.Workbenches
+    Market = client.Market
     submissionAgentPrompt = client.submissionAgentPrompt
+    localWorkbenchAgentPrompt = client.localWorkbenchAgentPrompt
+    reviewSubmissionAgentPrompt = client.reviewSubmissionAgentPrompt
     copySubmissionPrompt = client.copySubmissionPrompt
   } } },
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
@@ -95,15 +98,44 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
-  it('provides an Agent prompt that develops, validates and submits the current workbench', () => {
-    const prompt = submissionAgentPrompt()
+  it('renders submission as a third top-level tab with its own panel', () => {
+    const source = Market.toString()
+    expect(source).toContain("'aria-selected': tab === 'submit'")
+    expect(source).toContain("'aria-controls': 'dsh-workbench-submit-panel'")
+    expect(source).toContain("id: 'dsh-workbench-submit-panel', role: 'tabpanel'")
+    expect(source).toContain('制作我的工作台')
+    expect(source).toContain('1 · 了解规范')
+    expect(source).toContain('2 · 用自己的 Agent 开发')
+    expect(source).toContain('3 · 通过 Agent 交付')
+    expect(source).toContain("tab !== 'submit' && h('input'")
+    expect(source).toContain("tab !== 'submit' && h('section'")
+    expect(source).not.toContain('showSubmit')
+    expect(source).not.toContain("'aria-expanded'")
+  })
+
+  it('provides separate Agent prompts for local loading and review submission', () => {
+    const localPrompt = localWorkbenchAgentPrompt()
+    expect(localPrompt).toContain('workbench.json')
+    expect(localPrompt).toContain('scripts/check-workbench-package.mjs')
+    expect(localPrompt).toContain('我的工作台')
+    expect(localPrompt).toContain('左侧入口')
+    expect(localPrompt).toContain('不要向市场投稿')
+    expect(localPrompt).toContain('不要声称已加载')
+    expect(localPrompt).toContain('https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md')
+    expect(localPrompt).toContain('$DSH_WEB_URL/api/desktop-workbenches/development-guide')
+    expect(localPrompt).toContain('docs/preset-packages.md')
+    expect(submissionAgentPrompt('local')).toBe(localPrompt)
+
+    const prompt = reviewSubmissionAgentPrompt()
     expect(prompt).toContain('workbench.json')
     expect(prompt).toContain('scripts/check-workbench-package.mjs')
-    expect(prompt).toContain('GitHub HTTPS')
+    expect(prompt).toContain('不依赖 GitHub')
     expect(prompt).toContain('PNG、JPEG 或 WebP')
-    expect(prompt).toContain('{ title, description, author, repository, screenshot? }')
-    expect(prompt).toContain('POST 到 /api/desktop-workbenches/submissions')
-    expect(prompt).toContain('不要声称已提交')
+    expect(prompt).toContain('{ title, description, author, package, screenshot? }')
+    expect(prompt).toContain('POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions')
+    expect(prompt).toContain('尚未传送给平台审核')
+    expect(prompt).toContain('公共工作台广场')
+    expect(submissionAgentPrompt()).toBe(prompt)
   })
 
   it('copies the Agent prompt through the clipboard API', async () => {

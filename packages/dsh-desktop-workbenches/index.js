@@ -1,6 +1,9 @@
 import Schema from '@deepseek-ai/schemastery'
 import { createStateStore, MAX_STATE_BYTES, StateError } from './state.mjs'
 import { createSubmissionStore, MAX_SUBMISSION_BYTES } from './submissions.mjs'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-desktop-workbenches'
 export const inject = ['connection']
@@ -32,6 +35,18 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const submissions = createSubmissionStore(config.root)
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/development-guide',
+    methods: ['GET'],
+    async fetch() {
+      try {
+        const guide = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'development-guide.zh.md'), 'utf8')
+        return new Response(guide, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' } })
+      } catch {
+        return Response.json({ error: 'Could not read the workbench development guide.' }, { status: 500, headers: { 'cache-control': 'no-store' } })
+      }
+    }
+  })
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/state',
     methods: ['GET', 'POST'],

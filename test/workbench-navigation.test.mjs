@@ -44,8 +44,19 @@ function fixture() {
   service.workspaces = { list: { getSnapshot: () => workspaceState, subscribe } }
   service.sessions = {
     list: { getSnapshot: () => sessionState, subscribe },
-    create: vi.fn(async () => 'new-session'),
-    open: vi.fn(id => { sessionState.current = id }),
+    create: vi.fn(async ({ workspaceId }) => {
+      const target = workspaceState.items.find(item => item.workspaceId === workspaceId)
+      if (!target) throw new Error(`Unknown workspace: ${workspaceId}`)
+      const id = 'new-session'
+      if (!sessionState.byId[id]) sessionState.ids.push(id)
+      sessionState.byId[id] = { id, sessionId: id, blank: true, cwd: target.path, displayTitle: 'New Session' }
+      if (!target.sessionIds.includes(id)) target.sessionIds.push(id)
+      return id
+    }),
+    open: vi.fn(id => {
+      if (!sessionState.byId[id]) throw new Error(`Session not projected before open: ${id}`)
+      sessionState.current = id
+    }),
     clear: vi.fn(() => { sessionState.current = undefined })
   }
   return { service, sessionState, workspaceState, listeners }
@@ -90,13 +101,14 @@ describe('native Workspace navigation with workbench routing', () => {
     const second = service.registerSessionOpener(() => false)
     release()
     expect(() => service.registerSessionOpener(() => true)).toThrow('already registered')
+    sessionState.byId['ordinary-session'] = { id: 'ordinary-session', sessionId: 'ordinary-session' }
     service.openSession('ordinary-session')
     expect(service.sessions.open).toHaveBeenCalledWith('ordinary-session')
     expect(service.ctx.layout.selectPanel).toHaveBeenCalledWith(null)
     second()
   })
 
-  it.each(['writer', 'research-notebook', 'media-workbench'])('binds native New Session to the active %s workbench in the requested workspace', async (workbenchId) => {
+  it.each(['writer', 'research-notebook', 'media-workbench'])('keeps native New Session ordinary even while %s is open', async (workbenchId) => {
     const { service: uiWorkspace, sessionState, workspaceState } = fixture()
     workspaceState.items.push({ workspaceId: 'target-project', path: '/target', createdAt: '2026-01-02T00:00:00Z', sessionIds: [] })
     sessionState.ids.push('old-recent')
@@ -116,22 +128,29 @@ describe('native Workspace navigation with workbench routing', () => {
       notes: {}
     }
     controller.ready = true
-    uiWorkspace.registerSessionStarter((workspaceId) => {
-      const id = controller.state.active
-      if (!controller.ready || !id || !controller.state.added.includes(id) || !controller.catalog.has(id)) return false
-      controller.run(controller.newSession(workspaceId))
-      return true
-    })
-
     uiWorkspace.startSession('target-project')
-    await controller.queue
     await vi.waitFor(() => expect(uiWorkspace.sessions.open).toHaveBeenCalledWith('new-session'))
 
     expect(uiWorkspace.sessions.create).toHaveBeenCalledTimes(1)
     expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'target-project' })
-    expect(controller.state.sessionBindings['new-session']).toBe(workbenchId)
-    expect(controller.state.recentSessions[workbenchId]).toBe('new-session')
+    expect(controller.state.sessionBindings['new-session']).toBeUndefined()
+    expect(controller.state.recentSessions[workbenchId]).toBe('old-recent')
+    expect(controller.state.active).toBe(workbenchId)
     expect(uiWorkspace.sessions.open).not.toHaveBeenCalledWith('old-recent')
+  })
+
+  it('does not reuse a blank session already bound to a workbench when native New Session is clicked', async () => {
+    const { service, sessionState, workspaceState } = fixture()
+    const blankId = 'workbench-blank'
+    sessionState.ids.push(blankId)
+    sessionState.byId[blankId] = { id: blankId, sessionId: blankId, blank: true, cwd: '/project' }
+    workspaceState.items[0].sessionIds.push(blankId)
+    service.startSession('project')
+    await vi.waitFor(() => expect(service.sessions.open).toHaveBeenCalledWith('new-session'))
+    expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
+    expect(service.sessions.open).not.toHaveBeenCalledWith(blankId)
+    expect(sessionState.byId['new-session']).toMatchObject({ blank: true, cwd: '/project' })
+    expect(workspaceState.items[0].sessionIds).toContain('new-session')
   })
 
   it('falls back to native New Session after the workbench is closed', async () => {
@@ -199,6 +218,6 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(controller.state.sessionBindings[removedSession]).toBe('research-notebook')
     expect(controller.state.recentSessions).toEqual({})
     expect(request).not.toHaveBeenCalled()
-    expect(workbenchSource).toContain('registerSessionStarter(')
+    expect(workbenchSource).not.toContain('registerSessionStarter(')
   })
 })

@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../packages/dsh-desktop-workbenches/index.js'
 import { createSubmissionStore, MAX_SCREENSHOT_BYTES, MAX_SUBMISSION_BYTES } from '../packages/dsh-desktop-workbenches/submissions.mjs'
@@ -13,6 +14,8 @@ async function fixture() {
   return { root, store: createSubmissionStore(root) }
 }
 const png = bytes => `data:image/png;base64,${Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(bytes)]).toString('base64')}`
+const packageBytes = () => { const tar = Buffer.alloc(1024); tar.write('ustar', 257, 'ascii'); return gzipSync(tar) }
+const packageUrl = () => `data:application/gzip;base64,${packageBytes().toString('base64')}`
 const valid = (patch = {}) => ({
   title: 'Research Desk',
   description: 'A focused workbench for evidence.\nSupports research notes.',
@@ -23,6 +26,26 @@ const valid = (patch = {}) => ({
 })
 
 describe('desktop workbench community submissions', () => {
+  it('serves the bundled development guide to the local Agent', async () => {
+    const { root } = await fixture()
+    const routes = []
+    apply({ connection: { fetch: { register(route) { routes.push(route) } } } }, { root })
+    const route = routes.find(value => value.path === '/api/desktop-workbenches/development-guide')
+    const response = await route.fetch(new Request('http://localhost/api/desktop-workbenches/development-guide'))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/markdown')
+    expect(await response.text()).toContain('# DSH Desktop 工作台开发指南')
+  })
+  it('accepts a GitHub-free workbench package and keeps its binary outside the market JSON', async () => {
+    const { root, store } = await fixture()
+    const created = await store.create(valid({ repository: undefined, screenshot: undefined, package: packageUrl() }))
+    expect(created.repository).toBeNull()
+    expect(created.packageSha256).toMatch(/^[a-f0-9]{64}$/)
+    expect(await readFile(join(root, `${created.id}.tgz`))).toEqual(packageBytes())
+    expect(await createSubmissionStore(root).read()).toEqual([created])
+    const metadata = await readFile(join(root, 'submissions.json'), 'utf8')
+    expect(metadata).not.toContain('base64')
+  })
   it('normalizes, persists and restores a pending submission without changing state v1', async () => {
     const { root, store } = await fixture()
     await writeFile(join(root, 'state.json'), '{"revision":0,"state":{"version":1}}')
@@ -55,6 +78,8 @@ describe('desktop workbench community submissions', () => {
     [valid({ repository: 'http://github.com/a/b' }), 400],
     [valid({ repository: 'https://gitlab.com/a/b' }), 400],
     [valid({ repository: 'https://github.com/a/b/issues' }), 400],
+    [valid({ repository: undefined, package: 'data:application/gzip;base64,ZmFrZQ==' }), 400],
+    [valid({ repository: undefined }), 400],
     [valid({ extra: true }), 400],
     [valid({ screenshot: 'data:image/png;base64,ZmFrZQ==' }), 400],
     [valid({ screenshot: 'data:image/gif;base64,R0lGODlh' }), 400],
