@@ -11,7 +11,7 @@ window.__ModuleLoader__.load({
     // submission guide and the acceptance checklist.
     const GUIDE_API = '/api/desktop-workbenches/development-guide'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
-    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；验收标准见 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md 。`
+    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；验收清单见 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md 。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -630,7 +630,7 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '1'),
               h('strong', null, '先看规范，让 Agent 开发'),
-              h('p', null, '把指令复制给你的 Agent。它会先读随版本分发的规范副本和', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md`, target: '_blank', rel: 'noopener noreferrer' }, '验收标准'), '，再动手开发。'),
+              h('p', null, '把指令复制给你的 Agent。它会先读', h('a', { href: GUIDE_API, target: '_blank', rel: 'noopener noreferrer' }, '工作台规范'), '，再动手开发。'),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(developmentPrompt) }, '复制开发指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'development' ? null : 'development') }, openPrompt === 'development' ? '收起指令' : '查看指令')),
@@ -642,7 +642,7 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, '想投稿，再按市场要求提交'),
-              h('p', null, '对照', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md`, target: '_blank', rel: 'noopener noreferrer' }, '投稿指南'), '和', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md`, target: '_blank', rel: 'noopener noreferrer' }, '验收清单'), '准备材料，把指令复制给 Agent。'),
+              h('p', null, '对照', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '市场投稿要求'), '准备材料，把指令复制给 Agent。'),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(submissionPrompt) }, '复制投稿指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),
