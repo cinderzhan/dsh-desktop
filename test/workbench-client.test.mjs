@@ -843,8 +843,8 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
   it('ScreenshotGallery is used in the detail view instead of Preview', () => {
-    const source = Market.toString()
-    expect(source).toContain('ScreenshotGallery')
+    expect(Market.toString()).toContain('DetailModal')
+    expect(fullSource).toContain('ScreenshotGallery')
     expect(fullSource).not.toMatch(/h\(Preview,.*detail: true/)
   })
 

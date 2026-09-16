@@ -14,6 +14,14 @@ window.__ModuleLoader__.load({
       getSnapshot() { return this.enabled },
       set(value) { this.enabled = !!value; try { window.localStorage.setItem(MARKET_PREF, String(this.enabled)) } catch {} ; for (const listener of this.listeners) listener() }
     }
+    const WORKBENCH_PREF = 'dsh-workbench-enabled'
+    const workbenchPreference = {
+      listeners: new Set(),
+      enabled: (() => { try { return window.localStorage.getItem(WORKBENCH_PREF) !== 'false' } catch { return true } })(),
+      subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener) },
+      getSnapshot() { return this.enabled },
+      set(value) { this.enabled = !!value; try { window.localStorage.setItem(WORKBENCH_PREF, String(this.enabled)) } catch {} ; for (const listener of this.listeners) listener() }
+    }
     const EMPTY = () => ({ version: 1, added: [], pinned: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} })
 
     // This controller owns navigation and local state only. It never terminates
@@ -401,6 +409,10 @@ window.__ModuleLoader__.load({
       .dshWbDetailLightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:6px}
       .dshWbSubmitSuccess{padding:10px 14px;margin:12px 0 0;background:var(--dsw-alias-bg-layer-2);border-radius:6px;font-size:13px;line-height:1.6}
       .dshWbSubmitSuccess strong{display:block;margin-bottom:2px}
+      .dshWbModalBackdrop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px;overflow:auto}
+      .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:12px;max-width:680px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+      .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}
+      .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
       .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column}
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
@@ -429,6 +441,8 @@ window.__ModuleLoader__.load({
     function Sidebar({ service, wide }) {
       const { state, catalog, ready, pending } = useWorkbench(service)
       const marketEnabled = React.useSyncExternalStore(marketPreference.subscribe.bind(marketPreference), marketPreference.getSnapshot.bind(marketPreference))
+      const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
+      if (!workbenchEnabled) return null
       const [mode, setMode] = React.useState(() => {
         try { return window.localStorage.getItem('dsh-workbench-sidebar-mode') === 'icons' ? 'icons' : 'list' } catch { return 'list' }
       })
@@ -502,6 +516,31 @@ window.__ModuleLoader__.load({
         submission.packageSha256 && h('span', null, `包 SHA-256：${submission.packageSha256.slice(0, 16)}…`),
         h('div', { className: 'dshWbActions', style: { marginTop: 6 } }, h(Button, { onClick: onDismiss }, '关闭')))
     }
+    function DetailModal({ entry, onClose }) {
+      if (!entry) return null
+      React.useEffect(() => {
+        const handler = (event) => { if (event.key === 'Escape') onClose() }
+        document.addEventListener('keydown', handler)
+        return () => document.removeEventListener('keydown', handler)
+      }, [onClose])
+      return require('react-dom').createPortal(
+        h('div', { className: 'dshWbModalBackdrop', role: 'dialog', 'aria-label': `${entry.title || '工作台'} 详情`, onClick: onClose },
+          h('div', { className: 'dshWbModal', onClick: (event) => event.stopPropagation() },
+            h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
+              h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1 } }, entry.icon ? h('span', { 'aria-hidden': true }, entry.icon + ' ') : null, entry.title),
+              entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'),
+              h(Button, { onClick: onClose }, '关闭')
+            ),
+            h(ScreenshotGallery, { entry }),
+            entry.description && h('p', null, entry.description),
+            h(EntryMeta, { entry }),
+            !entry.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
+            entry.repository && h('p', { className: 'dshWbMuted' }, `GitHub：${entry.repository}`)
+          )
+        ),
+        document.body
+      )
+    }
     function localWorkbenchAgentPrompt() {
       return `请帮我制作 DSH Desktop 工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
 
@@ -539,6 +578,9 @@ window.__ModuleLoader__.load({
     }
     function Market({ service }) {
       const { state, catalog, submissions, submissionError, submissionPending, ready, pending } = useWorkbench(service)
+      const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
+      if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
+        h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
       const [detail, setDetail] = React.useState(null)
@@ -584,8 +626,6 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dshWbActions' }, h(Button, { primary: true, onClick: copyPrompt }, `复制“${submitMode === 'local' ? '本地加载' : '投稿准备'}”指令给 Agent`)),
           h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
-          selected && h('article', { className: 'dshWbDetail' }, h('div', { className: 'dshWbActions' }, h('h2', null, selected.title), selected.pending && h('span', { className: 'dshWbPending' }, '本机待送审'), h(Button, { onClick: () => setDetail(null) }, '收起详情')),
-            h(ScreenshotGallery, { entry: selected }), h('p', null, selected.description), h(EntryMeta, { entry: selected }), !selected.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${selected.audience || '暂无'}。${selected.requirements || ''}`), selected.repository && h('p', { className: 'dshWbMuted' }, `GitHub：${selected.repository}`)),
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => h('article', { key: entry.id, className: 'dshWbCard' },
             h(Preview, { entry }),
             h('h2', null, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, entry.icon || '◇'), entry.title), h('p', { className: 'dshWbMuted' }, entry.description),
@@ -597,6 +637,7 @@ window.__ModuleLoader__.load({
               tab === 'mine' && h(Button, { disabled, onClick: () => setRemoving(entry.id) }, '移除')),
             removing === entry.id && h('div', { className: 'dshWbNotice' }, '移除本地工作台和固定入口，会话、项目文件和笔记会保留。', h('div', { className: 'dshWbActions' }, h(Button, { disabled, onClick: () => service.run(service.remove(entry.id).then(() => setRemoving(null))) }, '确认移除'), h(Button, { onClick: () => setRemoving(null) }, '取消')))
           ))), entries.length === 0 && h('p', { className: 'dshWbMuted' }, tab === 'mine' && !search ? '还没有添加工作台，到工作台市场选一个开始。' : '没有找到匹配的工作台。')))
+          detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) })
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)
@@ -624,6 +665,8 @@ window.__ModuleLoader__.load({
     }
     function Frame({ service, conversation }) {
       const { state, catalog, ready, pending } = useWorkbench(service)
+      const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
+      if (!workbenchEnabled) return h('div', { className: 'dshWb dshWbFrame' }, h('div', { className: 'dshWbDisabledHint' }, h('h2', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const sessions = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.sessions.list.subscribe(listener), [service]), () => service.ctx.sessions.list.getSnapshot())
       const workspaces = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.workspaces.list.subscribe(listener), [service]), () => service.ctx.workspaces.list.getSnapshot())
       const [workspaceId, setWorkspaceId] = React.useState('')
@@ -670,10 +713,16 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: PANEL, order: -20, inject: () => ({ service }) }, Sidebar))
       function MarketSetting() {
         const enabled = React.useSyncExternalStore(marketPreference.subscribe.bind(marketPreference), marketPreference.getSnapshot.bind(marketPreference))
-        return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '工作台市场'), h('small', null, '控制侧边栏的市场入口；已安装工作台仍可使用。')),
-          h('input', { type: 'checkbox', role: 'switch', checked: enabled, onChange: (event) => { marketPreference.set(event.target.checked); if (!event.target.checked) ctx.layout.selectPanel(null) }, 'aria-label': '打开或关闭工作台市场' }))
+        return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '工作台市场入口'), h('small', null, '控制侧边栏中工作台市场图标的显示。')),
+          h('input', { type: 'checkbox', role: 'switch', checked: enabled, onChange: (event) => { marketPreference.set(event.target.checked); if (!event.target.checked) ctx.layout.selectPanel(null) }, 'aria-label': '打开或关闭工作台市场入口' }))
+      }
+      function WorkbenchMasterSetting() {
+        const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
+        return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '启用工作台功能'), h('small', null, '关闭后所有工作台将不会加载，不影响已保存的会话和数据。')),
+          h('input', { type: 'checkbox', role: 'switch', checked: enabled, onChange: (event) => workbenchPreference.set(event.target.checked), 'aria-label': '启用或关闭所有工作台' }))
       }
       ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'desktop-workbench-market', order: 35 }, MarketSetting))
+      ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'desktop-workbench-master', order: 34 }, WorkbenchMasterSetting))
       ctx.slots.inject('desktop.workbench.frame', () => ctx.slots.register({ name: 'desktop.workbench.frame', inject: () => ({ service }) }, Frame))
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
       ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId) => {
