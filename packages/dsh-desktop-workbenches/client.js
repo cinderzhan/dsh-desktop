@@ -11,7 +11,7 @@ window.__ModuleLoader__.load({
     // submission guide and the acceptance checklist.
     const GUIDE_API = '/api/desktop-workbenches/development-guide'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
-    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；验收清单见 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md 。`
+    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；投稿要求与验收要点见 ${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md 。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -564,7 +564,7 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
     function submissionWorkbenchAgentPrompt() {
       return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在只做投稿这一步，不用再改功能。
 
-先读市场投稿要求：${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md ；对照验收清单 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md 逐项准备证据；材料模板见 ${WORKBENCH_MARKET_REPO}/blob/main/examples/submission.md 。规范见 $DSH_WEB_URL${GUIDE_API}。
+先读市场投稿要求：${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md ；按其中的验收要点逐项准备证据；材料模板见 ${WORKBENCH_MARKET_REPO}/blob/main/examples/submission.md 。规范见 $DSH_WEB_URL${GUIDE_API}。
 
 用 scripts/check-workbench-package.mjs 校验解包后的工作台，再打成不超过 8 MB 的 .tgz 包。核实 title、description、author，以及源码仓库的完整 commit SHA（不要只填分支或 tag）。可选一张不超过 2 MB 的 PNG、JPEG 或 WebP 截图。不要包含密钥或私密数据。
 
