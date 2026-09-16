@@ -6,14 +6,6 @@ window.__ModuleLoader__.load({
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const SUBMISSIONS_API = '/api/desktop-workbenches/submissions'
-    const MARKET_PREF = 'dsh-workbench-market-enabled'
-    const marketPreference = {
-      listeners: new Set(),
-      enabled: (() => { try { return window.localStorage.getItem(MARKET_PREF) !== 'false' } catch { return true } })(),
-      subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener) },
-      getSnapshot() { return this.enabled },
-      set(value) { this.enabled = !!value; try { window.localStorage.setItem(MARKET_PREF, String(this.enabled)) } catch {} ; for (const listener of this.listeners) listener() }
-    }
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -440,12 +432,11 @@ window.__ModuleLoader__.load({
     }
     function Sidebar({ service, wide }) {
       const { state, catalog, ready, pending } = useWorkbench(service)
-      const marketEnabled = React.useSyncExternalStore(marketPreference.subscribe.bind(marketPreference), marketPreference.getSnapshot.bind(marketPreference))
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-      if (!workbenchEnabled) return null
       const [mode, setMode] = React.useState(() => {
         try { return window.localStorage.getItem('dsh-workbench-sidebar-mode') === 'icons' ? 'icons' : 'list' } catch { return 'list' }
       })
+      if (!workbenchEnabled) return null
       const changeMode = (next) => {
         setMode(next)
         try { window.localStorage.setItem('dsh-workbench-sidebar-mode', next) } catch { /* Preferences remain usable when storage is unavailable. */ }
@@ -453,7 +444,7 @@ window.__ModuleLoader__.load({
       const iconMode = wide && mode === 'icons'
       const disabled = !ready || pending > 0 || service.blocked
       return h('nav', { className: 'dshWb dshWbNav', 'data-mode': iconMode ? 'icons' : 'list', 'data-wide': !!wide, 'aria-label': '工作台' },
-        marketEnabled && h('div', { className: 'dshWbNavHeader' },
+        h('div', { className: 'dshWbNavHeader' },
           h('button', { type: 'button', className: 'dshWbNavOpen', title: '工作台市场', 'aria-label': '工作台市场', onClick: () => service.ctx.layout.selectPanel(PANEL) }, h('span', { className: 'dshWbNavIcon', 'aria-hidden': true }, '▦'), wide && h('span', { className: 'dshWbNavLabel' }, '工作台市场')),
           wide && h('div', { className: 'dshWbNavModes', role: 'group', 'aria-label': '工作台显示方式' },
             ...['list', 'icons'].map((value) => h('button', { key: value, type: 'button', className: 'dshWbMode', 'aria-label': value === 'list' ? '列表模式' : '图标模式', title: value === 'list' ? '列表模式' : '图标模式', 'aria-pressed': mode === value, onClick: () => changeMode(value) }, h(ModeIcon, { mode: value }))))),
@@ -579,8 +570,6 @@ window.__ModuleLoader__.load({
     function Market({ service }) {
       const { state, catalog, submissions, submissionError, submissionPending, ready, pending } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-      if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
-        h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
       const [detail, setDetail] = React.useState(null)
@@ -588,6 +577,8 @@ window.__ModuleLoader__.load({
       const [submitMode, setSubmitMode] = React.useState('local')
       const [copyStatus, setCopyStatus] = React.useState('')
       const [lastSubmission, setLastSubmission] = React.useState(null)
+      if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
+        h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const prompt = submissionAgentPrompt(submitMode)
       const disabled = !ready || pending > 0 || service.blocked
       const pendingEntries = submissions.filter((entry) => entry.status !== 'approved').map((entry) => ({ ...entry, id: `submission:${entry.id}`, submissionId: entry.id, pending: true, unavailable: true }))
@@ -666,7 +657,6 @@ window.__ModuleLoader__.load({
     function Frame({ service, conversation }) {
       const { state, catalog, ready, pending } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-      if (!workbenchEnabled) return h('div', { className: 'dshWb dshWbFrame' }, h('div', { className: 'dshWbDisabledHint' }, h('h2', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const sessions = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.sessions.list.subscribe(listener), [service]), () => service.ctx.sessions.list.getSnapshot())
       const workspaces = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.workspaces.list.subscribe(listener), [service]), () => service.ctx.workspaces.list.getSnapshot())
       const [workspaceId, setWorkspaceId] = React.useState('')
@@ -675,6 +665,7 @@ window.__ModuleLoader__.load({
         Object.assign(node.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', minWidth: '0', height: '100%' })
         return node
       })
+      if (!workbenchEnabled) return h('div', { className: 'dshWb dshWbFrame' }, h('div', { className: 'dshWbDisabledHint' }, h('h2', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const entry = state.active && catalog.find((item) => item.id === state.active)
       const id = entry?.id
       const customFrame = entry?.customFrame === true
@@ -711,18 +702,12 @@ window.__ModuleLoader__.load({
       ctx.effect(() => service.register({ id: 'writing-notebook', initialization: 'new-session', icon: '✎', title: '内容创作', author: 'DSH Desktop', panelTitle: '创作草稿', description: '整理选题和素材，在对话旁持续打磨自己的稿件。', audience: '内容创作者', requirements: '使用现有模型配置与原生会话能力；不包含账号发布或数据采集工具。', hint: '将想保留的选题、素材和稿件放在这里。', placeholder: '选题与受众\n\n素材\n\n稿件草稿' }, Notebook), 'workbenches: writing template')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: PANEL, order: -20, inject: () => ({ service }) }, Sidebar))
-      function MarketSetting() {
-        const enabled = React.useSyncExternalStore(marketPreference.subscribe.bind(marketPreference), marketPreference.getSnapshot.bind(marketPreference))
-        return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '工作台市场入口'), h('small', null, '控制侧边栏中工作台市场图标的显示。')),
-          h('input', { type: 'checkbox', role: 'switch', checked: enabled, onChange: (event) => { marketPreference.set(event.target.checked); if (!event.target.checked) ctx.layout.selectPanel(null) }, 'aria-label': '打开或关闭工作台市场入口' }))
-      }
-      function WorkbenchMasterSetting() {
+      function WorkbenchEnableSetting() {
         const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-        return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '启用工作台功能'), h('small', null, '关闭后所有工作台将不会加载，不影响已保存的会话和数据。')),
-          h('input', { type: 'checkbox', role: 'switch', checked: enabled, onChange: (event) => workbenchPreference.set(event.target.checked), 'aria-label': '启用或关闭所有工作台' }))
+        return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '启用工作台功能'), h('small', null, '开启后可使用工作台市场和已安装的工作台；关闭后所有工作台不加载，不影响已保存的会话和数据。')),
+          h('input', { type: 'checkbox', role: 'switch', checked: enabled, onChange: (event) => { workbenchPreference.set(event.target.checked); if (!event.target.checked) ctx.layout.selectPanel(null) }, 'aria-label': '启用或关闭工作台功能' }))
       }
-      ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'desktop-workbench-market', order: 35 }, MarketSetting))
-      ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'desktop-workbench-master', order: 34 }, WorkbenchMasterSetting))
+      ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'desktop-workbench-enable', order: 34 }, WorkbenchEnableSetting))
       ctx.slots.inject('desktop.workbench.frame', () => ctx.slots.register({ name: 'desktop.workbench.frame', inject: () => ({ service }) }, Frame))
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
       ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId) => {
