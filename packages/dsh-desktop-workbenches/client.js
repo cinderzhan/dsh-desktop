@@ -515,28 +515,39 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dshWbActions', style: { marginTop: 6 } }, h(Button, { onClick: onDismiss }, '关闭')))
     }
     function DetailModal({ entry, onClose }) {
-      if (!entry) return null
+      // Hooks must run in a stable order: call the effect before the early return
+      // so a temporarily unresolvable entry cannot change the hook count.
       React.useEffect(() => {
+        if (!entry) return undefined
         const handler = (event) => { if (event.key === 'Escape') onClose() }
         document.addEventListener('keydown', handler)
-        // Prevent body scroll while modal is open
-        const prev = document.body.style.overflow
+        const previousOverflow = document.body.style.overflow
         document.body.style.overflow = 'hidden'
-        return () => { document.removeEventListener('keydown', handler); document.body.style.overflow = prev }
-      }, [onClose])
-      return h('div', { className: 'dshWbModalBackdrop', role: 'dialog', 'aria-label': `${entry.title || '工作台'} 详情`, onClick: onClose },
-        h('div', { className: 'dshWbModal', onClick: (event) => event.stopPropagation() },
-          h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
-            h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1 } }, entry.icon ? h('span', { 'aria-hidden': true }, entry.icon + ' ') : null, entry.title),
-            entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'),
-            h(Button, { onClick: onClose }, '关闭')
-          ),
-          h(ScreenshotGallery, { entry }),
-          entry.description && h('p', null, entry.description),
-          h(EntryMeta, { entry }),
-          !entry.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
-          entry.repository && h('p', { className: 'dshWbMuted' }, `GitHub：${entry.repository}`)
-        )
+        return () => {
+          document.removeEventListener('keydown', handler)
+          document.body.style.overflow = previousOverflow
+        }
+      }, [entry, onClose])
+      if (!entry) return null
+      // Render through a portal to body: the market panel declares container-type,
+      // which would otherwise resolve a fixed-position overlay against that panel
+      // and clip it with its own overflow.
+      return require('react-dom').createPortal(
+        h('div', { className: 'dshWbModalBackdrop', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${entry.title || '工作台'} 详情`, onClick: onClose },
+          h('div', { className: 'dshWbModal', onClick: (event) => event.stopPropagation() },
+            h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
+              h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1 } }, entry.icon ? h('span', { 'aria-hidden': true }, entry.icon + ' ') : null, entry.title),
+              entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'),
+              h(Button, { onClick: onClose }, '关闭')
+            ),
+            h(ScreenshotGallery, { entry }),
+            entry.description && h('p', null, entry.description),
+            h(EntryMeta, { entry }),
+            !entry.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
+            entry.repository && h('p', { className: 'dshWbMuted' }, `GitHub：${entry.repository}`)
+          )
+        ),
+        document.body
       )
     }
     function localWorkbenchAgentPrompt() {
@@ -637,8 +648,8 @@ window.__ModuleLoader__.load({
                 : h(Button, { primary: true, disabled, onClick: () => service.run(service.add(entry.id)) }, '添加'),
               tab === 'mine' && h(Button, { disabled, onClick: () => setRemoving(entry.id) }, '移除')),
             removing === entry.id && h('div', { className: 'dshWbNotice' }, '移除本地工作台和固定入口，会话、项目文件和笔记会保留。', h('div', { className: 'dshWbActions' }, h(Button, { disabled, onClick: () => service.run(service.remove(entry.id).then(() => setRemoving(null))) }, '确认移除'), h(Button, { onClick: () => setRemoving(null) }, '取消')))
-          ))), entries.length === 0 && h('p', { className: 'dshWbMuted' }, tab === 'mine' && !search ? '还没有添加工作台，到工作台市场选一个开始。' : '没有找到匹配的工作台。')))
-          detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) })
+          ))), entries.length === 0 && h('p', { className: 'dshWbMuted' }, tab === 'mine' && !search ? '还没有添加工作台，到工作台市场选一个开始。' : '没有找到匹配的工作台。')),
+          detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }))
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)

@@ -848,6 +848,50 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toMatch(/h\(Preview,.*detail: true/)
   })
 
+  it('renders the detail modal inside the Market return tree, not after it', () => {
+    // The modal must be a child of the returned element. Placing it after the
+    // return statement parses fine but never renders, which silently breaks
+    // "查看详情".
+    const source = Market.toString()
+    const start = source.lastIndexOf('return ')
+    expect(start).toBeGreaterThan(-1)
+    let index = source.indexOf('(', start)
+    let depth = 0
+    let end = -1
+    for (; index < source.length; index += 1) {
+      const character = source[index]
+      if (character === "'" || character === '"' || character === '`') {
+        const quote = character
+        index += 1
+        while (index < source.length && source[index] !== quote) {
+          if (source[index] === '\\') index += 1
+          index += 1
+        }
+        continue
+      }
+      if (character === '(') depth += 1
+      else if (character === ')') {
+        depth -= 1
+        if (depth === 0) { end = index; break }
+      }
+    }
+    expect(end).toBeGreaterThan(start)
+    const returned = source.slice(start, end + 1)
+    expect(returned).toContain('h(DetailModal')
+    // Nothing executable may follow the return statement.
+    const remainder = source.slice(end + 1).replace(/[\s;]+/g, '')
+    expect(remainder).toBe('}')
+  })
+
+  it('portals the detail modal to document.body so panel containment cannot clip it', () => {
+    // The market panel sets container-type, which makes it the containing block
+    // for fixed-position descendants and clips them with its own overflow.
+    const modal = fullSource.slice(fullSource.indexOf('function DetailModal'), fullSource.indexOf('function localWorkbenchAgentPrompt'))
+    expect(modal).toContain("require('react-dom').createPortal")
+    expect(modal).toContain('document.body')
+    expect(modal.indexOf('React.useEffect')).toBeLessThan(modal.indexOf('if (!entry) return null'))
+  })
+
   it('card screenshot uses dedicated card-level CSS class', () => {
     expect(fullSource).toContain('dshWbCardScreenshot')
   })
