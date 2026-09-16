@@ -6,6 +6,11 @@ window.__ModuleLoader__.load({
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const SUBMISSIONS_API = '/api/desktop-workbenches/submissions'
+    // The guide ships inside the application, so the bundled copy always matches the
+    // installed version. The repository copy is the browsable mirror.
+    const GUIDE_API = '/api/desktop-workbenches/development-guide'
+    const GUIDE_REPOSITORY = 'https://github.com/cinderzhan/dsh-desktop/blob/feat/workbench-market-local/docs'
+    const GUIDE_READING = `先阅读并遵循工作台开发指南：优先读取随本机安装版本分发的副本 $DSH_WEB_URL${GUIDE_API}；仓库版本见 ${GUIDE_REPOSITORY}/workbench-standard.zh.md 与同目录的 workbenches.md。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -553,7 +558,7 @@ window.__ModuleLoader__.load({
     function localWorkbenchAgentPrompt() {
       return `请帮我制作 DSH Desktop 工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
 
-先阅读并遵循公开的工作台开发指南：https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md 。若在 DSH Desktop Agent 内，也可读取 $DSH_WEB_URL/api/desktop-workbenches/development-guide 作为随版本分发的本机副本。核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、client、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、client、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
 完成后，按当前项目已有的插件安装或加载机制，将工作台安装到我这台 DSH Desktop 供自己使用。参照 docs/preset-packages.md 的 Agent 交付方式：在本机 API 可用时由你调用，不让我重新填写项目元数据。确认工作台已注册、出现在“我的工作台”和左侧入口，并实际打开检查。不要向市场投稿或声称已经公开发布。
 
@@ -562,7 +567,7 @@ window.__ModuleLoader__.load({
     function reviewSubmissionAgentPrompt() {
       return `请帮我制作并提交 DSH Desktop 工作台。开发过程由你自主完成，DSH 不控制使用哪种 Agent。
 
-先阅读并遵循公开的工作台开发指南：https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md 。若在 DSH Desktop Agent 内，也可读取 $DSH_WEB_URL/api/desktop-workbenches/development-guide 作为随版本分发的本机副本。核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、client、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、client、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
 开发完成后，用 scripts/check-workbench-package.mjs 校验解包后的工作台，再打成不超过 8 MB 的 .tgz 包。参照 docs/preset-packages.md 的 Agent 交付方式，不依赖 GitHub：由你核实 title、description、author，并把 .tgz 转换为 data:application/gzip;base64,...。可选一张不超过 2 MB 的 PNG、JPEG 或 WebP 产品截图，转换成对应 data URL；不要包含密钥或私密数据。准备 JSON：{ title, description, author, package, screenshot? }。如已有 GitHub 仓库，可额外提供 repository，但不是必需。
 
@@ -624,7 +629,7 @@ window.__ModuleLoader__.load({
             h('p', null, '任何 Agent 都能帮你开发。你只需决定功能和界面，剩下交给 Agent。')
           ),
           h('div', { className: 'dshWbSteps', 'aria-label': '工作台制作步骤' },
-            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '1'), h('strong', null, '了解开发规范'), h('p', null, '让 Agent 阅读公开的 ', h('a', { href: 'https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md', target: '_blank', rel: 'noopener noreferrer' }, '工作台开发指南'), ' 和本机开发文档，确保功能合规。')),
+            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '1'), h('strong', null, '了解开发规范'), h('p', null, '让 Agent 阅读', h('a', { href: `${GUIDE_REPOSITORY}/workbench-standard.zh.md`, target: '_blank', rel: 'noopener noreferrer' }, '《工作台开发与验收规范》'), '和实现说明；本机随安装版本分发同一份副本。')),
             h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '2'), h('strong', null, '用自己的 Agent 开发'), h('p', null, '用你习惯的 Agent 自由开发；DSH 不限制工具和流程，只定义工作台的接入规范。')),
             h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '3'), h('strong', null, '通过 Agent 交付'), h('p', null, '开发完成后，把下方的指令复制给 Agent，它会帮你完成校验、打包和交付。'))),
           h('h3', { className: 'dshWbSubmitSection' }, '选择交付方式'),

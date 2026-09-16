@@ -1,6 +1,6 @@
 # Local workbenches
 
-Phase 1 adds a local workbench catalog and persistent sidebar entries. Phase 2 begins with local community-submission intake from the market; review, remote catalog publishing, and package upgrades remain later work. Settings > General has a switch for showing the market entry; already installed workbenches remain available when it is off.
+Phase 1 adds a local workbench catalog and persistent sidebar entries. Phase 2 begins with local community-submission intake from the market; review, remote catalog publishing, and package upgrades remain later work. Settings > General has a single switch that turns the workbench feature on or off. Turning it off stops every workbench from loading and hides the sidebar entries and the market, while saved sessions, data and notes are retained.
 
 ## Phase 2 market-submission MVP
 

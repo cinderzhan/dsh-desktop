@@ -121,8 +121,9 @@ describe('desktop workbench client navigation', () => {
     expect(localPrompt).toContain('左侧入口')
     expect(localPrompt).toContain('不要向市场投稿')
     expect(localPrompt).toContain('不要声称已加载')
-    expect(localPrompt).toContain('https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md')
     expect(localPrompt).toContain('$DSH_WEB_URL/api/desktop-workbenches/development-guide')
+    expect(localPrompt).toContain('docs/workbench-standard.zh.md')
+    expect(localPrompt).toContain('workbenches.md')
     expect(localPrompt).toContain('docs/preset-packages.md')
     expect(submissionAgentPrompt('local')).toBe(localPrompt)
 
