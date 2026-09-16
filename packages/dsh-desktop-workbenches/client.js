@@ -6,11 +6,12 @@ window.__ModuleLoader__.load({
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const SUBMISSIONS_API = '/api/desktop-workbenches/submissions'
-    // The guide ships inside the application, so the bundled copy always matches the
-    // installed version. The repository copy is the browsable mirror.
+    // The product specification ships inside the application, so the bundled copy
+    // always matches the installed version. The market repository holds the
+    // submission guide and the acceptance checklist.
     const GUIDE_API = '/api/desktop-workbenches/development-guide'
-    const GUIDE_REPOSITORY = 'https://github.com/cinderzhan/dsh-desktop/blob/feat/workbench-market-local/docs'
-    const GUIDE_READING = `先阅读并遵循工作台开发指南：优先读取随本机安装版本分发的副本 $DSH_WEB_URL${GUIDE_API}；仓库版本见 ${GUIDE_REPOSITORY}/workbench-standard.zh.md 与同目录的 workbenches.md。`
+    const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
+    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；市场投稿要求见 ${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md 与 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -629,7 +630,7 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
             h('p', null, '任何 Agent 都能帮你开发。你只需决定功能和界面，剩下交给 Agent。')
           ),
           h('div', { className: 'dshWbSteps', 'aria-label': '工作台制作步骤' },
-            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '1'), h('strong', null, '了解开发规范'), h('p', null, '让 Agent 阅读', h('a', { href: `${GUIDE_REPOSITORY}/workbench-standard.zh.md`, target: '_blank', rel: 'noopener noreferrer' }, '《工作台开发与验收规范》'), '和实现说明；本机随安装版本分发同一份副本。')),
+            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '1'), h('strong', null, '了解开发规范'), h('p', null, '让 Agent 阅读随安装版本分发的规范副本，并按', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md`, target: '_blank', rel: 'noopener noreferrer' }, '投稿指南'), '与', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md`, target: '_blank', rel: 'noopener noreferrer' }, '验收清单'), '准备材料。')),
             h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '2'), h('strong', null, '用自己的 Agent 开发'), h('p', null, '用你习惯的 Agent 自由开发；DSH 不限制工具和流程，只定义工作台的接入规范。')),
             h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '3'), h('strong', null, '通过 Agent 交付'), h('p', null, '开发完成后，把下方的指令复制给 Agent，它会帮你完成校验、打包和交付。'))),
           h('h3', { className: 'dshWbSubmitSection' }, '选择交付方式'),
