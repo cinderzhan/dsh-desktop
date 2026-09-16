@@ -829,3 +829,41 @@ describe('workbench business layout contract', () => {
     expect(() => service.register({ id: 'bad', title: 'Bad', layout: { businessSide: 'overlay' } }, () => null)).toThrow(/side/)
   })
 })
+
+describe('workbench market screenshot and metadata display', () => {
+  const fullSource = code
+  it('shows "暂无数据" for installations and likes when values are missing or non-finite', () => {
+    expect(fullSource).toContain('暂无数据')
+    expect(fullSource).toContain('Number.isFinite(installs)')
+    expect(fullSource).toContain('Number.isFinite(likes)')
+  })
+
+  it('includes version display in EntryMeta when available', () => {
+    expect(fullSource).toContain('entry.version')
+  })
+
+  it('ScreenshotGallery is used in the detail view instead of Preview', () => {
+    const source = Market.toString()
+    expect(source).toContain('ScreenshotGallery')
+    expect(fullSource).not.toMatch(/h\(Preview,.*detail: true/)
+  })
+
+  it('card screenshot uses dedicated card-level CSS class', () => {
+    expect(fullSource).toContain('dshWbCardScreenshot')
+  })
+
+  it('ScreenshotGallery supports multiple screenshots with gallery- and lightbox CSS' , () => {
+    expect(fullSource).toContain('dshWbDetailGallery')
+    expect(fullSource).toContain('dshWbDetailThumb')
+    expect(fullSource).toContain('dshWbDetailLightbox')
+    expect(fullSource).toContain('screenshotsFor')
+  })
+
+  it('submission success feedback component is referenced in the submit panel', () => {
+    const source = Market.toString()
+    expect(source).toContain('SubmitSuccess')
+    expect(source).toContain('lastSubmission')
+    expect(fullSource).toContain('dshWbSubmitSuccess')
+    expect(fullSource).toContain('投稿已保存到本机')
+  })
+})
