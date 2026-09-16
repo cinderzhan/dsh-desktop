@@ -11,7 +11,7 @@ window.__ModuleLoader__.load({
     // submission guide and the acceptance checklist.
     const GUIDE_API = '/api/desktop-workbenches/development-guide'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
-    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；市场投稿要求见 ${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md 与 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md。`
+    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；验收标准见 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md 。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -371,18 +371,14 @@ window.__ModuleLoader__.load({
       .dshWbSubmitHero{margin-bottom:24px}.dshWbSubmitHero h2{font-size:22px;line-height:30px;margin:0 0 4px;font-weight:700}
       .dshWbSubmitHero p{font-size:14px;line-height:21px;margin:0;color:var(--dsw-alias-label-secondary)}
       .dshWbStepNum{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-1);font-size:13px;font-weight:700;margin-bottom:10px;flex-shrink:0}
-      .dshWbSteps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 24px}
-      .dshWbStep{min-width:0;padding:20px 18px 18px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-module-platform)}
+      .dshWbSteps{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 24px}
+      .dshWbStep{min-width:0;padding:18px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-module-platform)}
       .dshWbStep strong{display:block;margin-bottom:6px;font-size:15px;line-height:22px}.dshWbStep p{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}.dshWbStep a{color:var(--dsw-alias-label-primary)}
-      .dshWbSubmitSection{display:flex;align-items:center;gap:6px;font-size:14px;line-height:22px;margin:0 0 10px}
+      .dshWbStepActions{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+      .dshWbStepLink{background:none;border:0;padding:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+      .dshWbStep .dshWbPrompt{margin-top:12px;min-height:150px}
       .dshWbSubmitOutcome{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2);font-size:13px}
-      .dshWbSubmitChoices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 16px}
-      .dshWbSubmitChoice{display:flex;gap:12px;min-width:0;padding:16px;border:2px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-module-platform);text-align:left;white-space:normal;align-items:flex-start}
-      .dshWbSubmitChoice strong{display:block;font-size:14px;line-height:21px;margin-bottom:3px}.dshWbSubmitChoice span{display:block;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-      .dshWbSubmitChoice[aria-pressed=true]{border-color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
-      .dshWbSubmitPromptWrap{margin-top:16px}.dshWbSubmitPromptLabel{display:block;font-size:13px;line-height:20px;margin-bottom:6px;color:var(--dsw-alias-label-secondary)}
       .dshWbPrompt{display:block;width:100%;min-height:160px;resize:vertical;margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:11px!important;line-height:18px!important}
-      .dshWbSubmitActions{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
       .dshWbCopyStatus{min-height:20px;margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}
       .dshWbGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,245px),1fr));gap:14px}
       .dshWbCard{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--dsw-alias-bg-layer-1)}
@@ -428,7 +424,7 @@ window.__ModuleLoader__.load({
       .dshWbNotice{padding:10px 14px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
       .dshWb [hidden]{display:none!important}
       @media(max-width:900px){.dshWbMarket{padding:18px}.dshWbBusiness{min-width:180px}}
-      @media(max-width:640px){.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGrid{grid-template-columns:1fr}.dshWbTabs input{width:100%;margin-left:0}.dshWbSubmitChoices,.dshWbSteps{grid-template-columns:1fr}}
+      @media(max-width:640px){.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGrid{grid-template-columns:1fr}.dshWbTabs input{width:100%;margin-left:0}.dshWbSteps{grid-template-columns:1fr}}
     `
     function useWorkbench(service) { return React.useSyncExternalStore(service.subscribe, service.getSnapshot) }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
@@ -556,28 +552,28 @@ window.__ModuleLoader__.load({
         document.body
       )
     }
-    function localWorkbenchAgentPrompt() {
+    function developmentWorkbenchAgentPrompt() {
       return `请帮我制作 DSH Desktop 工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
 
 ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、client、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
-完成后，按当前项目已有的插件安装或加载机制，将工作台安装到我这台 DSH Desktop 供自己使用。参照 docs/preset-packages.md 的 Agent 交付方式：在本机 API 可用时由你调用，不让我重新填写项目元数据。确认工作台已注册、出现在“我的工作台”和左侧入口，并实际打开检查。不要向市场投稿或声称已经公开发布。
+完成后，按当前项目已有的插件安装或加载机制，把工作台装到我这台 DSH Desktop。不要让我重新填写项目元数据。确认它已注册、出现在「我的工作台」和左侧入口，并实际打开检查。这一步到此为止，不要投稿。
 
 若当前版本没有可用的本地安装接口，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确报告缺少的安装步骤；不要声称已加载。最后给我文件路径、验证结果和实际加载状态。`
     }
-    function reviewSubmissionAgentPrompt() {
-      return `请帮我制作并提交 DSH Desktop 工作台。开发过程由你自主完成，DSH 不控制使用哪种 Agent。
+    function submissionWorkbenchAgentPrompt() {
+      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在只做投稿这一步，不用再改功能。
 
-${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、client、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+先读市场投稿要求：${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md ；对照验收清单 ${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md 逐项准备证据；材料模板见 ${WORKBENCH_MARKET_REPO}/blob/main/examples/submission.md 。规范见 $DSH_WEB_URL${GUIDE_API}。
 
-开发完成后，用 scripts/check-workbench-package.mjs 校验解包后的工作台，再打成不超过 8 MB 的 .tgz 包。参照 docs/preset-packages.md 的 Agent 交付方式，不依赖 GitHub：由你核实 title、description、author，并把 .tgz 转换为 data:application/gzip;base64,...。可选一张不超过 2 MB 的 PNG、JPEG 或 WebP 产品截图，转换成对应 data URL；不要包含密钥或私密数据。准备 JSON：{ title, description, author, package, screenshot? }。如已有 GitHub 仓库，可额外提供 repository，但不是必需。
+用 scripts/check-workbench-package.mjs 校验解包后的工作台，再打成不超过 8 MB 的 .tgz 包。核实 title、description、author，以及源码仓库的完整 commit SHA（不要只填分支或 tag）。可选一张不超过 2 MB 的 PNG、JPEG 或 WebP 截图。不要包含密钥或私密数据。
 
-在 DSH Desktop 本机投稿服务可用时，POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions，并确认返回 id、packageSha256 和 pending。包和材料当前只在本机保存，尚未传送给平台审核；不要把 pending 说成已送达人工作台广场或正在人工/AI 审核。工作台通过实际安装后可先供我自己使用，只有未来平台审核通过并收录后才会出现在公共工作台广场。
+本机投稿服务可用时，POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions，提交 { title, description, author, package, screenshot?, repository? }，并确认返回 id、packageSha256 和 pending。
 
-如果本机 API 或本地安装能力不可用，请保留已验证的包与投稿 JSON，准确报告剩余步骤。最后报告文件路径、验证结果、本地使用状态、投稿记录状态及尚未完成的远程送审步骤。`
+注意：这只是存在我这台电脑上的待送审记录，还没有传送给平台，也没有人开始审核。不要把 pending 说成已经投稿成功。最后告诉我文件路径、校验结果、本机记录状态，以及还需要我手动完成的步骤（例如在 GitHub 提 PR）。`
     }
-    function submissionAgentPrompt(mode = 'review') {
-      return mode === 'local' ? localWorkbenchAgentPrompt() : reviewSubmissionAgentPrompt()
+    function submissionAgentPrompt(mode = 'development') {
+      return mode === 'submission' ? submissionWorkbenchAgentPrompt() : developmentWorkbenchAgentPrompt()
     }
     async function copySubmissionPrompt(text, targetWindow = window) {
       if (targetWindow.navigator?.clipboard?.writeText) return targetWindow.navigator.clipboard.writeText(text)
@@ -598,21 +594,22 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
       const [search, setSearch] = React.useState('')
       const [detail, setDetail] = React.useState(null)
       const [removing, setRemoving] = React.useState(null)
-      const [submitMode, setSubmitMode] = React.useState('local')
+      const [openPrompt, setOpenPrompt] = React.useState(null)
       const [copyStatus, setCopyStatus] = React.useState('')
       const [lastSubmission, setLastSubmission] = React.useState(null)
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
-      const prompt = submissionAgentPrompt(submitMode)
+      const developmentPrompt = developmentWorkbenchAgentPrompt()
+      const submissionPrompt = submissionWorkbenchAgentPrompt()
       const disabled = !ready || pending > 0 || service.blocked
       const pendingEntries = submissions.filter((entry) => entry.status !== 'approved').map((entry) => ({ ...entry, id: `submission:${entry.id}`, submissionId: entry.id, pending: true, unavailable: true }))
       const allEntries = tab === 'mine' ? state.added.map((id) => catalog.find((entry) => entry.id === id) || { id, title: id, unavailable: true, description: '提供此工作台的插件当前未加载。' }) : tab === 'market' ? [...pendingEntries, ...catalog] : []
       const entries = allEntries.filter((entry) => `${entry.title || ''} ${entry.description || ''} ${entry.author || ''}`.toLowerCase().includes(search.toLowerCase().trim()))
       const selected = allEntries.find((entry) => entry.id === detail)
-      const copyPrompt = async () => {
+      const copyPrompt = async (text) => {
         setCopyStatus('')
-        try { await copySubmissionPrompt(prompt); setCopyStatus('已复制，现在可以粘贴给你的 Agent。') }
-        catch { setCopyStatus('复制失败，请在下方全选并手动复制。') }
+        try { await copySubmissionPrompt(text); setCopyStatus('已复制，现在可以粘贴给你的 Agent。') }
+        catch { setCopyStatus('复制失败，请展开指令后手动全选复制。') }
       }
       return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('h1', null, '让界面适合你的工作'),
@@ -627,22 +624,32 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
         tab === 'submit' && h('section', { id: 'dsh-workbench-submit-panel', role: 'tabpanel', className: 'dshWbSubmit', 'aria-labelledby': 'dsh-workbench-submit-tab', tabIndex: 0 },
           h('div', { className: 'dshWbSubmitHero' },
             h('h2', null, '制作属于你自己的工作台'),
-            h('p', null, '任何 Agent 都能帮你开发。你只需决定功能和界面，剩下交给 Agent。')
+            h('p', null, '照着下面三步做。只给自己用的话，做完第二步就够了。')
           ),
           h('div', { className: 'dshWbSteps', 'aria-label': '工作台制作步骤' },
-            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '1'), h('strong', null, '了解开发规范'), h('p', null, '让 Agent 阅读随安装版本分发的规范副本，并按', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md`, target: '_blank', rel: 'noopener noreferrer' }, '投稿指南'), '与', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md`, target: '_blank', rel: 'noopener noreferrer' }, '验收清单'), '准备材料。')),
-            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '2'), h('strong', null, '用自己的 Agent 开发'), h('p', null, '用你习惯的 Agent 自由开发；DSH 不限制工具和流程，只定义工作台的接入规范。')),
-            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '3'), h('strong', null, '通过 Agent 交付'), h('p', null, '开发完成后，把下方的指令复制给 Agent，它会帮你完成校验、打包和交付。'))),
-          h('h3', { className: 'dshWbSubmitSection' }, '选择交付方式'),
-          h('div', { className: 'dshWbSubmitChoices', role: 'group', 'aria-label': '工作台交付方式' },
-            h('button', { type: 'button', className: 'dshWbSubmitChoice', 'aria-pressed': submitMode === 'local', onClick: () => { setSubmitMode('local'); setCopyStatus('') } }, h('div', null, h('strong', null, '安装到本机使用'), h('span', null, 'Agent 校验后直接装到你的 Desktop。在「我的工作台」和侧栏中即可打开。'))),
-            h('button', { type: 'button', className: 'dshWbSubmitChoice', 'aria-pressed': submitMode === 'review', onClick: () => { setSubmitMode('review'); setCopyStatus('') } }, h('div', null, h('strong', null, '提交到工作台广场'), h('span', null, 'Agent 将工作台包提交审核。当前仅保存在本机，未来审核通过后进入公共广场。')))),
-          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '无论选择哪种方式，都可以先在本机使用。提交审核只是记录意向，实际收录需等平台审核。'),
+            h('div', { className: 'dshWbStep' },
+              h('span', { className: 'dshWbStepNum' }, '1'),
+              h('strong', null, '先看规范，让 Agent 开发'),
+              h('p', null, '把指令复制给你的 Agent。它会先读随版本分发的规范副本和', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md`, target: '_blank', rel: 'noopener noreferrer' }, '验收标准'), '，再动手开发。'),
+              h('div', { className: 'dshWbStepActions' },
+                h(Button, { primary: true, onClick: () => copyPrompt(developmentPrompt) }, '复制开发指令'),
+                h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'development' ? null : 'development') }, openPrompt === 'development' ? '收起指令' : '查看指令')),
+              openPrompt === 'development' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: developmentPrompt, 'aria-label': '开发工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() })),
+            h('div', { className: 'dshWbStep' },
+              h('span', { className: 'dshWbStepNum' }, '2'),
+              h('strong', null, '装到本机，打开确认能用'),
+              h('p', null, 'Agent 会把它装到这台 Desktop。你打开确认它出现在「我的工作台」和左侧入口——到这一步，自己用就没问题了。')),
+            h('div', { className: 'dshWbStep' },
+              h('span', { className: 'dshWbStepNum' }, '3'),
+              h('strong', null, '想投稿，再按市场要求提交'),
+              h('p', null, '对照', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md`, target: '_blank', rel: 'noopener noreferrer' }, '投稿指南'), '和', h('a', { href: `${WORKBENCH_MARKET_REPO}/blob/main/docs/review-checklist.md`, target: '_blank', rel: 'noopener noreferrer' }, '验收清单'), '准备材料，把指令复制给 Agent。'),
+              h('div', { className: 'dshWbStepActions' },
+                h(Button, { primary: true, onClick: () => copyPrompt(submissionPrompt) }, '复制投稿指令'),
+                h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),
+              openPrompt === 'submission' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: submissionPrompt, 'aria-label': '投稿工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() }))),
           h(SubmitSuccess, { submission: lastSubmission, onDismiss: () => setLastSubmission(null) }),
-          h('div', { className: 'dshWbSubmitPromptWrap' },
-            h('label', { className: 'dshWbSubmitPromptLabel' }, `复制以下指令给你的 Agent · ${submitMode === 'local' ? '本地安装' : '提交审核'}`),
-            h('textarea', { className: 'dshWbPrompt', readOnly: true, value: prompt, rows: 12, 'aria-label': `${submitMode === 'local' ? '本地加载' : '提交审核'}工作台给 Agent 的 Prompt`, onFocus: (event) => event.currentTarget.select() })),
-          h('div', { className: 'dshWbSubmitActions' }, h(Button, { primary: true, onClick: copyPrompt }, `复制“${submitMode === 'local' ? '本地安装' : '提交审核'}”指令`), h('span', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus))),
+          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '投稿只是把材料存到这台电脑上。只有未来平台审核通过并收录，工作台才会出现在公共工作台广场。'),
+          h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => h('article', { key: entry.id, className: 'dshWbCard' },
             h(Preview, { entry }),
@@ -750,6 +757,6 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
         return () => { window.removeEventListener('beforeunload', beforeUnload); service.dispose() }
       }, 'workbenches: lifecycle')
     }
-    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace'], Workbenches, Frame, Market, Notebook, submissionAgentPrompt, localWorkbenchAgentPrompt, reviewSubmissionAgentPrompt, copySubmissionPrompt }
+    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace'], Workbenches, Frame, Market, Notebook, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt }
   }
 })

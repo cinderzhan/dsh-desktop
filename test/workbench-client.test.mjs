@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyState, validateState } from '../packages/dsh-desktop-workbenches/state.mjs'
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
-let Workbenches, Market, submissionAgentPrompt, localWorkbenchAgentPrompt, reviewSubmissionAgentPrompt, copySubmissionPrompt
+let Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
   window: { __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
@@ -14,8 +14,8 @@ vm.runInNewContext(code, {
     Workbenches = client.Workbenches
     Market = client.Market
     submissionAgentPrompt = client.submissionAgentPrompt
-    localWorkbenchAgentPrompt = client.localWorkbenchAgentPrompt
-    reviewSubmissionAgentPrompt = client.reviewSubmissionAgentPrompt
+    developmentWorkbenchAgentPrompt = client.developmentWorkbenchAgentPrompt
+    submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
     copySubmissionPrompt = client.copySubmissionPrompt
   } } },
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
@@ -104,40 +104,49 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain("'aria-controls': 'dsh-workbench-submit-panel'")
     expect(source).toContain("id: 'dsh-workbench-submit-panel', role: 'tabpanel'")
     expect(source).toContain('制作我的工作台')
-    expect(source).toContain('了解开发规范')
-    expect(source).toContain('用自己的 Agent 开发')
-    expect(source).toContain('通过 Agent 交付')
+    expect(source).toContain('先看规范，让 Agent 开发')
+    expect(source).toContain('装到本机，打开确认能用')
+    expect(source).toContain('想投稿，再按市场要求提交')
+    expect(source).toContain('复制开发指令')
+    expect(source).toContain('复制投稿指令')
+    // Self-use must not read as a parallel alternative to submitting.
+    expect(source).not.toContain('选择交付方式')
+    expect(source).not.toContain('提交到工作台广场')
+    expect(source).not.toContain('submitMode')
     expect(source).toContain("tab !== 'submit' && h('input'")
     expect(source).toContain("tab !== 'submit' && h('section'")
     expect(source).not.toContain('showSubmit')
     expect(source).not.toContain("'aria-expanded'")
   })
 
-  it('provides separate Agent prompts for local loading and review submission', () => {
-    const localPrompt = localWorkbenchAgentPrompt()
-    expect(localPrompt).toContain('workbench.json')
-    expect(localPrompt).toContain('scripts/check-workbench-package.mjs')
-    expect(localPrompt).toContain('我的工作台')
-    expect(localPrompt).toContain('左侧入口')
-    expect(localPrompt).toContain('不要向市场投稿')
-    expect(localPrompt).toContain('不要声称已加载')
-    expect(localPrompt).toContain('$DSH_WEB_URL/api/desktop-workbenches/development-guide')
-    expect(localPrompt).toContain('dataelement/awesome-dsh-workbench')
-    expect(localPrompt).toContain('CONTRIBUTING.md')
-    expect(localPrompt).toContain('docs/review-checklist.md')
-    expect(localPrompt).toContain('docs/preset-packages.md')
-    expect(submissionAgentPrompt('local')).toBe(localPrompt)
+  it('provides one prompt for local development and one for submission', () => {
+    const development = developmentWorkbenchAgentPrompt()
+    expect(development).toContain('workbench.json')
+    expect(development).toContain('scripts/check-workbench-package.mjs')
+    expect(development).toContain('我的工作台')
+    expect(development).toContain('左侧入口')
+    expect(development).toContain('不要投稿')
+    expect(development).toContain('不要声称已加载')
+    expect(development).toContain('$DSH_WEB_URL/api/desktop-workbenches/development-guide')
+    expect(development).toContain('dataelement/awesome-dsh-workbench')
+    expect(development).toContain('docs/review-checklist.md')
+    // The preset-package document describes Agent presets, not workbench packages.
+    expect(development).not.toContain('preset-packages')
+    expect(submissionAgentPrompt('development')).toBe(development)
+    expect(submissionAgentPrompt()).toBe(development)
 
-    const prompt = reviewSubmissionAgentPrompt()
-    expect(prompt).toContain('workbench.json')
-    expect(prompt).toContain('scripts/check-workbench-package.mjs')
-    expect(prompt).toContain('不依赖 GitHub')
-    expect(prompt).toContain('PNG、JPEG 或 WebP')
-    expect(prompt).toContain('{ title, description, author, package, screenshot? }')
-    expect(prompt).toContain('POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions')
-    expect(prompt).toContain('尚未传送给平台审核')
-    expect(prompt).toContain('公共工作台广场')
-    expect(submissionAgentPrompt()).toBe(prompt)
+    const submission = submissionWorkbenchAgentPrompt()
+    expect(submission).toContain('scripts/check-workbench-package.mjs')
+    expect(submission).toContain('CONTRIBUTING.md')
+    expect(submission).toContain('docs/review-checklist.md')
+    expect(submission).toContain('完整 commit SHA')
+    expect(submission).toContain('PNG、JPEG 或 WebP')
+    expect(submission).toContain('{ title, description, author, package, screenshot?, repository? }')
+    expect(submission).toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
+    expect(submission).toContain('还没有传送给平台')
+    expect(submission).toContain('不要把 pending 说成已经投稿成功')
+    expect(submission).not.toContain('preset-packages')
+    expect(submissionAgentPrompt('submission')).toBe(submission)
   })
 
   it('copies the Agent prompt through the clipboard API', async () => {
@@ -888,7 +897,7 @@ describe('workbench market screenshot and metadata display', () => {
   it('portals the detail modal to document.body so panel containment cannot clip it', () => {
     // The market panel sets container-type, which makes it the containing block
     // for fixed-position descendants and clips them with its own overflow.
-    const modal = fullSource.slice(fullSource.indexOf('function DetailModal'), fullSource.indexOf('function localWorkbenchAgentPrompt'))
+    const modal = fullSource.slice(fullSource.indexOf('function DetailModal'), fullSource.indexOf('function developmentWorkbenchAgentPrompt'))
     expect(modal).toContain("require('react-dom').createPortal")
     expect(modal).toContain('document.body')
     expect(modal.indexOf('React.useEffect')).toBeLessThan(modal.indexOf('if (!entry) return null'))
