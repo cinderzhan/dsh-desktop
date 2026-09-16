@@ -8,13 +8,15 @@
 
 ## 第二期市场投稿 MVP
 
-“制作我的工作台”是与“工作台市场”“我的工作台”并列的第三个一级 Tab。用户按三步进行：先让任意 Agent 阅读公开指南 `https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md`，再用自己的 Agent 开发，完成后复制交付指令给 Agent；DSH 不控制开发过程。Agent 交付可先使用项目可用的机制在当前设备加载，确认出现在“我的工作台”和左侧入口，并实际打开。若用户希望进入公共广场，Agent 还须从项目核实名称、描述和作者，校验并提交工作台 `.tgz` 包；GitHub 仓库地址可选。当前本机接口只保存待送审记录，尚未向平台发送。
+“制作我的工作台”是与“工作台市场”“我的工作台”并列的第三个一级 Tab。用户按三步进行：先阅读随本机分发的规范，把开发指令交给自己的 Agent；开发完成后由 Agent 装到当前设备，用户确认工作台出现在“我的工作台”和左侧入口并实际打开；只有想投稿时，才按工作台市场仓库的要求准备材料并提交。DSH 不控制开发过程。本机安装并实际验证是投稿的前提，不是与投稿并列的另一种选择。投稿由 Agent 从项目核实名称、描述、作者及源码仓库的完整 commit SHA，校验并提交工作台 `.tgz` 包；GitHub 仓库地址可选。当前本机接口只保存待送审记录，尚未向平台发送。
 
-Agent 可从项目中选择一张合适的产品截图随投稿提交。截图仅支持 PNG、JPEG 或 WebP，文件不得超过 2 MB。两种交付指令都要求测试、构建及可用的包校验；本地加载无法完成时，不得声称已加载。无法访问本机投稿接口时，应保留验证后的投稿数据并如实说明剩余步骤。本机记录状态为 `pending`，只表示材料保存在当前设备。未来平台人工或 AI 审核通过并收录后，工作台才会出现在公共广场。
+Agent 可从项目中选择一张合适的产品截图随投稿提交。截图仅支持 PNG、JPEG 或 WebP，文件不得超过 2 MB。两个交付指令都要求测试、构建及可用的包校验；本地加载无法完成时，不得声称已加载。无法访问本机投稿接口时，应保留验证后的投稿数据并如实说明剩余步骤。本机记录状态为 `pending`，只表示材料保存在当前设备。未来平台人工或 AI 审核通过并收录后，工作台才会出现在公共广场。
 
 市场预览和详情页应显示已有的产品截图及作者名称，并为安装人数和点赞人数保留展示位置。没有可信市场服务数据时，必须明确显示为未知或暂无数据，不得虚构为 0、估算值或热度结论。
 
 已有 `schemaVersion: 1` 工作台包继续有效，无需升级 schema。包描述文件可选声明 `author`，其值可以是作者名称字符串，也可以是含 `name` 的对象；还可选声明 1–5 张 `screenshots`。每张截图使用包内安全相对路径，可附带 `alt` 文本，文件必须真实存在、是普通文件、不得越出包目录，并满足 PNG/JPEG/WebP 和 2 MB 限制。
+
+每次提交的新版本都需要验收；个人创建的工作台可以先在本地使用。第二期当前只实现本机投稿接收；远程投稿传输、官方审核后台及公开市场收录尚未实现，不能将本地可用或本机提交等同于已通过官方收录。
 
 ## 1. 定义与界面边界
 
@@ -57,26 +59,6 @@ Agent 可从项目中选择一张合适的产品截图随投稿提交。截图�
 
 通过原生侧边栏新建或切换到普通会话时，当前工作台的业务面板继续保留，标准分栏中的会话区直接展示该原生会话。历史 owner 已移除、卸载或暂时不可用的会话也遵循这一规则：不唤起或重装该 owner，同时不关闭当前业务面板。保留业务面板只表示界面上下文没有被关闭，不表示这条会话获得了当前工作台能力：宿主不得新增会话归属、更新工作台最近会话，工作台发起 Agent 请求等依赖归属的操作仍需显式创建或恢复该工作台会话。仅在当前确实没有任何会话时，标准分栏才显示创建或绑定引导。
 
-## 5. 提交检查
-
-提交者声明工作台标识、版本、兼容要求和依赖能力，并提供可复现的安装及使用说明。验收重点包括：
-
-- 全新用户没有工作区和会话时，业务面板仍可显示并完成业务资料创建、选择。
-- 创建玄学档案或选址项目后，自动创建对应工作区和会话、保存关联并填入开场草稿。
-- 原生会话区也能直接创建工作区和对话；取消、失败重试、重复点击都有合理结果。
-- 业务资料与原生工作区独立；首次会话保留当前业务选择，已有会话恢复原有映射。
-- Agent 操作仅作用于当前工作台所属会话，隐藏工作台不得向其他会话写入请求。
-- 工作台固定、排序、切换和精确会话恢复符合约定，切换不停止后台任务。
-- 通过原生侧边栏新建会话始终创建普通未绑定会话，位于用户指定工作区；不得复用已有的工作台空白会话或唤醒其 owner，异步完成不得覆盖用户后续导航。
-- 切换已有工作区或已有普通会话时保留当前业务面板，且不会因此获得工作台归属、工作台能力或成为该工作台的最近会话；确实没有当前会话时才显示创建或绑定引导。
-- 关闭工作台后通过原生入口新建的会话保持普通未绑定；点击已有绑定会话仍精确唤起其可用 owner。
-- 已卸载工作台不会因打开旧会话被自动恢复，旧会话也不会关闭当前业务面板；移除不误删会话和业务资料。
-- 不注入强制统一的业务工具栏，不覆盖公共入口；`customFrame` 的根布局、绝对定位、最大化和拖拽始终受宿主分配区域约束；复用已有业务界面和业务流程。
-- 市场投稿接收经过校验的工作台 `.tgz` 包、必填作者与说明以及合规的可选截图；GitHub HTTPS 仓库可选。接收后明确显示待审核，不暗示已经公开发布。
-- 市场预览和详情展示已有截图、作者及真实可得的安装/点赞数据；数据未知时明确标注未知。
-
-每次提交的新版本都需要验收；个人创建的工作台可以先在本地使用。第二期当前只实现本机投稿接收；远程投稿传输、官方审核后台及公开市场收录尚未实现，不能将本地可用或本机提交等同于已通过官方收录。
-
 
 ---
 
@@ -88,9 +70,11 @@ Phase 1 adds a local workbench catalog and persistent sidebar entries. Phase 2 b
 
 ## Phase 2 market-submission MVP
 
-Users open **Make my workbench**, a third top-level market tab alongside **Workbench market** and **My workbenches**. The UI guides three steps: (1) have any Agent read `docs/workbench-standard.zh.md` and this implementation document, (2) develop freely with the user's own Agent, and (3) give that Agent a copyable delivery instruction after development. This follows the preset-transfer model of Agent-driven handoff without controlling the user's development Agent or asking the user to re-enter project metadata. The local outcome asks the Agent to validate, install through an available project/plugin mechanism, and verify personal use. The review outcome asks the Agent to prepare a validated `.tgz` workbench package and an optional screenshot, then record it through the local submission API. GitHub is optional.
+Users open **Make my workbench**, a third top-level market tab alongside **Workbench market** and **My workbenches**. The UI guides three sequential steps: (1) read the specification and have the user's own Agent develop the workbench, (2) have that Agent install it locally and confirm the user can actually open it, and (3) submit it only if the user wants to, following the market repository's requirements. Local use is a prerequisite for submission rather than an alternative to it: review requires a workbench that was installed and verified on a real DSH Desktop version. Only steps 1 and 3 hand a copyable instruction to the Agent; step 2 ends the personal-use path. This follows the preset-transfer model of Agent-driven handoff without controlling the user's development Agent or asking the user to re-enter project metadata.
 
-Both prompts require the Agent to run relevant tests and build plus `scripts/check-workbench-package.mjs` when available. The review path asks the user only for metadata that cannot be verified from the project. When the local endpoint is reachable, it posts `{ title, description, author, package, screenshot?, repository? }` to `$DSH_WEB_URL/api/desktop-workbenches/submissions` and verifies an ID, SHA-256, and `pending` status. `package` is a `data:application/gzip;base64,...` URL containing a gzip tarball no larger than 8 MB. The server checks the gzip/tar envelope and stores the binary separately from the market JSON; this local intake does not install or execute submitted code. This record is **local only**; the platform's remote human/AI review service is not connected. If either the local install mechanism or submission endpoint is unavailable, the Agent preserves the validated artifact/payload and reports the remaining action without claiming success. An optional GitHub URL identifies proposed source; Desktop does not upload or modify that repository.
+Two prompts cover the flow. The development prompt asks the Agent to validate, install through an available project/plugin mechanism, and verify personal use. The submission prompt asks for a validated `.tgz` workbench package and an optional screenshot recorded through the local submission API. GitHub is optional. Both require relevant tests and build plus `scripts/check-workbench-package.mjs` when available. The submission path asks the user only for metadata that cannot be verified from the project.
+
+When the local endpoint is reachable, the submission prompt posts `{ title, description, author, package, screenshot?, repository? }` to `$DSH_WEB_URL/api/desktop-workbenches/submissions` and verifies an ID, SHA-256, and `pending` status. `package` is a `data:application/gzip;base64,...` URL containing a gzip tarball no larger than 8 MB. The server checks the gzip/tar envelope and stores the binary separately from the market JSON; this local intake does not install or execute submitted code. This record is **local only**; the platform's remote human/AI review service is not connected. If either the local install mechanism or submission endpoint is unavailable, the Agent preserves the validated artifact/payload and reports the remaining action without claiming success. An optional GitHub URL identifies proposed source; Desktop does not upload or modify that repository. The submission prompt also asks for the source repository's full commit SHA, because the market's review checklist rejects a bare branch or tag.
 
 One product screenshot is optional during submission. It must be a PNG, JPEG, or WebP image no larger than 2 MB. Accepted submissions are stored locally with `pending` status, displayed as **local, awaiting remote submission**. A validated, actually installed workbench may be used personally before review; it appears in the public gallery only after platform review and catalog admission are implemented and approval is granted.
 
