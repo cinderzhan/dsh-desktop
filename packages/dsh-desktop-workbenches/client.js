@@ -361,15 +361,24 @@ window.__ModuleLoader__.load({
       .dshWbTabs [aria-selected=true]{background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2);font-weight:600}
       .dshWbTabs [role=tab][aria-selected=false]:hover:not(:disabled),.dshWbTabs [role=tab][aria-selected=false]:active:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
       .dshWbTabs input{margin-left:auto;width:200px;min-width:140px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 10px;background:var(--dsw-alias-bg-layer-1)}
-      .dshWbSubmit{margin:0;padding:18px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-1)}
-      .dshWbSubmit h2{font-size:15px;line-height:22px;margin:0 0 3px}.dshWbSubmit>p{margin:0 0 12px}
-      .dshWbSteps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 20px}.dshWbStep{min-width:0;padding:13px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-module-platform)}.dshWbStep strong{display:block;margin-bottom:4px;font-size:13px}.dshWbStep p{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.dshWbStep code{overflow-wrap:anywhere}
-      .dshWbSubmit h3{font-size:13px;line-height:20px;margin:18px 0 6px}.dshWbSubmitOutcome{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2)}
-      .dshWbSubmitChoices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
-      .dshWbSubmitChoice{min-width:0;padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-module-platform);text-align:left;white-space:normal}
-      .dshWbSubmitChoice strong{display:block;font-size:13px;line-height:20px;margin-bottom:2px}.dshWbSubmitChoice span{display:block;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+      .dshWbSubmit{margin:0;padding:24px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-1)}
+      .dshWbSubmitHero{margin-bottom:24px}.dshWbSubmitHero h2{font-size:22px;line-height:30px;margin:0 0 4px;font-weight:700}
+      .dshWbSubmitHero p{font-size:14px;line-height:21px;margin:0;color:var(--dsw-alias-label-secondary)}
+      .dshWbStepNum{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-1);font-size:13px;font-weight:700;margin-bottom:10px;flex-shrink:0}
+      .dshWbSteps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 24px}
+      .dshWbStep{min-width:0;padding:20px 18px 18px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-module-platform)}
+      .dshWbStep strong{display:block;margin-bottom:6px;font-size:15px;line-height:22px}.dshWbStep p{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}.dshWbStep a{color:var(--dsw-alias-label-primary)}
+      .dshWbSubmitSection{display:flex;align-items:center;gap:6px;font-size:14px;line-height:22px;margin:0 0 10px}
+      .dshWbSubmitSectionIcon{font-size:16px}
+      .dshWbSubmitOutcome{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2);font-size:13px}
+      .dshWbSubmitChoices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 16px}
+      .dshWbSubmitChoice{display:flex;gap:12px;min-width:0;padding:16px;border:2px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-module-platform);text-align:left;white-space:normal;align-items:flex-start}
+      .dshWbSubmitChoice strong{display:block;font-size:14px;line-height:21px;margin-bottom:3px}.dshWbSubmitChoice span{display:block;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
       .dshWbSubmitChoice[aria-pressed=true]{border-color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
-      .dshWbPrompt{display:block;width:100%;min-height:190px;resize:vertical;margin:0 0 12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:11px!important;line-height:18px!important}
+      .dshWbSubmitChoiceIcon{font-size:22px;line-height:1;display:block;flex-shrink:0}
+      .dshWbSubmitPromptWrap{margin-top:16px}.dshWbSubmitPromptLabel{display:block;font-size:13px;line-height:20px;margin-bottom:6px;color:var(--dsw-alias-label-secondary)}
+      .dshWbPrompt{display:block;width:100%;min-height:160px;resize:vertical;margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:11px!important;line-height:18px!important}
+      .dshWbSubmitActions{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
       .dshWbCopyStatus{min-height:20px;margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}
       .dshWbGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,245px),1fr));gap:14px}
       .dshWbCard{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--dsw-alias-bg-layer-1)}
@@ -512,24 +521,24 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         const handler = (event) => { if (event.key === 'Escape') onClose() }
         document.addEventListener('keydown', handler)
-        return () => document.removeEventListener('keydown', handler)
+        // Prevent body scroll while modal is open
+        const prev = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+        return () => { document.removeEventListener('keydown', handler); document.body.style.overflow = prev }
       }, [onClose])
-      return require('react-dom').createPortal(
-        h('div', { className: 'dshWbModalBackdrop', role: 'dialog', 'aria-label': `${entry.title || '工作台'} 详情`, onClick: onClose },
-          h('div', { className: 'dshWbModal', onClick: (event) => event.stopPropagation() },
-            h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
-              h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1 } }, entry.icon ? h('span', { 'aria-hidden': true }, entry.icon + ' ') : null, entry.title),
-              entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'),
-              h(Button, { onClick: onClose }, '关闭')
-            ),
-            h(ScreenshotGallery, { entry }),
-            entry.description && h('p', null, entry.description),
-            h(EntryMeta, { entry }),
-            !entry.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
-            entry.repository && h('p', { className: 'dshWbMuted' }, `GitHub：${entry.repository}`)
-          )
-        ),
-        document.body
+      return h('div', { className: 'dshWbModalBackdrop', role: 'dialog', 'aria-label': `${entry.title || '工作台'} 详情`, onClick: onClose },
+        h('div', { className: 'dshWbModal', onClick: (event) => event.stopPropagation() },
+          h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
+            h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1 } }, entry.icon ? h('span', { 'aria-hidden': true }, entry.icon + ' ') : null, entry.title),
+            entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'),
+            h(Button, { onClick: onClose }, '关闭')
+          ),
+          h(ScreenshotGallery, { entry }),
+          entry.description && h('p', null, entry.description),
+          h(EntryMeta, { entry }),
+          !entry.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
+          entry.repository && h('p', { className: 'dshWbMuted' }, `GitHub：${entry.repository}`)
+        )
       )
     }
     function localWorkbenchAgentPrompt() {
@@ -601,21 +610,24 @@ window.__ModuleLoader__.load({
           h(Button, { id: 'dsh-workbench-submit-tab', role: 'tab', 'aria-selected': tab === 'submit', 'aria-controls': 'dsh-workbench-submit-panel', onClick: () => { setTab('submit'); setDetail(null); setCopyStatus('') } }, '制作我的工作台')),
           tab !== 'submit' && h('input', { type: 'search', placeholder: '搜索工作台', 'aria-label': '搜索工作台', value: search, onChange: (event) => setSearch(event.target.value) })),
         tab === 'submit' && h('section', { id: 'dsh-workbench-submit-panel', role: 'tabpanel', className: 'dshWbSubmit', 'aria-labelledby': 'dsh-workbench-submit-tab', tabIndex: 0 },
-          h('h2', null, '制作我的工作台'),
-          h('p', { className: 'dshWbMuted' }, '了解规范，交给你自己的 Agent 开发；完成后再由 Agent 交付。'),
+          h('div', { className: 'dshWbSubmitHero' },
+            h('h2', null, '制作属于你自己的工作台'),
+            h('p', null, '任何 Agent 都能帮你开发。你只需决定功能和界面，剩下交给 Agent。')
+          ),
           h('div', { className: 'dshWbSteps', 'aria-label': '工作台制作步骤' },
-            h('div', { className: 'dshWbStep' }, h('strong', null, '1 · 了解规范'), h('p', null, '让 Agent 阅读公开的 ', h('a', { href: 'https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md', target: '_blank', rel: 'noopener noreferrer' }, '工作台开发指南'), '，再开始开发。')),
-            h('div', { className: 'dshWbStep' }, h('strong', null, '2 · 用自己的 Agent 开发'), h('p', null, '任何 Agent 都可以；你决定工作台功能和开发方式。')),
-            h('div', { className: 'dshWbStep' }, h('strong', null, '3 · 通过 Agent 交付'), h('p', null, '开发完成后，复制下方指令给 Agent；它负责校验和提交。'))),
-          h('h3', null, '开发完成后的去向'),
-          h('div', { className: 'dshWbSubmitChoices', role: 'group', 'aria-label': '工作台提交方式' },
-            h('button', { type: 'button', className: 'dshWbSubmitChoice', 'aria-pressed': submitMode === 'local', onClick: () => { setSubmitMode('local'); setCopyStatus('') } }, h('strong', null, '先本地加载'), h('span', null, '校验并安装到自己的 DSH Desktop，供自己使用。')),
-            h('button', { type: 'button', className: 'dshWbSubmitChoice', 'aria-pressed': submitMode === 'review', onClick: () => { setSubmitMode('review'); setCopyStatus('') } }, h('strong', null, '准备提交审核'), h('span', null, '由 Agent 直接提交工作台包，无需 GitHub；当前仅存本机。'))),
-          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '本地可先使用；未来通过平台人工或 AI 审核后，才能进入公共工作台广场。'),
+            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '1'), h('strong', null, '了解开发规范'), h('p', null, '让 Agent 阅读公开的 ', h('a', { href: 'https://dshdesktop.com/workbench/skills/workbench-development/SKILL.md', target: '_blank', rel: 'noopener noreferrer' }, '工作台开发指南'), ' 和本机开发文档，确保功能合规。')),
+            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '2'), h('strong', null, '用自己的 Agent 开发'), h('p', null, '用你习惯的 Agent 自由开发；DSH 不限制工具和流程，只定义工作台的接入规范。')),
+            h('div', { className: 'dshWbStep' }, h('span', { className: 'dshWbStepNum' }, '3'), h('strong', null, '通过 Agent 交付'), h('p', null, '开发完成后，把下方的指令复制给 Agent，它会帮你完成校验、打包和交付。'))),
+          h('h3', { className: 'dshWbSubmitSection' }, h('span', { className: 'dshWbSubmitSectionIcon', 'aria-hidden': true }, '📦'), '选择交付方式'),
+          h('div', { className: 'dshWbSubmitChoices', role: 'group', 'aria-label': '工作台交付方式' },
+            h('button', { type: 'button', className: 'dshWbSubmitChoice', 'aria-pressed': submitMode === 'local', onClick: () => { setSubmitMode('local'); setCopyStatus('') } }, h('span', { className: 'dshWbSubmitChoiceIcon', 'aria-hidden': true }, '🖥'), h('div', null, h('strong', null, '安装到本机使用'), h('span', null, 'Agent 校验后直接装到你的 Desktop。在「我的工作台」和侧栏中即可打开。'))),
+            h('button', { type: 'button', className: 'dshWbSubmitChoice', 'aria-pressed': submitMode === 'review', onClick: () => { setSubmitMode('review'); setCopyStatus('') } }, h('span', { className: 'dshWbSubmitChoiceIcon', 'aria-hidden': true }, '📋'), h('div', null, h('strong', null, '提交到工作台广场'), h('span', null, 'Agent 将工作台包提交审核。当前仅保存在本机，未来审核通过后进入公共广场。')))),
+          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '无论选择哪种方式，都可以先在本机使用。提交审核只是记录意向，实际收录需等平台审核。'),
           h(SubmitSuccess, { submission: lastSubmission, onDismiss: () => setLastSubmission(null) }),
-          h('textarea', { className: 'dshWbPrompt', readOnly: true, value: prompt, 'aria-label': `${submitMode === 'local' ? '本地加载' : '提交审核'}工作台给 Agent 的 Prompt`, onFocus: (event) => event.currentTarget.select() }),
-          h('div', { className: 'dshWbActions' }, h(Button, { primary: true, onClick: copyPrompt }, `复制“${submitMode === 'local' ? '本地加载' : '投稿准备'}”指令给 Agent`)),
-          h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
+          h('div', { className: 'dshWbSubmitPromptWrap' },
+            h('label', { className: 'dshWbSubmitPromptLabel' }, `🤖 复制以下指令给你的 Agent · ${submitMode === 'local' ? '本地安装' : '提交审核'}`),
+            h('textarea', { className: 'dshWbPrompt', readOnly: true, value: prompt, rows: 12, 'aria-label': `${submitMode === 'local' ? '本地加载' : '提交审核'}工作台给 Agent 的 Prompt`, onFocus: (event) => event.currentTarget.select() })),
+          h('div', { className: 'dshWbSubmitActions' }, h(Button, { primary: true, onClick: copyPrompt }, `复制“${submitMode === 'local' ? '本地安装' : '提交审核'}”指令`), h('span', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus))),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => h('article', { key: entry.id, className: 'dshWbCard' },
             h(Preview, { entry }),
