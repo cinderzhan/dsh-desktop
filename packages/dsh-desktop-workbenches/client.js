@@ -7,6 +7,13 @@ window.__ModuleLoader__.load({
     const API = '/api/desktop-workbenches/state'
     const WRITE_API = '/api/desktop-workbenches/state/write'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
+    const SUBMISSIONS_API = '/api/desktop-workbenches/submissions'
+    // One author guide ships with this Desktop version and covers development,
+    // local acceptance, first listing and later releases.
+    const GUIDE_API = '/api/desktop-workbenches/author-guide'
+    const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
+    const GUIDE_READING = `先阅读并遵循随本机安装版本分发的完整工作台作者指南：$DSH_WEB_URL${GUIDE_API}。它包含开发、本机验收和 GitHub 发布流程；以当前安装版本为准。`
+    const DEVELOPMENT_GUIDE_READING = `${GUIDE_READING}当前任务只做本地开发和安装，不需要处理市场投稿或发布。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -38,6 +45,9 @@ window.__ModuleLoader__.load({
         this.remoteCatalog = []
         this.catalogError = ''
         this.catalogStale = false
+        this.submissions = []
+        this.submissionPending = false
+        this.submissionError = ''
         this.draftNotes = new Map()
         this.noteTimers = new Map()
         this.queue = Promise.resolve()
@@ -77,7 +87,8 @@ window.__ModuleLoader__.load({
       }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
-          catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen, catalog: this.marketCatalog() }
+          catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen,
+          catalog: this.marketCatalog(), submissions: this.submissions, submissionPending: this.submissionPending, submissionError: this.submissionError }
         for (const listener of this.listeners) listener()
       }
       report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
@@ -98,6 +109,12 @@ window.__ModuleLoader__.load({
           stale: data.stale === true
         }
       }
+      async readSubmissions() {
+        const response = await this.request(SUBMISSIONS_API, { credentials: 'same-origin', cache: 'no-store' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+        return Array.isArray(data) ? data : Array.isArray(data.submissions) ? data.submissions : []
+      }
       async load() {
         await this.queue
         const ticket = ++this.navigation
@@ -105,7 +122,11 @@ window.__ModuleLoader__.load({
         this.error = ''
         this.publish()
         try {
-          const [data, catalog] = await Promise.all([this.read(), this.readCatalog().catch(error => ({ error }))])
+          const [data, catalog, submissionsResult] = await Promise.all([
+            this.read(),
+            this.readCatalog().catch(error => ({ error })),
+            this.readSubmissions().then(value => ({ value, error: '' })).catch(error => ({ value: [], error: error instanceof Error ? error.message : String(error) }))
+          ])
           await this.ctx.sessions.refresh()
           if (this.disposed || ticket !== this.navigation) return
           this.state = data.state
@@ -116,6 +137,8 @@ window.__ModuleLoader__.load({
             this.catalogError = ''
             this.catalogStale = catalog.stale
           }
+          this.submissions = submissionsResult.value
+          this.submissionError = submissionsResult.error
           this.blocked = false
           this.ready = true
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
@@ -125,6 +148,29 @@ window.__ModuleLoader__.load({
           else this.selectionChanged()
           for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
         } catch (error) { this.report(error) }
+      }
+      async submit(payload) {
+        if (!this.ready || this.blocked || this.disposed) throw new Error('投稿服务尚未就绪，请稍后再试。')
+        if (this.submissionPending) throw new Error('工作台正在保存，请勿重复提交。')
+        this.submissionPending = true
+        this.error = ''
+        this.publish()
+        try {
+          const response = await this.request(SUBMISSIONS_API, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+          })
+          const data = await response.json()
+          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+          const submission = data.submission || data
+          if (!submission || typeof submission !== 'object' || !submission.id) throw new Error('投稿已保存，但服务器未返回有效记录。')
+          this.submissions = [submission, ...this.submissions.filter((item) => item.id !== submission.id)]
+          this.submissionError = ''
+          this.publish()
+          return submission
+        } finally {
+          this.submissionPending = false
+          this.publish()
+        }
       }
       commit(change) {
         if (!this.ready || this.blocked || this.disposed) return Promise.reject(new Error('工作台更改尚未保存，请先重新加载。'))
@@ -435,6 +481,7 @@ window.__ModuleLoader__.load({
       .dshWbMarket::selection,.dshWbMarket *::selection{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)}
       .dshWbMarketHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
       .dshWbMarketHeaderText{max-width:70ch}.dshWbMarket h1{font-size:28px;line-height:36px;letter-spacing:-.025em;font-weight:650;margin:0 0 7px;text-wrap:balance}.dshWbMarketHeader p{margin:0}
+      .dshWbCreate{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;flex:none}
       .dshWbToolbar{display:flex;flex-direction:column;gap:14px;margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--dsw-alias-border-l2)}
       .dshWbTabs{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
       .dshWbTabs [role=tablist]{display:flex;gap:4px;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:none}.dshWbTabs [role=tablist]::-webkit-scrollbar{display:none}
@@ -448,6 +495,19 @@ window.__ModuleLoader__.load({
       .dshWbCategories{display:flex;align-items:center;gap:6px;overflow:auto;padding:2px;scrollbar-width:none}.dshWbCategories::-webkit-scrollbar{display:none}
       .dshWb .dshWbCategoryFilter{border:0;background:transparent;border-radius:999px;padding:5px 10px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
       .dshWb .dshWbCategoryFilter:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWb .dshWbCategoryFilter[aria-pressed=true]{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)}
+      .dshWbSubmit{margin:0;padding:24px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-1)}
+      .dshWbSubmitHero{margin-bottom:24px}.dshWbSubmitHero h2{font-size:22px;line-height:30px;margin:0 0 4px;font-weight:700}
+      .dshWbSubmitHero p{font-size:14px;line-height:21px;margin:0;color:var(--dsw-alias-label-secondary)}
+      .dshWbStepNum{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-1);font-size:13px;font-weight:700;margin-bottom:10px;flex-shrink:0}
+      .dshWbSteps{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 24px}
+      .dshWbStep{min-width:0;padding:18px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-module-platform)}
+      .dshWbStep strong{display:block;margin-bottom:6px;font-size:15px;line-height:22px}.dshWbStep p{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}.dshWbStep a{color:var(--dsw-alias-label-primary)}
+      .dshWbStepActions{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+      .dshWbStepLink{background:none;border:0;padding:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+      .dshWbStep .dshWbPrompt{margin-top:12px;min-height:150px}
+      .dshWbSubmitOutcome{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2);font-size:13px}
+      .dshWbPrompt{display:block;width:100%;min-height:160px;resize:vertical;margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:11px!important;line-height:18px!important}
+      .dshWbCopyStatus{min-height:20px;margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}
       .dshWbGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
       .dshWbCard{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);overflow:hidden;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s cubic-bezier(.2,.8,.2,1)}
       .dshWbCard:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.08)}
@@ -475,9 +535,15 @@ window.__ModuleLoader__.load({
       .dshWbDetailThumbButton:hover .dshWbDetailThumb,.dshWbDetailThumbButton:focus-visible .dshWbDetailThumb{box-shadow:0 0 0 2px var(--dsw-alias-label-primary)}
       .dshWbDetailLightbox{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);cursor:pointer}
       .dshWbDetailLightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:6px}.dshWbLightboxClose{position:fixed;right:22px;top:22px;width:36px;height:36px;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:20px;line-height:1}
+      .dshWbSubmitSuccess{padding:10px 14px;margin:12px 0 0;background:var(--dsw-alias-bg-layer-2);border-radius:6px;font-size:13px;line-height:1.6}
+      .dshWbSubmitSuccess strong{display:block;margin-bottom:2px}
       .dshWbModalBackdrop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(16,16,18,.52);padding:24px;overflow:auto;animation:dshWbFade .16s ease-out}
       .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:14px;max-width:680px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 18px 52px rgba(0,0,0,.24);animation:dshWbRise .2s cubic-bezier(.2,.8,.2,1)}
       .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}.dshWbConfirm{max-width:430px}.dshWbConfirmIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);margin-bottom:18px}.dshWbConfirm .dshWbActions{justify-content:flex-end;margin-top:24px}.dshWbDanger{color:#b42318}.dshWbDanger:hover:not(:disabled){background:rgba(180,35,24,.08)!important}
+      .dshWbGuideModal{max-width:920px;height:min(85vh,820px);padding:0;overflow:hidden;display:flex;flex-direction:column}
+      .dshWbGuideHeader{display:flex;align-items:center;gap:18px;padding:18px 22px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:0 0 auto}.dshWbGuideHeaderText{min-width:0;flex:1}.dshWbGuideHeader h2{font-size:18px;line-height:26px}.dshWbGuideHeader p{margin:2px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+      .dshWbGuideBody{min-height:0;overflow:auto;padding:28px 34px 42px}.dshWbGuideSource{padding:12px 14px;margin-bottom:26px;border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:19px}
+      .dshWbGuideDocument{max-width:780px;margin:0 auto}.dshWbGuideDocument h1{font-size:28px;line-height:38px;margin:0 0 24px}.dshWbGuideDocument h2{font-size:20px;line-height:29px;margin:36px 0 13px;padding-top:24px;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbGuideDocument h3{font-size:16px;line-height:24px;margin:26px 0 10px}.dshWbGuideDocument h4{font-size:14px;line-height:22px;margin:22px 0 8px}.dshWbGuideDocument p,.dshWbGuideDocument li{font-size:13px;line-height:22px}.dshWbGuideDocument p{margin:9px 0}.dshWbGuideDocument ul,.dshWbGuideDocument ol{margin:10px 0;padding-left:22px}.dshWbGuideDocument pre{overflow:auto;margin:14px 0;padding:14px 16px;border-radius:8px;background:#18181b;color:#f4f4f5;font:12px/19px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}.dshWbGuideDocument hr{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:32px 0}.dshWbGuideStatus{display:grid;place-items:center;min-height:220px;text-align:center;color:var(--dsw-alias-label-secondary)}.dshWbGuideStatus .dshWbActions{margin-top:14px;justify-content:center}
       @keyframes dshWbFade{from{opacity:0}to{opacity:1}}@keyframes dshWbRise{from{opacity:.75;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
       .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
       .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column}
@@ -494,7 +560,7 @@ window.__ModuleLoader__.load({
       @container workbench-market (max-width:980px){.dshWbGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
       @container workbench-market (max-width:620px){.dshWbGrid{grid-template-columns:1fr}}
       @media(max-width:900px){.dshWbMarket{padding:24px}.dshWbBusiness{min-width:180px}}
-      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
+      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbCreate{width:100%;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
     `
     function useWorkbench(service) { return React.useSyncExternalStore(service.subscribe, service.getSnapshot) }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
@@ -616,6 +682,14 @@ window.__ModuleLoader__.load({
         h('button', { ref: lightboxCloseRef, type: 'button', className: 'dshWbLightboxClose', 'aria-label': '关闭截图预览', onClick: () => setLightbox(null) }, '×'),
         h('img', { src: lightbox, alt: `${entry.title || '工作台'}截图放大`, onClick: (event) => event.stopPropagation() })))
     }
+    function SubmitSuccess({ submission, onDismiss }) {
+      if (!submission) return null
+      return h('div', { className: 'dshWbSubmitSuccess', role: 'status' },
+        h('strong', null, '投稿已保存到本机'),
+        h('span', null, `标题：${submission.title}　作者：${submission.author}　状态：本机草稿`),
+        submission.packageSha256 && h('span', null, `包 SHA-256：${submission.packageSha256.slice(0, 16)}…`),
+        h('div', { className: 'dshWbActions', style: { marginTop: 6 } }, h(Button, { onClick: onDismiss }, '关闭')))
+    }
     function useDialogFocus(open, onClose, dialogRef) {
       const closeRef = React.useRef(onClose)
       closeRef.current = onClose
@@ -686,17 +760,149 @@ window.__ModuleLoader__.load({
               h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, '确认移除')))),
         document.body)
     }
+    function renderGuideBlocks(markdown) {
+      const blocks = []
+      let paragraph = []
+      let list = null
+      let code = null
+      let key = 0
+      const flushParagraph = () => {
+        if (!paragraph.length) return
+        blocks.push(h('p', { key: `p-${key++}` }, paragraph.join(' ')))
+        paragraph = []
+      }
+      const flushList = () => {
+        if (!list) return
+        blocks.push(h(list.tag, { key: `list-${key++}` }, list.items.map((item, index) => h('li', { key: index }, item))))
+        list = null
+      }
+      const flushCode = () => {
+        if (code === null) return
+        blocks.push(h('pre', { key: `code-${key++}` }, h('code', null, code.join('\n'))))
+        code = null
+      }
+      for (const line of String(markdown).split('\n')) {
+        if (line.trim().startsWith('```')) {
+          flushParagraph(); flushList()
+          if (code === null) code = []
+          else flushCode()
+          continue
+        }
+        if (code !== null) { code.push(line); continue }
+        const heading = /^(#{1,4})\s+(.+)$/.exec(line)
+        if (heading) {
+          flushParagraph(); flushList()
+          blocks.push(h(`h${heading[1].length}`, { key: `heading-${key++}` }, heading[2]))
+          continue
+        }
+        if (/^---+$/.test(line.trim())) { flushParagraph(); flushList(); blocks.push(h('hr', { key: `hr-${key++}` })); continue }
+        const unordered = /^[-*]\s+(.+)$/.exec(line)
+        const ordered = /^\d+\.\s+(.+)$/.exec(line)
+        if (unordered || ordered) {
+          flushParagraph()
+          const tag = unordered ? 'ul' : 'ol'
+          if (list?.tag !== tag) { flushList(); list = { tag, items: [] } }
+          list.items.push((unordered || ordered)[1])
+          continue
+        }
+        if (!line.trim()) { flushParagraph(); flushList(); continue }
+        paragraph.push(line.trim())
+      }
+      flushParagraph(); flushList(); flushCode()
+      return blocks
+    }
+    function GuideModal({ service, open, onClose }) {
+      const dialogRef = React.useRef(null)
+      const [retry, setRetry] = React.useState(0)
+      const [guide, setGuide] = React.useState({ loading: true, text: '', error: '' })
+      useDialogFocus(open, onClose, dialogRef)
+      React.useEffect(() => {
+        if (!open) return undefined
+        let cancelled = false
+        setGuide({ loading: true, text: '', error: '' })
+        service.request(GUIDE_API, { cache: 'no-store', credentials: 'same-origin' })
+          .then(async response => {
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}))
+              throw new Error(data.error || `HTTP ${response.status}`)
+            }
+            const text = await response.text()
+            if (!text.trim()) throw new Error('接口未返回有效指南。')
+            if (!cancelled) setGuide({ loading: false, text, error: '' })
+          })
+          .catch(error => { if (!cancelled) setGuide({ loading: false, text: '', error: `指南暂时无法读取：${error instanceof Error ? error.message : String(error)}` }) })
+        return () => { cancelled = true }
+      }, [service, open, retry])
+      if (!open) return null
+      return require('react-dom').createPortal(
+        h('div', { className: 'dshWbModalBackdrop', onClick: onClose },
+          h('div', { ref: dialogRef, className: 'dshWbModal dshWbGuideModal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-guide-title', tabIndex: -1, onClick: event => event.stopPropagation() },
+            h('header', { className: 'dshWbGuideHeader' },
+              h('div', { className: 'dshWbGuideHeaderText' },
+                h('h2', { id: 'dsh-workbench-guide-title' }, '工作台作者指南'),
+                h('p', null, '当前安装版本 · 与 Agent 读取同一份指南')),
+              h(Button, { autoFocus: true, onClick: onClose }, '关闭')),
+            h('div', { className: 'dshWbGuideBody' },
+              guide.loading
+                ? h('div', { className: 'dshWbGuideStatus', role: 'status' }, '正在读取指南…')
+                : guide.error
+                  ? h('div', { className: 'dshWbGuideStatus', role: 'alert' }, h('div', null, h('strong', null, guide.error), h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setRetry(value => value + 1) }, '重试'))))
+                  : h('div', { className: 'dshWbGuideDocument' },
+                    h('div', { className: 'dshWbGuideSource' }, '唯一版本说明：这里展示的是随当前 DSH Desktop 分发的完整作者指南，覆盖开发、本机验收和 GitHub 发布。'),
+                    renderGuideBlocks(guide.text))))),
+        document.body)
+    }
+    function developmentWorkbenchAgentPrompt() {
+      return `请帮我制作 DSH Desktop 工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
+
+${DEVELOPMENT_GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、entry、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+
+完成后，按当前项目已有的插件安装或加载机制，把工作台装到我这台 DSH Desktop。不要让我重新填写项目元数据。确认它已注册、出现在「已安装的工作台」和左侧入口，并实际打开检查。这一步到此为止，不要投稿。
+
+若当前版本没有可用的本地安装接口，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确报告缺少的安装步骤；不要声称已加载。最后给我文件路径、验证结果和实际加载状态。`
+    }
+    function submissionWorkbenchAgentPrompt() {
+      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按完整作者指南完成公开发布和首次市场收录，不用重复开发功能。
+
+${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图、支持平台和本机验收结果，不得公开密钥、业务数据或未经授权的私有代码。按可用来源优先发布 npm 包，其次 GitHub Release 安装包；两者都没有时确认仓库源码可独立安装。不要编造统一发布命令，先读取项目真实脚本和当前工具帮助。
+
+确认 ${WORKBENCH_MARKET_REPO} 的 CONTRIBUTING.md 和 data/workbenches schema 已经可用，再新增一个 owner__repo.yml 首次收录 PR。只提交目录元数据，不复制工作台源码或凭证，也不要手改生成的目录 JSON。使用我已经授权的 GitHub 网页或 gh；若缺少登录、公共发布授权或市场仓库尚未启用，先完成可完成的材料并准确说明缺项。
+
+只有拿到真实 PR URL 才能说“已投稿”；PR 合并且公开目录能读到条目后才能说“已上架”。本机 submissions.json 中的 local-draft 只是草稿。最后给我发布 URL、PR URL、目录可见性、验证证据和仍未完成的事项。`
+    }
+    function submissionAgentPrompt(mode = 'development') {
+      return mode === 'submission' ? submissionWorkbenchAgentPrompt() : developmentWorkbenchAgentPrompt()
+    }
+    async function copySubmissionPrompt(text, targetWindow = window) {
+      if (targetWindow.navigator?.clipboard?.writeText) return targetWindow.navigator.clipboard.writeText(text)
+      const textarea = targetWindow.document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', '')
+      Object.assign(textarea.style, { position: 'fixed', opacity: '0', pointerEvents: 'none' })
+      targetWindow.document.body.appendChild(textarea)
+      textarea.select()
+      try {
+        if (!targetWindow.document.execCommand?.('copy')) throw new Error('浏览器未允许复制。')
+      } finally { textarea.remove() }
+    }
     function Market({ service }) {
-      const { state, catalog, ready, pending } = useWorkbench(service)
+      const { state, catalog, submissions, submissionError, submissionPending, ready, pending } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
       const [category, setCategory] = React.useState('全部')
       const [detail, setDetail] = React.useState(null)
       const [removing, setRemoving] = React.useState(null)
+      const [openPrompt, setOpenPrompt] = React.useState(null)
+      const [copyStatus, setCopyStatus] = React.useState('')
+      const [lastSubmission, setLastSubmission] = React.useState(null)
+      const [guideOpen, setGuideOpen] = React.useState(false)
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
+      const developmentPrompt = developmentWorkbenchAgentPrompt()
+      const submissionPrompt = submissionWorkbenchAgentPrompt()
       const disabled = !ready || pending > 0 || service.blocked
+      const localDrafts = submissions.filter((entry) => entry.status === 'local-draft')
       const added = state.added.filter(visibleWorkbench)
       const favorites = (state.favorites || []).filter(visibleWorkbench)
       const unavailableEntry = (id) => ({ id, title: id, category: '其他', unavailable: true, description: '提供此工作台的插件当前未加载。' })
@@ -724,13 +930,20 @@ window.__ModuleLoader__.load({
         selectCollection(values[next])
         requestAnimationFrame(() => document.getElementById(`dsh-workbench-${values[next]}-tab`)?.focus())
       }
+      const copyPrompt = async (text) => {
+        setCopyStatus('')
+        try { await copySubmissionPrompt(text); setCopyStatus('已复制，现在可以粘贴给你的 Agent。') }
+        catch { setCopyStatus('复制失败，请展开指令后手动全选复制。') }
+      }
       return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('header', { className: 'dshWbMarketHeader' },
           h('div', { className: 'dshWbMarketHeaderText' },
-            h('h1', null, '切换工作台，进入不同工作方式'),
-            h('p', { className: 'dshWbMuted' }, '工作台把专属界面、会话和资料组织在一起。选择适合当前任务的工作台，并随时从左侧切换。'))),
+            h('h1', null, tab === 'submit' ? '制作属于你的工作台' : '切换工作台，进入不同工作方式'),
+            h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。选择适合当前任务的工作台，并随时从左侧切换。')),
+          h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台')),
         h(Notice, { service }),
-        h('div', { className: 'dshWbToolbar' },
+        submissionError && h('div', { className: 'dshWbNotice', role: 'status' }, '投稿记录暂时无法读取，其他工作台仍可正常使用。 ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重试')),
+        tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': '工作台集合' },
             h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, '工作台市场'),
             h(Button, { id: 'dsh-workbench-favorites-tab', role: 'tab', tabIndex: tab === 'favorites' ? 0 : -1, 'aria-selected': tab === 'favorites', 'aria-controls': 'dsh-workbench-favorites-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('favorites') }, `我的收藏 (${favorites.length})`),
@@ -738,7 +951,37 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dshWbBrowseTools' },
             h('label', { className: 'dshWbSearch' }, h(MarketIcon, { name: 'search' }), h('input', { type: 'search', placeholder: '搜索名称、作者或分类', 'aria-label': '搜索工作台', value: search, onChange: (event) => setSearch(event.target.value) })),
             h('div', { className: 'dshWbCategories', role: 'group', 'aria-label': '按分类筛选' }, categories.map((value) => h('button', { key: value, type: 'button', className: 'dshWbCategoryFilter', 'aria-pressed': category === value, onClick: () => setCategory(value) }, value))))),
-        h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
+        tab === 'submit' && h('section', { id: 'dsh-workbench-submit-panel', className: 'dshWbSubmit', 'aria-label': '制作我的工作台', tabIndex: 0 },
+          h('div', { className: 'dshWbSubmitHero' },
+            h('h2', null, '制作属于你自己的工作台'),
+            h('p', null, '照着下面三步做。只给自己用的话，做完第二步就够了。')
+          ),
+          h('div', { className: 'dshWbSteps', 'aria-label': '工作台制作步骤' },
+            h('div', { className: 'dshWbStep' },
+              h('span', { className: 'dshWbStepNum' }, '1'),
+              h('strong', null, '先看规范，让 Agent 开发'),
+              h('p', null, '把指令复制给你的 Agent。它会先读', h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setGuideOpen(true) }, '工作台作者指南'), '，再动手开发。'),
+              h('div', { className: 'dshWbStepActions' },
+                h(Button, { primary: true, onClick: () => copyPrompt(developmentPrompt) }, '复制开发指令'),
+                h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'development' ? null : 'development') }, openPrompt === 'development' ? '收起指令' : '查看指令')),
+              openPrompt === 'development' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: developmentPrompt, 'aria-label': '开发工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() })),
+            h('div', { className: 'dshWbStep' },
+              h('span', { className: 'dshWbStepNum' }, '2'),
+              h('strong', null, '装到本机，打开确认能用'),
+              h('p', null, 'Agent 会把它装到这台 Desktop。你打开确认它出现在「已安装的工作台」和左侧入口——到这一步，自己用就没问题了。')),
+            h('div', { className: 'dshWbStep' },
+              h('span', { className: 'dshWbStepNum' }, '3'),
+              h('strong', null, '想投稿，再按市场要求提交'),
+              h('p', null, '对照', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '市场投稿要求'), '准备材料，把指令复制给 Agent。'),
+              h('div', { className: 'dshWbStepActions' },
+                h(Button, { primary: true, onClick: () => copyPrompt(submissionPrompt) }, '复制投稿指令'),
+                h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),
+              openPrompt === 'submission' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: submissionPrompt, 'aria-label': '投稿工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() }))),
+          h(SubmitSuccess, { submission: lastSubmission, onDismiss: () => setLastSubmission(null) }),
+          localDrafts.length > 0 && h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, `本机保存了 ${localDrafts.length} 份投稿草稿。它们尚未提交到 GitHub；只有取得真实 PR 链接才算已投稿。`),
+          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '首次收录通过 GitHub PR。PR 合并且公开目录发布成功后，工作台才会出现在公共工作台市场。'),
+          h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
+        tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => {
             const catalogId = entry.catalogId || entry.id
             const isFavorite = favorites.includes(catalogId)
@@ -759,7 +1002,8 @@ window.__ModuleLoader__.load({
             h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : '没有找到匹配的工作台'),
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击星标即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
-        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), onConfirm: () => service.run(service.remove(removing).then(() => setRemoving(null))) }))
+        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), onConfirm: () => service.run(service.remove(removing).then(() => setRemoving(null))) }),
+        guideOpen && h(GuideModal, { service, open: guideOpen, onClose: () => setGuideOpen(false) }))
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)
@@ -853,6 +1097,6 @@ window.__ModuleLoader__.load({
         return () => { window.removeEventListener('beforeunload', beforeUnload); service.dispose() }
       }, 'workbenches: lifecycle')
     }
-    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace'], Workbenches, Frame, Market, Notebook }
+    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace'], Workbenches, Frame, Market, Notebook, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt }
   }
 })

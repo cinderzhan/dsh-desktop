@@ -1,6 +1,10 @@
 import Schema from '@deepseek-ai/schemastery'
 import { CatalogError, createCatalogReader } from './catalog.mjs'
 import { createStateStore, MAX_STATE_BYTES, StateError } from './state.mjs'
+import { createSubmissionStore, MAX_SUBMISSION_BYTES } from './submissions.mjs'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-desktop-workbenches'
 export const inject = ['connection']
@@ -32,6 +36,7 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const readCatalog = createCatalogReader()
+  const submissions = createSubmissionStore(config.root)
   // Providers must use the same persisted ownership as Desktop, never a second
   // settings namespace that could accidentally authorize an ordinary session.
   ctx.effect(() => ctx.reflect.provide('desktopWorkbenchOwnership', {
@@ -40,6 +45,20 @@ export function apply(ctx, config) {
       return { revision, sessionBindings: { ...state.sessionBindings }, added: [...state.added] }
     }
   }))
+  const guideRoute = path => ({
+    path,
+    methods: ['GET'],
+    async fetch() {
+      try {
+        const guide = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'development-guide.zh.md'), 'utf8')
+        return new Response(guide, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' } })
+      } catch {
+        return Response.json({ error: 'Could not read the workbench development guide.' }, { status: 500, headers: { 'cache-control': 'no-store' } })
+      }
+    }
+  })
+  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/development-guide'))
+  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/author-guide'))
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/catalog',
     methods: ['GET'],
@@ -80,6 +99,24 @@ export function apply(ctx, config) {
         return Response.json(await store.write(await readPayload(request)), { headers: { 'cache-control': 'no-store' } })
       } catch (error) {
         return Response.json({ error: error instanceof StateError ? error.message : 'Could not access workbench state.' }, {
+          status: error instanceof StateError ? error.status : 500,
+          headers: { 'cache-control': 'no-store' }
+        })
+      }
+    }
+  })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/submissions',
+    methods: ['GET', 'POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const result = request.method === 'GET'
+          ? { submissions: await submissions.read() }
+          : { submission: await submissions.create(await readPayload(request, MAX_SUBMISSION_BYTES, 'Workbench submission is too large.')) }
+        return Response.json(result, { status: request.method === 'POST' ? 201 : 200, headers: { 'cache-control': 'no-store' } })
+      } catch (error) {
+        return Response.json({ error: error instanceof StateError ? error.message : 'Could not access workbench submissions.' }, {
           status: error instanceof StateError ? error.status : 500,
           headers: { 'cache-control': 'no-store' }
         })
