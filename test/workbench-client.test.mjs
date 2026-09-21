@@ -611,8 +611,8 @@ describe('desktop workbench client navigation', () => {
     expect(service.error).toBe('')
     service.register({ id: 'writer', title: 'Writer' }, () => null)
     await service.add('writer')
-    // state and catalog on load, then one state write.
-    expect(reply).toHaveBeenCalledTimes(3)
+    // state, catalog and market installs on load, then one state write.
+    expect(reply).toHaveBeenCalledTimes(4)
     expect(service.revision).toBe(1)
     expect(service.state.added).toEqual(['writer'])
   })
@@ -1135,6 +1135,80 @@ describe('workbench market screenshot and metadata display', () => {
     expect(code).toContain('需修改：审核者要求修改')
   })
 
+
+  const listed = (patch = {}) => ({ id: 'o/helper', owner: 'o', repository: 'helper', url: 'https://github.com/o/helper', name: 'Helper', categoryName: '效率',
+    description: { zh: '整理资料。' }, screenshots: [], version: '1.0.0', distribution: { type: 'npm', version: '1.0.0' }, ...patch })
+  function withMarket(service, routes) {
+    const original = service.request
+    const calls = []
+    service.request = (url, options) => {
+      if (routes[url]) { calls.push(url); return Promise.resolve(routes[url](options)) }
+      return original(url, options)
+    }
+    return calls
+  }
+
+  it('installs a market entry, pins it when its runtime ID is known, and asks for a restart', async () => {
+    const { service, saved } = await fixture()
+    service.remoteCatalog = [listed()]
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', workbenchId: 'helper', version: '1.0.0' }, restartRequired: true }) })
+    await service.installFromMarket('o/helper')
+    expect(calls).toEqual(['/api/desktop-workbenches/market-install'])
+    expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: true, installs: { 'o/helper': { workbenchId: 'helper' } } })
+    expect(saved().state.added).toEqual(['helper'])
+    // Until the provider loads, the card stays a market entry awaiting restart.
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false })
+  })
+
+  it('keeps an install without a runtime ID out of the sidebar until the provider registers', async () => {
+    const { service, saved } = await fixture()
+    service.remoteCatalog = [listed()]
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', workbenchId: null, version: '1.0.0' }, restartRequired: true }) })
+    await service.installFromMarket('o/helper')
+    expect(saved().state.added).toEqual([])
+    // After restart the provider declares its repository and the entry becomes installed.
+    service.register({ id: 'helper', title: 'Helper', repository: 'https://github.com/o/helper' }, () => null)
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ id: 'helper', installed: true, listedVersion: '1.0.0' })
+    expect(service.marketInstallFor('helper')).toBe('o/helper')
+  })
+
+  it('rolls back an install whose runtime ID shadows a loaded workbench, and refuses entries not in the market', async () => {
+    const { service, saved } = await fixture()
+    service.remoteCatalog = [listed()]
+    const calls = withMarket(service, {
+      '/api/desktop-workbenches/market-install': () => Response.json({ install: { workbenchId: 'writer', version: '1.0.0' }, restartRequired: true }),
+      '/api/desktop-workbenches/market-uninstall': () => Response.json({ restartRequired: true })
+    })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('与本机已有的工作台相同')
+    expect(calls).toEqual(['/api/desktop-workbenches/market-install', '/api/desktop-workbenches/market-uninstall'])
+    expect(service.getSnapshot().installs).toEqual({})
+    expect(saved().state.added).toEqual([])
+    await expect(service.installFromMarket('o/gone')).rejects.toThrow('已不在工作台市场')
+  })
+
+  it('uninstalls the market package of a removed workbench but only unpins others', async () => {
+    const { service, saved } = await fixture({ ...emptyState(), added: ['writer', 'helper'], pinned: ['writer', 'helper'] })
+    service.remoteCatalog = [listed()]
+    service.register({ id: 'helper', title: 'Helper', repository: 'https://github.com/o/helper/' }, () => null)
+    service.installs = { 'o/helper': { workbenchId: null, version: '1.0.0' } }
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-uninstall': (options) => Response.json({ restartRequired: true, got: JSON.parse(options.body) }) })
+    await service.removeWorkbench('writer')
+    expect(calls).toEqual([])
+    await service.removeWorkbench('helper')
+    expect(calls).toEqual(['/api/desktop-workbenches/market-uninstall'])
+    expect(service.getSnapshot()).toMatchObject({ installs: {}, restartNeeded: true })
+    expect(saved().state.added).toEqual([])
+  })
+
+  it('offers install, update, pending-restart and uninstall from the market cards', () => {
+    const source = Market.toString()
+    expect(source).toContain('service.installFromMarket(catalogId)')
+    expect(source).toContain('`更新到 v${entry.listedVersion}`')
+    expect(source).toContain("'重启后生效'")
+    expect(source).toContain('service.uninstallFromMarket(catalogId)')
+    expect(source).toContain('service.removeWorkbench(removing)')
+    expect(code).toContain('工作台安装变更需要重启 Harness 后生效')
+  })
 
   it('points the submit panel at a market PR instead of a local draft', () => {
     const source = Market.toString()

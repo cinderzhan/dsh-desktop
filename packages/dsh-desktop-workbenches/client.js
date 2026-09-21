@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const API = '/api/desktop-workbenches/state'
     const WRITE_API = '/api/desktop-workbenches/state/write'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
+    const MARKET_INSTALLS_API = '/api/desktop-workbenches/market-installs'
     const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
     // One author guide ships with this Desktop version and covers development,
     // local acceptance, first listing and later releases.
@@ -54,6 +55,12 @@ window.__ModuleLoader__.load({
         this.remoteCatalog = []
         this.catalogError = ''
         this.catalogStale = false
+        // Workbenches installed from the market, keyed by Awesome repository
+        // identity. A new package only runs after Harness restarts, so
+        // restartNeeded stays set until then.
+        this.installs = {}
+        this.installing = null
+        this.restartNeeded = false
         this.draftNotes = new Map()
         this.noteTimers = new Map()
         this.queue = Promise.resolve()
@@ -77,6 +84,8 @@ window.__ModuleLoader__.load({
             ...(provider || {}),
             id: provider?.id || item.id,
             catalogId: item.id,
+            // The listed version; a loaded provider may report its own.
+            listedVersion: item.version,
             title: item.name,
             category: item.categoryName,
             description: item.description.zh,
@@ -94,7 +103,7 @@ window.__ModuleLoader__.load({
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
           catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen,
-          catalog: this.marketCatalog() }
+          catalog: this.marketCatalog(), installs: this.installs, installing: this.installing, restartNeeded: this.restartNeeded }
         for (const listener of this.listeners) listener()
       }
       report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
@@ -115,6 +124,70 @@ window.__ModuleLoader__.load({
           stale: data.stale === true
         }
       }
+      async readInstalls() {
+        const response = await this.request(MARKET_INSTALLS_API, { credentials: 'same-origin', cache: 'no-store' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+        return data.installs && typeof data.installs === 'object' ? data.installs : {}
+      }
+      async marketPackage(path, catalogId) {
+        if (this.installing) throw new Error('另一个工作台正在安装，请稍候。')
+        this.installing = catalogId
+        this.error = ''
+        this.publish()
+        try {
+          const response = await this.request(path, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: catalogId })
+          })
+          const data = await response.json()
+          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+          if (data.restartRequired) this.restartNeeded = true
+          return data
+        } finally {
+          this.installing = null
+          this.publish()
+        }
+      }
+      // Install and update are the same operation: Awesome names the one version to install.
+      async installFromMarket(catalogId) {
+        if (!this.remoteCatalog.some((entry) => entry.id === catalogId)) throw new Error('这个工作台已不在工作台市场中。')
+        const previous = this.installs[catalogId]
+        const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId)
+        const workbenchId = data.install?.workbenchId
+        if (!previous && workbenchId && this.catalog.has(workbenchId)) {
+          // A workbench with this ID is already loaded from elsewhere; never shadow it.
+          await this.marketPackage('/api/desktop-workbenches/market-uninstall', catalogId).catch(() => {})
+          throw new Error(`这个工作台的 ID「${workbenchId}」与本机已有的工作台相同，已撤销安装。`)
+        }
+        this.installs = { ...this.installs, [catalogId]: data.install }
+        this.publish()
+        // Without workbench.json the runtime ID is only known after the provider
+        // registers, so there is nothing to pin until then.
+        if (!workbenchId) return
+        return this.commit((state) => {
+          if (!state.added.includes(workbenchId)) state.added.push(workbenchId)
+          if (!state.pinned.includes(workbenchId)) state.pinned.push(workbenchId)
+        })
+      }
+      async uninstallFromMarket(catalogId) {
+        await this.marketPackage('/api/desktop-workbenches/market-uninstall', catalogId)
+        const { [catalogId]: _removed, ...rest } = this.installs
+        this.installs = rest
+        this.publish()
+      }
+      // The market install behind a runtime workbench, found through its registered repository.
+      marketInstallFor(workbenchId) {
+        const entry = this.marketCatalog().find((item) => item.id === workbenchId && item.catalogId !== workbenchId)
+        if (entry && this.installs[entry.catalogId]) return entry.catalogId
+        const recorded = Object.entries(this.installs).find(([, install]) => install?.workbenchId === workbenchId)
+        return recorded ? recorded[0] : null
+      }
+      async removeWorkbench(id) {
+        // Market installs also remove the package; sessions, files and notes stay.
+        const catalogId = this.marketInstallFor(id)
+        if (catalogId) await this.uninstallFromMarket(catalogId)
+        return this.remove(id)
+      }
       async load() {
         await this.queue
         const ticket = ++this.navigation
@@ -122,14 +195,16 @@ window.__ModuleLoader__.load({
         this.error = ''
         this.publish()
         try {
-          const [data, catalog] = await Promise.all([
+          const [data, catalog, installs] = await Promise.all([
             this.read(),
-            this.readCatalog().catch(error => ({ error }))
+            this.readCatalog().catch(error => ({ error })),
+            this.readInstalls().catch(() => ({}))
           ])
           await this.ctx.sessions.refresh()
           if (this.disposed || ticket !== this.navigation) return
           this.state = data.state
           this.revision = data.revision
+          this.installs = installs
           if (catalog.error) this.catalogError = catalog.error instanceof Error ? catalog.error.message : String(catalog.error)
           else {
             this.remoteCatalog = catalog.entries
@@ -547,7 +622,17 @@ window.__ModuleLoader__.load({
     function useWorkbench(service) { return React.useSyncExternalStore(service.subscribe, service.getSnapshot) }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
     function Notice({ service }) {
-      const { error, catalogError, catalogStale, pending, ready } = useWorkbench(service)
+      const { error, catalogError, catalogStale, pending, ready, restartNeeded } = useWorkbench(service)
+      const [restarting, setRestarting] = React.useState(false)
+      const bridge = globalThis.dshDesktop
+      const restart = async () => {
+        setRestarting(true)
+        try { await bridge.restartHarness() } catch (failure) { setRestarting(false); service.report(failure) }
+      }
+      if (restartNeeded && !error) return h('div', { className: 'dshWbNotice', role: 'status' }, '工作台安装变更需要重启 Harness 后生效。已有会话和数据不受影响。 ',
+        typeof bridge?.restartHarness === 'function'
+          ? h(Button, { primary: true, disabled: restarting, onClick: () => void restart() }, restarting ? '正在重启…' : '立即重启')
+          : '请从菜单 Harness → 重启 Harness。')
       if (error) return h('div', { className: 'dshWbNotice', role: 'alert' }, error, ' ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重新加载'))
       if (!ready) return h('div', { className: 'dshWbNotice', role: 'status' }, '正在读取本地工作台…')
       if (catalogError) return h('div', { className: 'dshWbNotice', role: 'status' }, '在线市场暂时无法读取，仍可使用已安装的工作台。 ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重试'))
@@ -718,7 +803,7 @@ window.__ModuleLoader__.load({
         document.body
       )
     }
-    function ConfirmRemoveModal({ entry, disabled, onCancel, onConfirm }) {
+    function ConfirmRemoveModal({ entry, disabled, uninstall, onCancel, onConfirm }) {
       const dialogRef = React.useRef(null)
       useDialogFocus(!!entry, onCancel, dialogRef)
       if (!entry) return null
@@ -727,7 +812,7 @@ window.__ModuleLoader__.load({
           h('div', { ref: dialogRef, className: 'dshWbModal dshWbConfirm', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-remove-title', 'aria-describedby': 'dsh-workbench-remove-description', tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbConfirmIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'remove', size: 18 })),
             h('h2', { id: 'dsh-workbench-remove-title', style: { fontSize: 18, lineHeight: '26px' } }, `移除「${entry.title || entry.id}」？`),
-            h('p', { id: 'dsh-workbench-remove-description', className: 'dshWbMuted' }, '这会移除本地工作台和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。'),
+            h('p', { id: 'dsh-workbench-remove-description', className: 'dshWbMuted' }, uninstall ? '这会卸载从市场安装的工作台，并移除左侧固定入口，重启 Harness 后生效。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : '这会移除本地工作台和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。'),
             h('div', { className: 'dshWbActions' },
               h(Button, { autoFocus: true, onClick: onCancel }, '取消'),
               h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, '确认移除')))),
@@ -894,7 +979,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('a', { href: result.url, target: '_blank', rel: 'noopener noreferrer' }, '在 GitHub 查看'))))
     }
     function Market({ service }) {
-      const { state, catalog, ready, pending } = useWorkbench(service)
+      const { state, catalog, ready, pending, installs, installing } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
@@ -996,17 +1081,27 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                 h('p', { className: 'dshWbMuted dshWbCardDescription' }, entry.description || '这个工作台暂时还没有填写介绍。'),
                 h(EntryMeta, { entry }),
                 h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setDetail(catalogId) }, '查看详情'),
+                  // Offer an update only for market installs whose listed version moved on.
+                  entry.installed && installs[catalogId] && entry.listedVersion && installs[catalogId].version !== entry.listedVersion
+                    && h(Button, { disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在更新…' : `更新到 v${entry.listedVersion}`),
                   state.added.includes(entry.id)
                     ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.open(entry.id)) }, '打开工作台')
                     : entry.installed
                       ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.add(entry.id)) }, '添加到我的工作台')
-                      : h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, '查看安装说明'),
+                      : installs[catalogId]
+                        // Installed but not loaded yet: it runs after Harness restarts.
+                        ? h(React.Fragment, null,
+                          h(Button, { disabled: true }, '重启后生效'),
+                          h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => service.run(service.uninstallFromMarket(catalogId)) }, '卸载'))
+                        : entry.distribution
+                          ? h(Button, { primary: true, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在安装…' : '安装')
+                          : h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, '查看安装说明'),
                   tab === 'mine' && h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: () => setRemoving(entry.id) }, '移除'))))
           }), entries.length === 0 && h('div', { className: 'dshWbEmpty' }, h('div', null,
             h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : '没有找到匹配的工作台'),
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击星标即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
-        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), onConfirm: () => service.run(service.remove(removing).then(() => setRemoving(null))) }),
+        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }),
         guideOpen && h(GuideModal, { service, open: !!guideOpen, document: guideOpen, onClose: () => setGuideOpen(null) }))
     }
     function Notebook({ service, entry }) {
