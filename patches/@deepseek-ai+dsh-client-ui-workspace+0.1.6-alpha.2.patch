@@ -1,11 +1,21 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 38a4474..df1afba 100644
+index 38a4474..963e9b1 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-@@ -52,16 +52,57 @@ window.__ModuleLoader__.load({
+@@ -30,6 +30,8 @@ window.__ModuleLoader__.load({
+ 			lifetime = new AbortController();
+ 			selection = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({}, { persist: { name: "dsh.sessions.current" } });
+ 			mainReference;
++			sessionOpener = null;
++			sessionStarter = null;
+ 			/**
+ 			* @param ctx - Client root Context.
+ 			* @param directoryPicker - the directory-picking Remote namespace.
+@@ -52,16 +54,57 @@ window.__ModuleLoader__.load({
  					};
  				}, "ui-workspace: Workspace navigation policy");
  			}
+-			async connectWorkspace(workspaceId) {
 +			/**
 +			* DSH Desktop: the preset a session created right now would run.
 +			*
@@ -31,7 +41,7 @@ index 38a4474..df1afba 100644
 +					return void 0;
 +				}
 +			}
- 			async connectWorkspace(workspaceId) {
++			async connectWorkspace(workspaceId, fresh = false) {
  				const workspace = this.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspaceId);
  				if (workspace === void 0) throw new Error(`uiWorkspace.connectWorkspace: unknown workspace ${workspaceId}`);
  				const inflight = this.connecting.get(workspaceId);
@@ -51,7 +61,8 @@ index 38a4474..df1afba 100644
 +				const wanted = await this.defaultPresetId();
  				const archived = this.workspaces.list.getSnapshot().archivedSessionIds;
  				const sessions = this.sessions.list.getSnapshot();
- 				for (const id of sessions.ids) {
+-				for (const id of sessions.ids) {
++				if (!fresh) for (const id of sessions.ids) {
  					const summary = sessions.byId[id];
 -					if (summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(summary.id) && !archived.includes(summary.id)) return summary.id;
 +					if (summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(summary.id) && !archived.includes(summary.id)) {
@@ -61,7 +72,64 @@ index 38a4474..df1afba 100644
  				}
  				const attempt = this.sessions.create({ workspaceId }).finally(() => {
  					this.connecting.delete(workspaceId);
-@@ -258,7 +299,8 @@ window.__ModuleLoader__.load({
+@@ -69,13 +112,25 @@ window.__ModuleLoader__.load({
+ 				this.connecting.set(workspaceId, attempt);
+ 				return attempt;
+ 			}
+-			openSession(target) {
++			registerSessionOpener(handler) {
++				if (this.sessionOpener !== null) throw new Error("uiWorkspace session opener already registered");
++				this.sessionOpener = handler;
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					if (this.sessionOpener === handler) this.sessionOpener = null;
++				};
++			}
++			openSession(target, source = "explicit-session") {
++				if (typeof target === "string" && this.sessionOpener?.(target, source) === true) return;
+ 				this.replaceMain(target, this.lifetime.signal);
+ 			}
+-			async openWorkspace(workspaceId, beforeOpen) {
++			async openWorkspace(workspaceId, beforeOpen, fresh = false) {
+ 				const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal]);
+-				const sessionId = await this.connectWorkspace(workspaceId);
++				const sessionId = await this.connectWorkspace(workspaceId, fresh);
+ 				if (navigation.aborted) return;
++				if (this.sessionOpener?.(sessionId, "workspace") === true) return;
+ 				this.replaceMain(sessionId, navigation, beforeOpen);
+ 			}
+ 			async forkSession(sessionId) {
+@@ -86,7 +141,18 @@ window.__ModuleLoader__.load({
+ 				});
+ 				if (!navigation.aborted) this.replaceMain(childId, navigation);
+ 			}
++			registerSessionStarter(handler) {
++				if (this.sessionStarter !== null) throw new Error("uiWorkspace session starter already registered");
++				this.sessionStarter = handler;
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					if (this.sessionStarter === handler) this.sessionStarter = null;
++				};
++			}
+ 			startSession(workspaceId) {
++				if (this.sessionStarter?.(workspaceId) === true) return;
+ 				const workspace = this.workspaces.list.getSnapshot();
+ 				const sessions = this.sessions.list.getSnapshot();
+ 				const current = this.mainReference?.sessionId;
+@@ -97,7 +163,7 @@ window.__ModuleLoader__.load({
+ 					this.clearMain();
+ 					return;
+ 				}
+-				this.openWorkspace(target).catch((reason) => {
++				this.openWorkspace(target, void 0, true).catch((reason) => {
+ 					console.warn("new session failed:", reason);
+ 				});
+ 			}
+@@ -258,7 +324,8 @@ window.__ModuleLoader__.load({
  					groupBy: "workspace",
  					orderBy: "updated",
  					groupExpansion: {},
@@ -71,7 +139,7 @@ index 38a4474..df1afba 100644
  				}),
  				persist: "dsh.workspace.view.v5",
  				actions: {
-@@ -287,6 +329,13 @@ window.__ModuleLoader__.load({
+@@ -287,6 +354,13 @@ window.__ModuleLoader__.load({
  						if (d.orderBy === "updated") d.sessionOrderByAccount = copySessionOrders(initialOrders);
  						d.orderBy = "manual";
  						d.sessionOrderByAccount[accountKey] = [...order];
@@ -85,7 +153,7 @@ index 38a4474..df1afba 100644
  					}
  				}
  			});
-@@ -690,15 +739,19 @@ window.__ModuleLoader__.load({
+@@ -690,15 +764,19 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-workspace/src/client/rows/Rows.module.css.mjs
  		const css$2 = ".YDXeBa_projectRow,.YDXeBa_sessionRow{padding:0 8px;cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding-inline-start:calc(8px + var(--dsh-workspace-indent,0px));display:flex}.YDXeBa_projectRow:hover,.YDXeBa_sessionRow:hover,.YDXeBa_sessionRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.YDXeBa_searchResultRow:hover,.YDXeBa_searchResultRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultHeading{align-items:center;min-width:0;display:flex}.YDXeBa_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;flex:0 auto;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.YDXeBa_searchResultWorkspace,.YDXeBa_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.YDXeBa_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.YDXeBa_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.YDXeBa_projectRow{box-sizing:border-box;align-items:center;height:34px}.YDXeBa_projectRow .YDXeBa_rowActions{height:20px}.YDXeBa_sessionRow{height:32px;animation:YDXeBa_row-in .15s var(--ds-ease-in-out);gap:0}.YDXeBa_sessionRow .YDXeBa_title{margin:0 6px 0 4px}.YDXeBa_flatSessionRowWithoutStatus .YDXeBa_title{margin-left:0}@keyframes YDXeBa_row-in{0%{opacity:0}}.YDXeBa_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.YDXeBa_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.YDXeBa_folderActive{color:var(--dsw-alias-state-business-primary)}.YDXeBa_projectRow .YDXeBa_chevron{display:none}.YDXeBa_projectRow:hover .YDXeBa_chevron{display:inline-flex}.YDXeBa_projectRow:hover .YDXeBa_folder{display:none}.YDXeBa_arrow{transition:transform .15s var(--ds-ease-in-out)}.YDXeBa_arrowOpen{transform:rotate(90deg)}.YDXeBa_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.YDXeBa_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_renameInput{border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.YDXeBa_sessionRow .YDXeBa_title{scroll-behavior:smooth;flex:1}@media (hover:hover){.YDXeBa_sessionRow:hover .YDXeBa_title{text-overflow:clip}}.YDXeBa_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.YDXeBa_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.YDXeBa_scheduleIndicator{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;margin-right:6px;display:inline-flex}.YDXeBa_searchScheduleIndicator{margin-left:4px;margin-right:0}.YDXeBa_dot{flex:none}.YDXeBa_rowActions{flex:none;align-items:center;gap:12px;display:none}.YDXeBa_projectRow:hover .YDXeBa_rowActions,.YDXeBa_sessionRow:hover .YDXeBa_rowActions,.YDXeBa_projectRow.YDXeBa_menuOpen .YDXeBa_rowActions,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_rowActions{display:inline-flex}.YDXeBa_sessionRow:hover .YDXeBa_time,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_time{display:none}.YDXeBa_projectRow.YDXeBa_menuOpen,.YDXeBa_sessionRow.YDXeBa_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_sessionRow.YDXeBa_dropBefore,.YDXeBa_sessionRow.YDXeBa_dropAfter{position:relative}.YDXeBa_sessionRow.YDXeBa_dropBefore:before,.YDXeBa_sessionRow.YDXeBa_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.YDXeBa_sessionRow.YDXeBa_dropBefore:before{top:-7px}.YDXeBa_sessionRow.YDXeBa_dropAfter:after{bottom:-7px}.YDXeBa_hoverContent{flex-direction:column;gap:8px;display:flex}.YDXeBa_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.YDXeBa_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.YDXeBa_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.YDXeBa_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.YDXeBa_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.YDXeBa_iconButton:hover{color:var(--dsw-alias-label-primary)}.YDXeBa_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.YDXeBa_sessionRow,.YDXeBa_arrow{transition:none;animation:none}.YDXeBa_sessionRow .YDXeBa_title{scroll-behavior:auto}}";
@@ -106,7 +174,7 @@ index 38a4474..df1afba 100644
  			"arrow": "YDXeBa_arrow",
  			"arrowOpen": "YDXeBa_arrowOpen",
  			"chevron": "YDXeBa_chevron",
-@@ -743,7 +796,7 @@ window.__ModuleLoader__.load({
+@@ -743,7 +821,7 @@ window.__ModuleLoader__.load({
  		* all data and callbacks arrive via props. Hover swaps (folder->chevron,
  		* time->ellipsis, action buttons) are CSS-only, and a session row's clipped
  		* title is scrolled programmatically while the row is hovered. Row ... menus are
@@ -115,7 +183,7 @@ index 38a4474..df1afba 100644
  		* session and workspace hover cards are suppressed while a menu is open.
  		*/
  		/** Row display title: blank rows show the localized New Session label. */
-@@ -842,7 +895,14 @@ window.__ModuleLoader__.load({
+@@ -842,7 +920,14 @@ window.__ModuleLoader__.load({
  			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
  			const active = containsCurrentDescendant || group.expanded && group.containsCurrent;
  			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
@@ -131,7 +199,7 @@ index 38a4474..df1afba 100644
  				id: "rename",
  				label: t("rename"),
  				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
-@@ -851,7 +911,7 @@ window.__ModuleLoader__.load({
+@@ -851,7 +936,7 @@ window.__ModuleLoader__.load({
  				label: t("delete.workspace"),
  				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
  				danger: true
@@ -140,7 +208,7 @@ index 38a4474..df1afba 100644
  			const ownRow = (0, react_jsx_runtime.jsxs)("div", {
  				className: clsx(Rows_module_css_default.projectRow, menuOpen && Rows_module_css_default.menuOpen),
  				role: "treeitem",
-@@ -890,7 +950,13 @@ window.__ModuleLoader__.load({
+@@ -890,7 +975,13 @@ window.__ModuleLoader__.load({
  							items: workspaceMenuItems,
  							onSelect: (id) => {
  								setMenuOpen(false);
@@ -155,7 +223,7 @@ index 38a4474..df1afba 100644
  								if (id !== "rename" && id !== "delete") return;
  								if (id === "rename") actions.rename();
  								else actions.delete();
-@@ -1089,13 +1155,16 @@ window.__ModuleLoader__.load({
+@@ -1089,13 +1180,16 @@ window.__ModuleLoader__.load({
  		* @param props.onRename - open the session rename dialog (id + current title).
  		* @param props.onFork - fork a session at its last completed turn.
  		* @param props.onArchive - archive a session by id.
@@ -173,7 +241,7 @@ index 38a4474..df1afba 100644
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -1121,16 +1190,34 @@ window.__ModuleLoader__.load({
+@@ -1121,16 +1215,34 @@ window.__ModuleLoader__.load({
  					label: t("menu.fork"),
  					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
  				},
@@ -209,7 +277,7 @@ index 38a4474..df1afba 100644
  					role: "treeitem",
  					"aria-selected": selected,
  					onClick: () => {
-@@ -1142,6 +1229,11 @@ window.__ModuleLoader__.load({
+@@ -1142,6 +1254,11 @@ window.__ModuleLoader__.load({
  					onPointerLeave: () => {
  						revealClippedTitle(titleRef.current, false);
  					},
@@ -221,7 +289,7 @@ index 38a4474..df1afba 100644
  					draggable,
  					onDragStart: drag === void 0 || row.blank ? void 0 : (e) => {
  						e.dataTransfer.effectAllowed = "move";
-@@ -1161,13 +1253,16 @@ window.__ModuleLoader__.load({
+@@ -1161,13 +1278,16 @@ window.__ModuleLoader__.load({
  						drag.drop(rowHalf(e));
  					},
  					children: [
@@ -241,7 +309,7 @@ index 38a4474..df1afba 100644
  							children: title
  						}),
  						row.hasActiveSchedule && (0, react_jsx_runtime.jsx)(ActiveScheduleIndicator, { t }),
-@@ -1187,7 +1282,10 @@ window.__ModuleLoader__.load({
+@@ -1187,7 +1307,10 @@ window.__ModuleLoader__.load({
  									setMenuOpen(false);
  									if (id === "rename") onRename(node.id, row.title);
  									if (id === "fork") onFork(node.id);
@@ -252,7 +320,7 @@ index 38a4474..df1afba 100644
  								},
  								portal: true,
  								closeOnPointerLeave: true,
-@@ -1585,7 +1683,7 @@ window.__ModuleLoader__.load({
+@@ -1585,7 +1708,7 @@ window.__ModuleLoader__.load({
  			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
@@ -261,7 +329,7 @@ index 38a4474..df1afba 100644
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
-@@ -1912,7 +2010,7 @@ window.__ModuleLoader__.load({
+@@ -1912,7 +2035,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
@@ -270,7 +338,7 @@ index 38a4474..df1afba 100644
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, statuses), [
-@@ -1962,6 +2060,9 @@ window.__ModuleLoader__.load({
+@@ -1962,6 +2085,9 @@ window.__ModuleLoader__.load({
  							onRename: onSessionRename,
  							onFork: forkSession,
  							onArchive: onSessionArchive,
@@ -280,7 +348,7 @@ index 38a4474..df1afba 100644
  							onReveal: node.id === revealSessionId ? () => {
  								onSessionRevealed(node.id);
  							} : void 0,
-@@ -2070,7 +2171,7 @@ window.__ModuleLoader__.load({
+@@ -2070,7 +2196,7 @@ window.__ModuleLoader__.load({
  		* @param props - composed slot props (shell owner share + store + injected actions).
  		* @returns the region element tree.
  		*/
@@ -289,7 +357,7 @@ index 38a4474..df1afba 100644
  			const home = useHostInfo((info) => info.home);
  			const list = useSessions((state) => state);
  			const workspaces = useWorkspaces((state) => state.items);
-@@ -2083,6 +2184,15 @@ window.__ModuleLoader__.load({
+@@ -2083,6 +2209,15 @@ window.__ModuleLoader__.load({
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
  			const workspaceReady = workspacePhase === "ready" && workspaceStreamState !== "loading";
@@ -305,7 +373,7 @@ index 38a4474..df1afba 100644
  			const mainSessionId = Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
  			const currentBlank = mainSessionId !== void 0 && list.byId[mainSessionId]?.blank === true ? mainSessionId : void 0;
  			const ungroupedMemberIds = (0, react.useMemo)(() => {
-@@ -2342,7 +2452,35 @@ window.__ModuleLoader__.load({
+@@ -2342,7 +2477,35 @@ window.__ModuleLoader__.load({
  				setSessionRenameDraft(currentTitle);
  				setSessionRenameError(null);
  			};
@@ -341,7 +409,7 @@ index 38a4474..df1afba 100644
  				archiveSession(sessionId).catch((reason) => {
  					console.warn("session archive rejected:", reason);
  				});
-@@ -2531,6 +2669,9 @@ window.__ModuleLoader__.load({
+@@ -2531,6 +2694,9 @@ window.__ModuleLoader__.load({
  							forkSession,
  							onSessionRename,
  							onSessionArchive,
@@ -351,7 +419,7 @@ index 38a4474..df1afba 100644
  							setSessionOrder: saveSessionOrder,
  							revealSessionId,
  							onSessionRevealed: acknowledgeSessionReveal,
-@@ -2541,6 +2682,7 @@ window.__ModuleLoader__.load({
+@@ -2541,6 +2707,7 @@ window.__ModuleLoader__.load({
  							useSessionStatus,
  							onSessionRename,
  							onSessionArchive,
@@ -359,7 +427,7 @@ index 38a4474..df1afba 100644
  							forkSession,
  							workspaces: orderedWorkspaces,
  							ungroupedSessionIds: orderedUngroupedSessionIds,
-@@ -2550,8 +2692,10 @@ window.__ModuleLoader__.load({
+@@ -2550,8 +2717,10 @@ window.__ModuleLoader__.load({
  							setGroupExpanded: actions.setGroupExpanded,
  							setSessionOrder: saveSessionOrder,
  							archivedSessionIds,
@@ -371,7 +439,7 @@ index 38a4474..df1afba 100644
  							insertWorkspaceBefore,
  							revealSessionId,
  							onSessionRevealed: acknowledgeSessionReveal,
-@@ -2676,6 +2820,34 @@ window.__ModuleLoader__.load({
+@@ -2676,6 +2845,34 @@ window.__ModuleLoader__.load({
  							children: sessionRenameError
  						})]
  					}),
@@ -406,7 +474,7 @@ index 38a4474..df1afba 100644
  					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
  						open: deleteTarget !== null,
  						onClose: closeDelete,
-@@ -2742,6 +2914,7 @@ window.__ModuleLoader__.load({
+@@ -2742,6 +2939,7 @@ window.__ModuleLoader__.load({
  			"search.noMatches": "无匹配会话",
  			"search.hasMore": "仅显示前 {n} 条结果，请缩小搜索范围。",
  			"menu.addWorkspace": "添加工作区…",
@@ -414,7 +482,7 @@ index 38a4474..df1afba 100644
  			"picker.loading": "正在加载工作区…",
  			"conflict.named": "已存在名为“{name}”的工作区。",
  			"folderError.title": "无法打开文件夹",
-@@ -2754,7 +2927,12 @@ window.__ModuleLoader__.load({
+@@ -2754,7 +2952,12 @@ window.__ModuleLoader__.load({
  			"delete.workspace": "删除工作区",
  			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
  			"delete.pending": "正在删除工作区…",
@@ -427,7 +495,7 @@ index 38a4474..df1afba 100644
  			"menu.archiveSession": "归档会话",
  			"sessions.count.one": "{n} 个会话",
  			"sessions.count.other": "{n} 个会话",
-@@ -2769,6 +2947,7 @@ window.__ModuleLoader__.load({
+@@ -2769,6 +2972,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "计划待审",
  			"status.waitingAnswer": "等待回答",
  			"status.completed": "已完成",
@@ -435,7 +503,7 @@ index 38a4474..df1afba 100644
  			"schedule.active": "有活动定时任务",
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
-@@ -2809,6 +2988,7 @@ window.__ModuleLoader__.load({
+@@ -2809,6 +3013,7 @@ window.__ModuleLoader__.load({
  			"search.noMatches": "No matching sessions",
  			"search.hasMore": "Showing the first {n} results. Narrow your search.",
  			"menu.addWorkspace": "Add workspace…",
@@ -443,7 +511,7 @@ index 38a4474..df1afba 100644
  			"picker.loading": "Loading workspaces…",
  			"conflict.named": "A workspace named “{name}” already exists.",
  			"folderError.title": "Couldn’t open folder",
-@@ -2821,7 +3001,12 @@ window.__ModuleLoader__.load({
+@@ -2821,7 +3026,12 @@ window.__ModuleLoader__.load({
  			"delete.workspace": "Delete workspace",
  			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
  			"delete.pending": "Deleting workspace…",
@@ -456,7 +524,7 @@ index 38a4474..df1afba 100644
  			"menu.archiveSession": "Archive session",
  			"sessions.count.one": "{n} session",
  			"sessions.count.other": "{n} sessions",
-@@ -2836,6 +3021,7 @@ window.__ModuleLoader__.load({
+@@ -2836,6 +3046,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "Plan awaiting review",
  			"status.waitingAnswer": "Waiting for answer",
  			"status.completed": "Completed",
@@ -464,7 +532,7 @@ index 38a4474..df1afba 100644
  			"schedule.active": "Has active scheduled task",
  			"hover.created": "Created {time}",
  			"hover.copied": "Copied",
-@@ -2916,6 +3102,9 @@ window.__ModuleLoader__.load({
+@@ -2916,6 +3127,9 @@ window.__ModuleLoader__.load({
  				forkSession: (sessionId) => {
  					uiWorkspace.forkSession(sessionId).catch(() => {});
  				},
@@ -549,6 +617,73 @@ index ea510d2..c4d430d 100644
      'schedule.active': string;
      'hover.created': string;
      'hover.copied': string;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
+index 5dcc1bf..ddefcd1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
+@@ -4,20 +4,22 @@ import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai
+ import type { ISessions, SessionTarget } from '@deepseek-ai/dsh-api-session-controller/client';
+ import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client';
+ import type { SessionId } from '@deepseek-ai/dsh-session/types';
++export type SessionNavigationSource = 'explicit-session' | 'workspace';
+ /** Workspace archive and directory operations consumed by Client UI domains. */
+ export interface UiWorkspace {
+     /**
+      * Select a Session and show its Conversation as one UI navigation action.
+      * @param target - known Session identity or durable direct-parent subagent address to display.
+      */
+-    openSession(target: SessionTarget): void;
++    registerSessionOpener(handler: (sessionId: SessionId, source?: SessionNavigationSource) => boolean): () => void;
++    openSession(target: SessionTarget, source?: SessionNavigationSource): void;
+     /**
+      * Connect a Workspace and open its Session unless a later navigation supersedes it.
+      * @param workspaceId - target Workspace.
+      * @param beforeOpen - optional synchronous preparation for the selected Session, skipped after supersession.
+      * @returns completion; a superseded request may create a Session but does not open it.
+      */
+-    openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>;
++    openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void, fresh?: boolean): Promise<void>;
+     /**
+      * Fork a Session and open the child unless a later navigation supersedes it.
+      * @param sessionId - source Session.
+@@ -29,11 +31,13 @@ export interface UiWorkspace {
+      * @param workspaceId - target Workspace.
+      * @returns a Session already addressable through the Session Controller.
+      */
+-    connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>;
++    connectWorkspace(workspaceId: WorkspaceId, fresh?: boolean): Promise<SessionId>;
+     /**
+      * Start a New Session flow and navigate to its Session.
+      * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+      */
++    registerSessionStarter(handler: (workspaceId?: WorkspaceId) => boolean): () => void;
++    registerSessionStarter(handler: (workspaceId?: WorkspaceId) => boolean): () => void;
+     startSession(workspaceId?: WorkspaceId): void;
+     /**
+      * Archive a Session and clear it when it is the current selection.
+@@ -87,6 +91,8 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+     private readonly lifetime;
+     private readonly selection;
+     private mainReference;
++    private sessionOpener;
++    private sessionStarter;
+     /**
+      * @param ctx - Client root Context.
+      * @param directoryPicker - the directory-picking Remote namespace.
+@@ -94,9 +100,10 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+      * @param sessions - pure Session Controller.
+      */
+     constructor(ctx: Context, directoryPicker: ClientRemote['directoryPicker'], workspaces: IWorkspaces, sessions: ISessions);
+-    connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>;
+-    openSession(target: SessionTarget): void;
+-    openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>;
++    connectWorkspace(workspaceId: WorkspaceId, fresh?: boolean): Promise<SessionId>;
++    registerSessionOpener(handler: (sessionId: SessionId, source?: SessionNavigationSource) => boolean): () => void;
++    openSession(target: SessionTarget, source?: SessionNavigationSource): void;
++    openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void, fresh?: boolean): Promise<void>;
+     forkSession(sessionId: SessionId): Promise<void>;
+     startSession(workspaceId?: WorkspaceId): void;
+     archiveSession(sessionId: SessionId): Promise<void>;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
 index e5f5cca..ff3a068 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
