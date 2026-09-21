@@ -19,7 +19,7 @@ describe('desktop workbench state', () => {
   it('provides detached ownership snapshots from the same persisted state, failing closed on corruption', async () => {
     const { root, store } = await fixture()
     let ownership
-    apply({ effect: fn => fn(), reflect: { provide(name, service) {
+    apply({ effect: fn => fn(), inject() {}, reflect: { provide(name, service) {
       expect(name).toBe('desktopWorkbenchOwnership')
       ownership = service
     } }, connection: { fetch: { register() {} } } }, { root })
@@ -126,7 +126,7 @@ describe('desktop workbench state', () => {
   it('registers the public host route and enforces request limits including streamed bodies', async () => {
     const { root } = await fixture()
     const routes = []
-    apply({ effect: fn => fn(), reflect: { provide() {} }, connection: { fetch: { register(value) { routes.push(value) } } } }, { root })
+    apply({ effect: fn => fn(), inject() {}, reflect: { provide() {} }, connection: { fetch: { register(value) { routes.push(value) } } } }, { root })
     const catalogRoute = routes.find(value => value.path === '/api/desktop-workbenches/catalog')
     const readRoute = routes.find(value => value.path === '/api/desktop-workbenches/state')
     const writeRoute = routes.find(value => value.path === '/api/desktop-workbenches/state/write')

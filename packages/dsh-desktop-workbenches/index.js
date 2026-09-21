@@ -1,5 +1,6 @@
 import Schema from '@deepseek-ai/schemastery'
 import { CatalogError, createCatalogReader } from './catalog.mjs'
+import { awaitHandle, createMarketInstallStore, MarketInstallError, readInstalledWorkbenchId, resolveInstallTarget } from './market-install.mjs'
 import { readSubmissionStatus, SubmissionStatusError } from './submission-status.mjs'
 import { createStateStore, MAX_STATE_BYTES, StateError } from './state.mjs'
 import { readFile } from 'node:fs/promises'
@@ -36,6 +37,9 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const readCatalog = createCatalogReader()
+  const marketInstalls = createMarketInstallStore(config.root)
+  // config.root is <DSH home>/desktop-workbenches; packages land in the web profile.
+  const webProfile = join(dirname(config.root), 'profiles', 'web')
   // Providers must use the same persisted ownership as Desktop, never a second
   // settings namespace that could accidentally authorize an ordinary session.
   ctx.effect(() => ctx.reflect.provide('desktopWorkbenchOwnership', {
@@ -122,5 +126,87 @@ export function apply(ctx, config) {
         })
       }
     }
+  })
+  const known = (error) => error instanceof MarketInstallError || error instanceof CatalogError || error instanceof StateError
+  const installFailure = (error, fallback) => Response.json({ error: known(error) ? error.message : fallback }, {
+    status: known(error) ? error.status : 500,
+    headers: { 'cache-control': 'no-store' }
+  })
+  // Market entries are identified by their Awesome repository identity.
+  const catalogIdFrom = async (request) => {
+    const payload = await readPayload(request, 4096, 'Request is too large.')
+    if (typeof payload?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/(?!\.\.?$)[A-Za-z0-9_.-]{1,100}$/.test(payload.id)) throw new MarketInstallError('A workbench market entry is required.')
+    return payload.id
+  }
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/market-installs',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      try { return Response.json({ installs: await marketInstalls.read() }, { headers: { 'cache-control': 'no-store' } }) }
+      catch (error) { return installFailure(error, 'Could not read workbench market installs.') }
+    }
+  })
+  // Installing needs Desktop's package service; without it the market stays browse-only.
+  ctx.inject(['desktopPnpm'], (ctx) => {
+    ctx.connection.fetch.register({
+      path: '/api/desktop-workbenches/market-install',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        try {
+          const id = await catalogIdFrom(request)
+          // The install source always comes from the Awesome catalog, never from the request.
+          const entry = (await readCatalog()).catalog.workbenches.find((item) => item.id === id)
+          if (!entry) throw new MarketInstallError('This workbench is no longer listed in the workbench market.', 404)
+          const target = await resolveInstallTarget(entry)
+          try {
+            let handle
+            try {
+              handle = ctx.desktopPnpm.installWorkbenchGeneration({
+                pluginSpec: target.pluginSpec,
+                expectedPluginName: target.expectedPluginName,
+                expectedVersion: target.expectedVersion,
+                npmIntegrity: target.npmIntegrity
+              }, config.root)
+            } catch (error) { throw new MarketInstallError(error instanceof Error ? error.message : String(error), 409) }
+            await awaitHandle(handle)
+          } finally { await target.cleanup() }
+          // The runtime ID is known once the provider registers; an optional
+          // workbench.json lets the sidebar entry appear right away.
+          let workbenchId
+          try {
+            workbenchId = await readInstalledWorkbenchId(webProfile, target.expectedPluginName)
+            const clash = workbenchId && Object.entries(await marketInstalls.read()).find(([key, value]) => key !== id && value.workbenchId === workbenchId)
+            if (clash) throw new MarketInstallError(`This package registers workbench ID "${workbenchId}", which ${clash[0]} already uses.`, 409)
+          } catch (error) {
+            // Never leave a package enabled that Desktop cannot attribute.
+            await awaitHandle(ctx.desktopPnpm.runPlugin(['remove', target.expectedPluginName], config.root)).catch(() => {})
+            throw error
+          }
+          const install = { catalogId: entry.id, workbenchId, pluginName: target.expectedPluginName, version: entry.version, source: entry.distribution.type, installedAt: new Date().toISOString() }
+          await marketInstalls.record(id, install)
+          return Response.json({ install, restartRequired: true }, { headers: { 'cache-control': 'no-store' } })
+        } catch (error) { return installFailure(error, 'Could not install the workbench.') }
+      }
+    })
+    ctx.connection.fetch.register({
+      path: '/api/desktop-workbenches/market-uninstall',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        try {
+          const id = await catalogIdFrom(request)
+          const install = (await marketInstalls.read())[id]
+          if (!install) throw new MarketInstallError('This workbench was not installed from the workbench market.', 404)
+          let handle
+          try { handle = ctx.desktopPnpm.runPlugin(['remove', install.pluginName], config.root) }
+          catch (error) { throw new MarketInstallError(error instanceof Error ? error.message : String(error), 409) }
+          await awaitHandle(handle)
+          await marketInstalls.forget(id)
+          return Response.json({ restartRequired: true }, { headers: { 'cache-control': 'no-store' } })
+        } catch (error) { return installFailure(error, 'Could not uninstall the workbench.') }
+      }
+    })
   })
 }
