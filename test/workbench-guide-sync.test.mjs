@@ -6,7 +6,10 @@
 
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { apply } from '../packages/dsh-desktop-workbenches/index.js'
 import { GUIDE_SOURCE, GUIDE_TARGET, renderGuideFromSource } from '../scripts/build-workbench-guide.mjs'
 
 const root = join(import.meta.dirname, '..')
@@ -29,9 +32,26 @@ describe('bundled workbench development guide', () => {
     expect(guide).not.toContain('../../docs/')
   })
 
-  it('does not describe local storage as an official submission', () => {
+  it('sends submissions through an awesome-dsh-workbench PR and keeps no local submission state', () => {
     const guide = read(GUIDE_SOURCE)
-    expect(guide).toContain('旧本机 `pending` 仅为本地草稿')
-    expect(guide).not.toContain('POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions')
+    expect(guide).toContain('data/workbenches/<owner>__<repo>.yml')
+    expect(guide).toContain('本机不保存投稿状态')
+    expect(guide).not.toContain('submissions.json')
+    expect(guide).not.toContain('/api/desktop-workbenches/submissions')
+    expect(guide).not.toContain('screenshots.json')
+  })
+
+  it('is served by the local host under both guide paths and exposes no submission API', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-workbench-guide-'))
+    try {
+      const routes = []
+      apply({ effect: fn => fn(), reflect: { provide() {} }, connection: { fetch: { register(route) { routes.push(route) } } } }, { root })
+      for (const path of ['/api/desktop-workbenches/development-guide', '/api/desktop-workbenches/author-guide']) {
+        const response = await routes.find(value => value.path === path).fetch(new Request(`http://localhost${path}`))
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe(read(GUIDE_TARGET))
+      }
+      expect(routes.some(value => value.path === '/api/desktop-workbenches/submissions')).toBe(false)
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 })

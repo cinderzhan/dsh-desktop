@@ -16,7 +16,7 @@ Two copyable prompts cover the Agent handoff. The development prompt asks the Ag
 
 The first listing adds one `data/workbenches/owner__repo.yml` record to `dataelement/awesome-dsh-workbench`; later package versions are discovered by catalog automation. Publishing prefers npm, then GitHub Release, then GitHub source. Desktop does not mirror public packages. A real pull-request URL is required before the Agent may report that a workbench was submitted, and a merged record visible in the public catalog is required before it may report that the workbench was listed.
 
-Existing local submissions remain local drafts. Version-1 `pending` records migrate to version-2 `local-draft` records with a one-time exact metadata backup; package archives remain unchanged. Local drafts are never mixed into public market results and never imply that GitHub review has started.
+Desktop keeps no submission state: opening the pull request is the submission, and its progress is the pull request on GitHub. The former local submission queue and its API are removed. To follow progress, the user can paste the pull-request link in step 3; `GET /api/desktop-workbenches/submission-status` accepts only pull requests in `dataelement/awesome-dsh-workbench`, reads them from the GitHub API without a token, and reports open, draft, changes requested (while that is the reviewer's latest review), merged or closed. Nothing is stored. An existing `desktop-workbenches/submissions.json` from an earlier build is neither read nor deleted.
 
 The implementation is in `packages/dsh-desktop-workbenches/`. Run the focused checks with:
 

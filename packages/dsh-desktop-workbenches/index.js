@@ -1,7 +1,7 @@
 import Schema from '@deepseek-ai/schemastery'
 import { CatalogError, createCatalogReader } from './catalog.mjs'
+import { readSubmissionStatus, SubmissionStatusError } from './submission-status.mjs'
 import { createStateStore, MAX_STATE_BYTES, StateError } from './state.mjs'
-import { createSubmissionStore, MAX_SUBMISSION_BYTES } from './submissions.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,7 +36,6 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const readCatalog = createCatalogReader()
-  const submissions = createSubmissionStore(config.root)
   // Providers must use the same persisted ownership as Desktop, never a second
   // settings namespace that could accidentally authorize an ordinary session.
   ctx.effect(() => ctx.reflect.provide('desktopWorkbenchOwnership', {
@@ -106,19 +105,16 @@ export function apply(ctx, config) {
     }
   })
   ctx.connection.fetch.register({
-    path: '/api/desktop-workbenches/submissions',
-    methods: ['GET', 'POST'],
+    path: '/api/desktop-workbenches/submission-status',
+    methods: ['GET'],
     requestBody: 'buffered',
     async fetch(request) {
       try {
-        const result = request.method === 'GET'
-          ? { submissions: await submissions.read() }
-          : { submission: await submissions.create(await readPayload(request, MAX_SUBMISSION_BYTES, 'Workbench submission is too large.')) }
-        return Response.json(result, { status: request.method === 'POST' ? 201 : 200, headers: { 'cache-control': 'no-store' } })
+        const status = await readSubmissionStatus(new URL(request.url).searchParams.get('url'))
+        return Response.json(status, { headers: { 'cache-control': 'no-store' } })
       } catch (error) {
-        return Response.json({ error: error instanceof StateError ? error.message : 'Could not access workbench submissions.' }, {
-          status: error instanceof StateError ? error.status : 500,
-          headers: { 'cache-control': 'no-store' }
+        return Response.json({ error: error instanceof SubmissionStatusError ? error.message : 'Could not read the pull request.' }, {
+          status: error instanceof SubmissionStatusError ? error.status : 500, headers: { 'cache-control': 'no-store' }
         })
       }
     }
