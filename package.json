@@ -24,7 +24,8 @@
   ],
   "scripts": {
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
-    "dev": "electron-vite dev",
+    "dev": "DSH_DEV_PROFILE=dsh-desktop-dev-integrated DSH_DEV_HARNESS_PORT=43130 DSH_DEV_MOBILE_PORT=43131 electron-vite dev",
+    "dev:shared": "electron-vite dev",
     "build": "electron-vite build",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "loader:generate": "node scripts/generate-loader-gifs.mjs",
@@ -274,6 +275,7 @@
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
     "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
+    "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-media-workbench": "file:vendor/workbenches/dsh-media-workbench-0.12.1.tgz",
     "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
     "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",

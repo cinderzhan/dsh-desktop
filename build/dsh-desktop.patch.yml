@@ -15,6 +15,9 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    - id: dsh-desktop-onboarding
+      name: dsh-desktop-onboarding
+
     - id: dsh-desktop-workbenches
       name: dsh-desktop-workbenches
       config:

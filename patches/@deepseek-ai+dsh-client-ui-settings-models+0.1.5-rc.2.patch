@@ -818,3 +818,39 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
+@@ -2955,16 +3315,10 @@
+ 				}
+ 			}, ModelsSection));
+-			ctx.slots.inject("settings.onboarding", () => ctx.slots.register({
+-				name: "settings.onboarding",
+-				id: "welcome-notice",
+-				order: -100,
+-				inject: welcomeInjected
+-			}, WelcomeNotice));
+-			ctx.slots.inject("settings.onboarding", () => ctx.slots.register({
+-				name: "settings.onboarding",
+-				id: "deepseek-official",
+-				order: 0,
+-				inject: deepSeekOnboardingInjected
+-			}, DeepSeekOnboardingDialog));
++			// Desktop integration: the first-run experience is owned by the
++			// dsh-desktop-onboarding wizard, which embeds this package's
++			// ModelsSection. The welcome notice and the official-DeepSeek
++			// onboarding dialog are therefore not registered here (registering
++			// them stacked a second onboarding UI on the same slot ids).
++
+ 		}
+ 		//#endregion
+@@ -2971,4 +3325,12 @@
+ 		exports.apply = apply;
+ 		exports.inject = inject;
+ 		exports.refreshIfLoaded = refreshIfLoaded;
++		// Desktop reuse surface: let dsh-desktop-onboarding render the exact
++		// Models settings section (same UI, same provider/model reading rules)
++		// inside its first-run wizard instead of re-implementing model setup.
++		exports.ModelsSection = ModelsSection;
++		exports.ProviderEditor = ProviderEditor;
++		exports.ModelsSettingsStore = ModelsSettingsStore;
++		exports.createModelsOperations = createModelsOperations;
++		exports.createSettingsSchemaOperations = createSettingsSchemaOperations;
+ 		return module.exports;

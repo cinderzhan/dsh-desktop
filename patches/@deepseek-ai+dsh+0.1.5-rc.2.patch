@@ -9,6 +9,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 +    "dsh-desktop-client-ui": "0.1.0",
 +    "dsh-desktop-hmr-fallback": "0.1.0",
 +    "dsh-desktop-market-installer": "0.1.0",
++    "dsh-desktop-onboarding": "0.1.0",
 +    "dsh-desktop-preset-transfer": "0.1.0",
 +    "dsh-desktop-workbenches": "0.1.0",
 +    "ming-life": "1.2.0",

@@ -502,7 +502,7 @@ function attachWindowsMenuView(window: BrowserWindow): void {
 function configureAppIdentity(): void {
   if (developmentBuild) {
     app.setName('DSH Desktop Dev')
-    app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-dev'))
+    app.setPath('userData', join(app.getPath('appData'), process.env.DSH_DEV_PROFILE || 'dsh-desktop-dev'))
     return
   }
 
@@ -2701,7 +2701,7 @@ async function bootstrap(): Promise<void> {
     logPath: join(app.getPath('logs'), 'harness.log'),
     // Keep the Harness origin stable across launches. These ports are separate
     // from the production/development mobile bridge ports (43127/43128).
-    preferredPort: DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
+    preferredPort: Number(process.env.DSH_DEV_HARNESS_PORT) || DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
     launchProcess: (executablePath, args, options) =>
       process.platform === 'darwin'
         ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
@@ -2730,7 +2730,7 @@ async function bootstrap(): Promise<void> {
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
     forceCloudflareFailure: process.env.DSH_TUNNEL_FORCE_PINGGY === '1',
     tunnelLog: (message) => console.warn(message),
-    port: developmentBuild ? 43128 : 43127,
+    port: Number(process.env.DSH_DEV_MOBILE_PORT) || (developmentBuild ? 43128 : 43127),
     onReconnectRequested: () => {
       void showMobilePairing().catch(showUnexpectedError)
     },
