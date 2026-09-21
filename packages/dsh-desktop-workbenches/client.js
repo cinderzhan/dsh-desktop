@@ -12,8 +12,17 @@ window.__ModuleLoader__.load({
     // local acceptance, first listing and later releases.
     const GUIDE_API = '/api/desktop-workbenches/author-guide'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
-    const GUIDE_READING = `先阅读并遵循随本机安装版本分发的完整工作台作者指南：$DSH_WEB_URL${GUIDE_API}。它包含开发、本机验收和 GitHub 发布流程；以当前安装版本为准。`
+    const ACCEPTANCE_API = '/api/desktop-workbenches/market-acceptance'
+    // The website is the one public link for both documents; the bundled copies
+    // behind GUIDE_API and ACCEPTANCE_API are only for reading offline in Desktop.
+    // Agents read the Markdown; people open the reading page.
+    const DEVELOPMENT_DOC_URL = 'https://dshdesktop.com/workbench/docs/development.md'
+    const ACCEPTANCE_DOC_URL = 'https://dshdesktop.com/workbench/docs/market-acceptance.md'
+    const DEVELOPMENT_PAGE_URL = 'https://dshdesktop.com/workbench/docs/development/'
+    const ACCEPTANCE_PAGE_URL = 'https://dshdesktop.com/workbench/docs/market-acceptance/'
+    const GUIDE_READING = `先阅读并遵循工作台开发规范：${DEVELOPMENT_DOC_URL} 。它包含包格式、运行规则和本地自测清单。`
     const DEVELOPMENT_GUIDE_READING = `${GUIDE_READING}当前任务只做本地开发和安装，不需要处理市场投稿或发布。`
+    const ACCEPTANCE_READING = `先阅读并遵循工作台市场验收规范：${ACCEPTANCE_DOC_URL} 。它包含上传 GitHub、安装来源、上架资料、收录 PR 和验收清单。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -421,6 +430,8 @@ window.__ModuleLoader__.load({
       .dshWb button{cursor:pointer;transition:none}.dshWb button:disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
       .dshWb button:focus-visible,.dshWb input:focus-visible,.dshWb select:focus-visible,.dshWb textarea:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
       .dshWbBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:6px;padding:5px 10px;white-space:nowrap}
+      a.dshWbBtn{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
+      .dshWbStepLink.dshWbOffline{font-size:12px;margin:0 4px;opacity:.75}
       .dshWbStatusForm{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-top:12px}.dshWbStatusForm label{display:flex;flex-direction:column;gap:4px;flex:1 1 240px;min-width:0;font-size:13px}.dshWbStatusForm input{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 8px;background:var(--dsw-alias-bg-layer-1);color:inherit}.dshWbStatusResult{flex-basis:100%;font-size:13px;line-height:1.6}
       .dshWb .dshWbBtn:not(.dshWbPrimary):not([role=tab]):hover:not(:disabled),.dshWb .dshWbBtn:not(.dshWbPrimary):not([role=tab]):active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
       .dshWb .dshWbPrimary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);border-color:transparent}
@@ -773,7 +784,12 @@ window.__ModuleLoader__.load({
       flushParagraph(); flushList(); flushCode()
       return blocks
     }
-    function GuideModal({ service, open, onClose }) {
+    const GUIDE_DOCUMENTS = {
+      author: { api: GUIDE_API, url: DEVELOPMENT_PAGE_URL, title: '工作台开发规范', source: '这里展示的是 Desktop 内附的离线副本，覆盖开发和本地自测。以官网版本为准。' },
+      acceptance: { api: ACCEPTANCE_API, url: ACCEPTANCE_PAGE_URL, title: '工作台市场验收规范', source: '这里展示的是 Desktop 内附的离线副本，只在上架到工作台市场时需要。以官网版本为准。' }
+    }
+    function GuideModal({ service, open, onClose, document: kind = 'author' }) {
+      const doc = GUIDE_DOCUMENTS[kind] || GUIDE_DOCUMENTS.author
       const dialogRef = React.useRef(null)
       const [retry, setRetry] = React.useState(0)
       const [guide, setGuide] = React.useState({ loading: true, text: '', error: '' })
@@ -782,7 +798,7 @@ window.__ModuleLoader__.load({
         if (!open) return undefined
         let cancelled = false
         setGuide({ loading: true, text: '', error: '' })
-        service.request(GUIDE_API, { cache: 'no-store', credentials: 'same-origin' })
+        service.request(doc.api, { cache: 'no-store', credentials: 'same-origin' })
           .then(async response => {
             if (!response.ok) {
               const data = await response.json().catch(() => ({}))
@@ -794,15 +810,15 @@ window.__ModuleLoader__.load({
           })
           .catch(error => { if (!cancelled) setGuide({ loading: false, text: '', error: `指南暂时无法读取：${error instanceof Error ? error.message : String(error)}` }) })
         return () => { cancelled = true }
-      }, [service, open, retry])
+      }, [service, open, retry, doc.api])
       if (!open) return null
       return require('react-dom').createPortal(
         h('div', { className: 'dshWbModalBackdrop', onClick: onClose },
           h('div', { ref: dialogRef, className: 'dshWbModal dshWbGuideModal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-guide-title', tabIndex: -1, onClick: event => event.stopPropagation() },
             h('header', { className: 'dshWbGuideHeader' },
               h('div', { className: 'dshWbGuideHeaderText' },
-                h('h2', { id: 'dsh-workbench-guide-title' }, '工作台作者指南'),
-                h('p', null, '当前安装版本 · 与 Agent 读取同一份指南')),
+                h('h2', { id: 'dsh-workbench-guide-title' }, doc.title),
+                h('p', null, '官方地址：', h('a', { href: doc.url, target: '_blank', rel: 'noopener noreferrer' }, doc.url))),
               h(Button, { autoFocus: true, onClick: onClose }, '关闭')),
             h('div', { className: 'dshWbGuideBody' },
               guide.loading
@@ -810,27 +826,27 @@ window.__ModuleLoader__.load({
                 : guide.error
                   ? h('div', { className: 'dshWbGuideStatus', role: 'alert' }, h('div', null, h('strong', null, guide.error), h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setRetry(value => value + 1) }, '重试'))))
                   : h('div', { className: 'dshWbGuideDocument' },
-                    h('div', { className: 'dshWbGuideSource' }, '唯一版本说明：这里展示的是随当前 DSH Desktop 分发的完整作者指南，覆盖开发、本机验收和 GitHub 发布。'),
+                    h('div', { className: 'dshWbGuideSource' }, doc.source),
                     renderGuideBlocks(guide.text))))),
         document.body)
     }
     function developmentWorkbenchAgentPrompt() {
-      return `请帮我制作 DSH Desktop 工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
+      return `请帮我制作一个 DSH Desktop 工作台，只在本机开发和使用，不需要上传或投稿。你可以使用自己的开发流程，DSH 不控制开发过程。
 
-${DEVELOPMENT_GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更改。完成工作台功能、界面和必要测试。检查 workbench.json（schemaVersion 1、稳定 id、title、description、version、entry、兼容性和能力声明），运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口；workbench.json 可选），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
-完成后，按当前项目已有的插件安装或加载机制，把工作台装到我这台 DSH Desktop。不要让我重新填写项目元数据。确认它已注册、出现在「已安装的工作台」和左侧入口，并实际打开检查。这一步到此为止，不要投稿。
+完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。然后按规范第 8 节“本地自测清单”逐项检查，确认它出现在「已安装的工作台」和左侧入口，并实际打开使用。
 
-若当前版本没有可用的本地安装接口，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确报告缺少的安装步骤；不要声称已加载。最后给我文件路径、验证结果和实际加载状态。`
+若当前版本没有可用的本地安装方式，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确说明缺少的步骤，不要声称已加载。最后告诉我修改的文件、自测结果、实际加载状态和未验证的项目。`
     }
     function submissionWorkbenchAgentPrompt() {
-      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按完整作者指南把它提交到公共工作台市场，不用重复开发功能。
+      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按工作台市场验收规范把它提交到公共工作台市场，不用重复开发功能。
 
-${GUIDE_READING}先确认要公开的仓库和内容，不得公开密钥、业务数据或未经授权的私有代码。把代码提交到我自己的公共 GitHub 仓库；有 npm 包就发布 npm，也可以发布 GitHub Release 安装包，或者只提供可直接安装的源码。先读取项目真实脚本和工具帮助，不要编造发布命令。
+${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥、业务数据或未经授权的私有代码。按规范的上架流程，把代码提交到我自己的公开 GitHub 仓库；有 npm 包就发布 npm，也可以发布 GitHub Release 安装包，或者只提供可直接安装的源码。先读取项目真实脚本和工具帮助，不要编造发布命令。
 
 然后向 ${WORKBENCH_MARKET_REPO} 提交一个 PR，只新增 data/workbenches/<owner>__<repo>.yml。格式以该仓库的 catalog/README.md 为准：url、name、category、description.zh 和 description.en 必填，screenshots 填 1–5 张我仓库里的真实截图地址，没有 npm 时可以填 tarball。不要填写版本、npm 包名或校验值，也不要修改生成的文件。使用我已经授权的 GitHub 网页或 gh；缺少登录或公开授权时，先完成能完成的部分，再准确说明缺什么。
 
-提交 PR 就是进入审核，本机不保存投稿状态。只有拿到真实 PR URL 才能说“已提交”；PR 合并且市场目录能读到条目后才能说“已上架”。最后给我发布地址、PR URL、目录是否可见、验收证据和仍未完成的事项。`
+提交前按规范第 6 节的验收清单逐项自查。提交 PR 就是进入审核，本机不保存投稿状态。只有拿到真实 PR URL 才能说“已提交”；PR 合并且市场目录能读到条目后才能说“已上架”。最后给我发布地址、PR URL、目录是否可见、验收证据和仍未完成的事项。`
     }
     function submissionAgentPrompt(mode = 'development') {
       return mode === 'submission' ? submissionWorkbenchAgentPrompt() : developmentWorkbenchAgentPrompt()
@@ -887,7 +903,7 @@ ${GUIDE_READING}先确认要公开的仓库和内容，不得公开密钥、业�
       const [removing, setRemoving] = React.useState(null)
       const [openPrompt, setOpenPrompt] = React.useState(null)
       const [copyStatus, setCopyStatus] = React.useState('')
-      const [guideOpen, setGuideOpen] = React.useState(false)
+      const [guideOpen, setGuideOpen] = React.useState(null)
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const developmentPrompt = developmentWorkbenchAgentPrompt()
@@ -948,20 +964,20 @@ ${GUIDE_READING}先确认要公开的仓库和内容，不得公开密钥、业�
           h('div', { className: 'dshWbSteps', 'aria-label': '工作台制作步骤' },
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '1'),
-              h('strong', null, '先看规范，让 Agent 开发'),
-              h('p', null, '把指令复制给你的 Agent。它会先读', h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setGuideOpen(true) }, '工作台作者指南'), '，再动手开发。'),
+              h('strong', null, '把开发指令交给 Agent'),
+              h('p', null, '复制指令给你的 Agent，它会按', h('a', { href: DEVELOPMENT_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台开发规范'), h('button', { type: 'button', className: 'dshWbStepLink dshWbOffline', onClick: () => setGuideOpen('author') }, '离线查看'), '开发。只在本机使用，不需要上传代码。'),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(developmentPrompt) }, '复制开发指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'development' ? null : 'development') }, openPrompt === 'development' ? '收起指令' : '查看指令')),
               openPrompt === 'development' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: developmentPrompt, 'aria-label': '开发工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() })),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '2'),
-              h('strong', null, '装到本机，打开确认能用'),
-              h('p', null, 'Agent 会把它装到这台 Desktop。你打开确认它出现在「已安装的工作台」和左侧入口——到这一步，自己用就没问题了。')),
+              h('strong', null, '装到本机，自测确认能用'),
+              h('p', null, 'Agent 会把它装到这台 Desktop，并按开发规范的本地自测清单检查。你打开确认它出现在「已安装的工作台」和左侧入口。自己用的话，到这一步就完成了。')),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
-              h('strong', null, '想投稿，再按市场要求提交'),
-              h('p', null, '先把代码提交到你自己的 GitHub 仓库，再向', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场仓库'), '提交一个 YAML 的 PR。把指令复制给 Agent 即可。'),
+              h('strong', null, '想上架，再按验收规范提交'),
+              h('p', null, '按', h('a', { href: ACCEPTANCE_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场验收规范'), h('button', { type: 'button', className: 'dshWbStepLink dshWbOffline', onClick: () => setGuideOpen('acceptance') }, '离线查看'), '，把代码上传到你自己的 GitHub 仓库，准备简介和截图，再向', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场仓库'), '提交收录 PR。把投稿指令复制给 Agent 即可。'),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(submissionPrompt) }, '复制投稿指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),
@@ -991,7 +1007,7 @@ ${GUIDE_READING}先确认要公开的仓库和内容，不得公开密钥、业�
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击星标即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
         removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), onConfirm: () => service.run(service.remove(removing).then(() => setRemoving(null))) }),
-        guideOpen && h(GuideModal, { service, open: guideOpen, onClose: () => setGuideOpen(false) }))
+        guideOpen && h(GuideModal, { service, open: !!guideOpen, document: guideOpen, onClose: () => setGuideOpen(null) }))
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)
