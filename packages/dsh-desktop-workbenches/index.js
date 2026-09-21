@@ -44,20 +44,24 @@ export function apply(ctx, config) {
       return { revision, sessionBindings: { ...state.sessionBindings }, added: [...state.added] }
     }
   }))
-  const guideRoute = path => ({
+  // Both documents are published on the website; these are the offline copies
+  // bundled with this Desktop version.
+  const documentRoute = (path, file) => ({
     path,
     methods: ['GET'],
+    requestBody: 'buffered',
     async fetch() {
       try {
-        const guide = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'development-guide.zh.md'), 'utf8')
-        return new Response(guide, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' } })
+        const text = await readFile(join(dirname(fileURLToPath(import.meta.url)), file), 'utf8')
+        return new Response(text, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' } })
       } catch {
-        return Response.json({ error: 'Could not read the workbench development guide.' }, { status: 500, headers: { 'cache-control': 'no-store' } })
+        return Response.json({ error: `Could not read ${file}.` }, { status: 500, headers: { 'cache-control': 'no-store' } })
       }
     }
   })
-  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/development-guide'))
-  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/author-guide'))
+  ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/development-guide', 'development-guide.zh.md'))
+  ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/author-guide', 'development-guide.zh.md'))
+  ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/market-acceptance', 'market-acceptance.zh.md'))
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/catalog',
     methods: ['GET'],
