@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyState, validateState } from '../packages/dsh-desktop-workbenches/state.mjs'
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
-let apply, Workbenches, Market
+let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
   window: { __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
@@ -16,6 +16,10 @@ vm.runInNewContext(code, {
     apply = client.apply
     Workbenches = client.Workbenches
     Market = client.Market
+    submissionAgentPrompt = client.submissionAgentPrompt
+    developmentWorkbenchAgentPrompt = client.developmentWorkbenchAgentPrompt
+    submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
+    copySubmissionPrompt = client.copySubmissionPrompt
   } } },
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
@@ -30,6 +34,7 @@ function deferred() {
 
 async function fixture(initial = emptyState()) {
   let stored = { revision: 0, state: structuredClone(initial) }
+  let storedSubmissions = []
   const list = { current: null, ids: ['old', 'writer-1', 'writer-2', 'research-1'], byId: {} }
   for (const id of list.ids) list.byId[id] = { sessionId: id, displayTitle: id }
   const projects = [{ workspaceId: 'project-1', title: 'User project', sessionIds: [...list.ids] }]
@@ -70,6 +75,12 @@ async function fixture(initial = emptyState()) {
       stale: false,
       catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
     })
+    if (url === '/api/desktop-workbenches/submissions') {
+      if (options.method !== 'POST') return Response.json({ submissions: storedSubmissions })
+      const submission = { id: `submission-${storedSubmissions.length + 1}`, status: 'local-draft', createdAt: '2026-09-14T00:00:00.000Z', ...JSON.parse(options.body) }
+      storedSubmissions = [submission, ...storedSubmissions]
+      return Response.json({ submission }, { status: 201 })
+    }
     if (options.method !== 'POST') return Response.json(stored)
     const payload = JSON.parse(options.body)
     if (payload.revision !== stored.revision) return Response.json({ error: 'Conflict' }, { status: 409 })
@@ -84,7 +95,7 @@ async function fixture(initial = emptyState()) {
   await service.load()
   return {
     service, ctx, request, list,
-    saved: () => structuredClone(stored),
+    saved: () => structuredClone(stored), submissions: () => structuredClone(storedSubmissions),
     externalUpdate: (state = stored.state) => { stored = { revision: stored.revision + 1, state: structuredClone(state) } }
   }
 }
@@ -230,15 +241,116 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
-  it('renders the three workbench collections as tabs', () => {
+  it('renders workbench creation as a separate action instead of a collection tab', () => {
     const source = Market.toString()
-    expect(source).toContain("'aria-selected': tab === 'market'")
+    expect(source).not.toContain("'aria-selected': tab === 'submit'")
+    expect(source).not.toContain("'aria-controls': 'dsh-workbench-submit-panel'")
+    expect(source).toContain("id: 'dsh-workbench-submit-panel'")
+    expect(source).toContain('制作我的工作台')
+    expect(source).toContain('dshWbCreate')
     expect(source).toContain("'aria-selected': tab === 'favorites'")
-    expect(source).toContain("'aria-selected': tab === 'mine'")
     expect(source).toContain('我的收藏')
     expect(source).toContain('已安装的工作台')
+    expect(source).toContain('先看规范，让 Agent 开发')
+    expect(source).toContain('装到本机，打开确认能用')
+    expect(source).toContain('想投稿，再按市场要求提交')
+    expect(source).toContain('复制开发指令')
+    expect(source).toContain('复制投稿指令')
+    // Self-use must not read as a parallel alternative to submitting.
+    expect(source).not.toContain('选择交付方式')
+    expect(source).not.toContain('提交到工作台广场')
+    expect(source).not.toContain('submitMode')
+    expect(source).toContain("tab !== 'submit' && h('div', { className: 'dshWbToolbar'")
+    expect(source).toContain("tab !== 'submit' && h('section'")
+    expect(source).not.toContain('showSubmit')
     expect(source).not.toContain("'aria-expanded'")
+    expect(source).toContain('setGuideOpen(true)')
+    expect(source).not.toContain('GUIDE_PAGE')
+    expect(code).toContain("service.request(GUIDE_API, { cache: 'no-store', credentials: 'same-origin' })")
+    expect(code).toContain('当前安装版本 · 与 Agent 读取同一份指南')
   })
+
+  it('provides one prompt for local development and one for submission', () => {
+    const development = developmentWorkbenchAgentPrompt()
+    expect(development).toContain('workbench.json')
+    expect(development).toContain('scripts/check-workbench-package.mjs')
+    expect(development).toContain('已安装的工作台')
+    expect(development).toContain('左侧入口')
+    expect(development).toContain('不要投稿')
+    expect(development).toContain('不要声称已加载')
+    expect(development).toContain('$DSH_WEB_URL/api/desktop-workbenches/author-guide')
+    expect(development).toContain('version、entry、兼容性')
+    expect(development).not.toContain('version、client、兼容性')
+    expect(development).toContain('不需要处理市场投稿或发布')
+    expect(development).not.toContain('dataelement/awesome-dsh-workbench')
+    expect(development).not.toContain('CONTRIBUTING.md')
+    // The preset-package document describes Agent presets, not workbench packages.
+    expect(development).not.toContain('preset-packages')
+    expect(development).not.toContain('review-checklist')
+    expect(submissionAgentPrompt('development')).toBe(development)
+    expect(submissionAgentPrompt()).toBe(development)
+
+    const submission = submissionWorkbenchAgentPrompt()
+    expect(submission).toContain('完整作者指南')
+    expect(submission).toContain('CONTRIBUTING.md')
+    expect(submission).toContain('owner__repo.yml')
+    expect(submission).not.toContain('review-checklist')
+    expect(submission).toContain('npm 包')
+    expect(submission).toContain('GitHub Release')
+    expect(submission).toContain('真实 PR URL')
+    expect(submission).toContain('local-draft')
+    expect(submission).not.toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
+    expect(submission).not.toContain('不要把 pending 说成已经投稿成功')
+    expect(submission).not.toContain('preset-packages')
+    expect(submissionAgentPrompt('submission')).toBe(submission)
+  })
+
+  it('copies the Agent prompt through the clipboard API', async () => {
+    const writeText = vi.fn(async () => {})
+    const targetWindow = { navigator: { clipboard: { writeText } } }
+    await copySubmissionPrompt('Agent prompt', targetWindow)
+    expect(writeText).toHaveBeenCalledOnce()
+    expect(writeText).toHaveBeenCalledWith('Agent prompt')
+  })
+
+  it('falls back to a temporary text area when the clipboard API is unavailable', async () => {
+    const remove = vi.fn()
+    const textarea = { style: {}, setAttribute: vi.fn(), select: vi.fn(), remove }
+    const appendChild = vi.fn()
+    const targetWindow = { navigator: {}, document: { createElement: vi.fn(() => textarea), body: { appendChild }, execCommand: vi.fn(() => true) } }
+    await copySubmissionPrompt('Fallback prompt', targetWindow)
+    expect(textarea.value).toBe('Fallback prompt')
+    expect(textarea.select).toHaveBeenCalledOnce()
+    expect(targetWindow.document.execCommand).toHaveBeenCalledWith('copy')
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it('loads local drafts and saves a new draft once', async () => {
+    const { service, submissions } = await fixture()
+    const payload = { title: '地图工作台', description: '比较地点与路线', author: 'Cinder', repository: 'https://github.com/example/maps', screenshot: 'data:image/png;base64,AA==' }
+    const first = service.submit(payload)
+    await expect(service.submit(payload)).rejects.toThrow('请勿重复提交')
+    const saved = await first
+    expect(saved).toMatchObject({ ...payload, status: 'local-draft' })
+    expect(service.getSnapshot().submissions).toHaveLength(1)
+    expect(submissions()).toHaveLength(1)
+    await service.load()
+    expect(service.getSnapshot().submissions[0]).toMatchObject({ title: '地图工作台', status: 'local-draft' })
+  })
+
+  it('keeps core workbenches ready when submission history cannot be loaded', async () => {
+    const { service, request, saved } = await fixture()
+    const state = saved()
+    request.mockImplementation(async (url) => url === '/api/desktop-workbenches/submissions'
+      ? Response.json({ error: 'Submission service offline' }, { status: 503 })
+      : Response.json(state))
+    await service.load()
+    expect(service.ready).toBe(true)
+    expect(service.error).toBe('')
+    expect(service.getSnapshot().submissionError).toBe('Submission service offline')
+    expect(service.getSnapshot().submissions).toEqual([])
+  })
+
   it('starts a bound session from zero workspaces through the native creation flow', async () => {
     const { service, ctx } = await fixture(boundState())
     ctx.workspaces.list.getSnapshot().items.splice(0)
@@ -488,6 +600,7 @@ describe('desktop workbench client navigation', () => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({
         stale: false, catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
       })
+      if (url === '/api/desktop-workbenches/submissions') return Response.json({ submissions: [] })
       const state = options.method === 'POST' ? JSON.parse(options.body).state : emptyState()
       return Response.json({ revision: options.method === 'POST' ? 1 : 0, state })
     })
@@ -513,7 +626,7 @@ describe('desktop workbench client navigation', () => {
     expect(service.error).toBe('')
     service.register({ id: 'writer', title: 'Writer' }, () => null)
     await service.add('writer')
-    expect(reply).toHaveBeenCalledTimes(3)
+    expect(reply).toHaveBeenCalledTimes(4)
     expect(service.revision).toBe(1)
     expect(service.state.added).toEqual(['writer'])
   })
@@ -970,7 +1083,7 @@ describe('workbench market screenshot and metadata display', () => {
     // return statement parses fine but never renders, which silently breaks
     // "查看详情".
     const source = Market.toString()
-    const start = source.lastIndexOf("return h('section', { className: 'dshWb dshWbMarket'")
+    const start = source.indexOf("return h('section'", source.indexOf('const copyPrompt'))
     expect(start).toBeGreaterThan(-1)
     let index = source.indexOf('(', start)
     let depth = 0
@@ -1021,6 +1134,14 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('dshWbDetailThumb')
     expect(fullSource).toContain('dshWbDetailLightbox')
     expect(fullSource).toContain('screenshotsFor')
+  })
+
+  it('submission success feedback component is referenced in the submit panel', () => {
+    const source = Market.toString()
+    expect(source).toContain('SubmitSuccess')
+    expect(source).toContain('lastSubmission')
+    expect(fullSource).toContain('dshWbSubmitSuccess')
+    expect(fullSource).toContain('投稿已保存到本机')
   })
 
   it('uses a focused confirmation dialog for removal instead of inline card copy', () => {
