@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 21df26a..eb9437e 100644
+index 21df26a..e145363 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,38 @@ window.__ModuleLoader__.load({
@@ -980,3 +980,23 @@ index 21df26a..eb9437e 100644
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
+@@ -2980,18 +3427,7 @@ window.__ModuleLoader__.load({
+ 					}
+ 				}
+ 			}, ModelsSection));
+-			ctx.slots.inject("settings.onboarding", () => ctx.slots.register({
+-				name: "settings.onboarding",
+-				id: "welcome-notice",
+-				order: -100,
+-				inject: welcomeInjected
+-			}, WelcomeNotice));
+-			ctx.slots.inject("settings.onboarding", () => ctx.slots.register({
+-				name: "settings.onboarding",
+-				id: "deepseek-official",
+-				order: 0,
+-				inject: deepSeekOnboardingInjected
+-			}, DeepSeekOnboardingDialog));
++			// DSH Desktop owns the first-run wizard and embeds this package's ModelsSection.
+ 		}
+ 		//#endregion
+ 		exports.apply = apply;
