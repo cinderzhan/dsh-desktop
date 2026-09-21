@@ -13,9 +13,27 @@ async function fixture() {
   return { root, store: createStateStore(root) }
 }
 const populated = () => ({ ...emptyState(), added: ['writer', 'research'], pinned: ['writer', 'research'], active: 'writer',
-  sessionBindings: { 'session-1': 'writer' }, recentSessions: { writer: 'session-1' }, notes: { writer: 'An unsaved business draft' } })
+  favorites: ['writer'], sessionBindings: { 'session-1': 'writer' }, recentSessions: { writer: 'session-1' }, notes: { writer: 'An unsaved business draft' } })
 
 describe('desktop workbench state', () => {
+  it('provides detached ownership snapshots from the same persisted state, failing closed on corruption', async () => {
+    const { root, store } = await fixture()
+    let ownership
+    apply({ effect: fn => fn(), reflect: { provide(name, service) {
+      expect(name).toBe('desktopWorkbenchOwnership')
+      ownership = service
+    } }, connection: { fetch: { register() {} } } }, { root })
+    await store.write({ revision: 0, state: populated() })
+    const snapshot = await ownership.read()
+    expect(snapshot).toEqual({ revision: 1, sessionBindings: { 'session-1': 'writer' }, added: ['writer', 'research'] })
+    snapshot.added.length = 0
+    snapshot.sessionBindings['session-1'] = 'huaxue'
+    expect((await ownership.read()).sessionBindings['session-1']).toBe('writer')
+    await store.write({ revision: 1, state: { ...populated(), added: ['research'], pinned: ['research'], active: null } })
+    expect((await ownership.read()).added).toEqual(['research'])
+    await writeFile(join(root, 'state.json'), '{broken')
+    await expect(ownership.read()).rejects.toThrow()
+  })
   it('starts empty, atomically saves and restores state on host restart', async () => {
     const { root, store } = await fixture()
     expect(await store.read()).toEqual({ revision: 0, state: emptyState() })
@@ -26,6 +44,26 @@ describe('desktop workbench state', () => {
     state.notes.writer = 'mutated caller'
     saved.state.notes.writer = 'mutated response'
     expect((await store.read()).state.notes.writer).toBe('An unsaved business draft')
+  })
+
+  it('migrates legacy v1 state without favorites while preserving its revision and data', async () => {
+    const { root, store } = await fixture()
+    const { favorites, ...legacyState } = populated()
+    await writeFile(join(root, 'state.json'), JSON.stringify({ revision: 7, state: legacyState }))
+    expect(await store.read()).toEqual({ revision: 7, state: { ...legacyState, favorites: [] } })
+  })
+
+  it('persists adding and removing favorites independently of installed workbenches', async () => {
+    const { root, store } = await fixture()
+    const initial = { ...populated(), favorites: ['writer', 'catalog-only'] }
+    await store.write({ revision: 0, state: initial })
+    expect((await createStateStore(root).read()).state.favorites).toEqual(['writer', 'catalog-only'])
+
+    const updated = { ...initial, favorites: ['research'] }
+    await store.write({ revision: 1, state: updated })
+    expect((await createStateStore(root).read()).state.favorites).toEqual(['research'])
+    expect((await store.read()).state.sessionBindings).toEqual(initial.sessionBindings)
+    expect((await store.read()).state.notes).toEqual(initial.notes)
   })
 
   it('rejects a concurrent stale write without losing the winning write', async () => {
@@ -55,6 +93,9 @@ describe('desktop workbench state', () => {
 
   it.each([
     { added: ['writer', 'writer'] },
+    { favorites: ['writer', 'writer'] },
+    { favorites: ['../unsafe'] },
+    { favorites: 'writer' },
     { pinned: ['missing'] },
     { active: 'missing' },
     { version: 2 },
@@ -79,7 +120,7 @@ describe('desktop workbench state', () => {
   it('registers the public host route and enforces request limits including streamed bodies', async () => {
     const { root } = await fixture()
     const routes = []
-    apply({ connection: { fetch: { register(value) { routes.push(value) } } } }, { root })
+    apply({ effect: fn => fn(), reflect: { provide() {} }, connection: { fetch: { register(value) { routes.push(value) } } } }, { root })
     const route = routes.find(value => value.path === '/api/desktop-workbenches/state')
     expect(route.path).toBe('/api/desktop-workbenches/state')
     expect(route.methods).toEqual(['GET', 'POST'])

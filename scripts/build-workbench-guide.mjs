@@ -22,7 +22,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 export const GUIDE_TARGET = 'packages/dsh-desktop-workbenches/development-guide.zh.md'
-export const GUIDE_SOURCE = 'docs/workbench-author-guide.zh.md'
+export const GUIDE_SOURCES = {
+  standard: 'docs/workbench-standard.zh.md',
+  implementation: 'docs/workbenches.md'
+}
 
 // The published copy is an Agent Skill, so it carries the frontmatter that the
 // Agent host reads. The bundled copy is plain Markdown for the plugin API.
@@ -33,14 +36,36 @@ description: Develop, validate, install, and prepare a DSH Desktop workbench for
 
 `
 
+const GUIDE_HEADER = `# DSH Desktop 工作台开发指南
+
+本文是当前 DSH Desktop 版本对工作台作者和 Agent 公开的唯一开发合同。它随应用分发，并以完全相同的生成内容发布到官网。GitHub 工作台市场仓库只规定投稿渠道、材料格式和审核证据，不覆盖本文的运行规则。
+
+`
+
+const GUIDE_BETWEEN = `
+
+---
+
+# 实现与交付说明
+
+`
+
 const withTrailingNewline = text => (text.endsWith('\n') ? text : `${text}\n`)
 
-export function renderGuideFromSource(readFile = path => readFileSync(join(root, path), 'utf8')) {
-  return withTrailingNewline(readFile(GUIDE_SOURCE))
+export function renderGuide({ standard, implementation }) {
+  return `${GUIDE_HEADER}${withTrailingNewline(standard)}${GUIDE_BETWEEN}${withTrailingNewline(implementation)}`
+}
+
+export function readGuideSources(readFile = path => readFileSync(join(root, path), 'utf8')) {
+  return { standard: readFile(GUIDE_SOURCES.standard), implementation: readFile(GUIDE_SOURCES.implementation) }
+}
+
+export function renderGuideFromSources(readFile) {
+  return renderGuide(readGuideSources(readFile))
 }
 
 export function renderSkillFromSources(readFile) {
-  return `${SKILL_FRONTMATTER}${renderGuideFromSource(readFile)}`
+  return `${SKILL_FRONTMATTER}${renderGuideFromSources(readFile)}`
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -54,7 +79,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 
   const check = argv.includes('--check') || argv.includes('--skill-check')
-  const rendered = skillPath ? renderSkillFromSources() : renderGuideFromSource()
+  const rendered = skillPath ? renderSkillFromSources() : renderGuideFromSources()
   const destination = skillPath ?? target
   const label = skillPath ?? GUIDE_TARGET
   const current = (() => {

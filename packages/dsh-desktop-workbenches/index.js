@@ -35,27 +35,28 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const submissions = createSubmissionStore(config.root)
-  const guideRoute = path => ({
-    path,
-    methods: ['GET'],
-    async fetch() {
-      try {
-        const guide = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'development-guide.zh.md'), 'utf8')
-        return new Response(guide, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' } })
-      } catch {
-        return Response.json({ error: 'Could not read the workbench development guide.' }, { status: 500, headers: { 'cache-control': 'no-store' } })
-      }
+  // Providers must use the same persisted ownership as Desktop, never a second
+  // settings namespace that could accidentally authorize an ordinary session.
+  ctx.effect(() => ctx.reflect.provide('desktopWorkbenchOwnership', {
+    async read() {
+      const { revision, state } = await store.read()
+      return { revision, sessionBindings: { ...state.sessionBindings }, added: [...state.added] }
     }
-  })
-  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/development-guide'))
-  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/author-guide'))
+  }))
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/state',
     methods: ['GET', 'POST'],
     requestBody: 'buffered',
     async fetch(request) {
       try {
-        const result = request.method === 'GET' ? await store.read() : await store.write(await readPayload(request))
+        let result
+        if (request.method === 'GET') {
+          result = await store.read()
+          if (new URL(request.url).searchParams.get('include') === 'development-guide') {
+            const developmentGuide = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'development-guide.zh.md'), 'utf8')
+            result = { ...result, developmentGuide }
+          }
+        } else result = await store.write(await readPayload(request))
         return Response.json(result, { headers: { 'cache-control': 'no-store' } })
       } catch (error) {
         return Response.json({ error: error instanceof StateError ? error.message : 'Could not access workbench state.' }, {

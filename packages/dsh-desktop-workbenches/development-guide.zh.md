@@ -1,139 +1,179 @@
-# DSH 工作台作者指南：把需求交给 AI，开发、验收与发布
+# DSH Desktop 工作台开发指南
 
-版本：2026-09-21 · 配套技术方案 v5 · 本文是一份完整操作说明。
+本文是当前 DSH Desktop 版本对工作台作者和 Agent 公开的唯一开发合同。它随应用分发，并以完全相同的生成内容发布到官网。GitHub 工作台市场仓库只规定投稿渠道、材料格式和审核证据，不覆盖本文的运行规则。
 
-**个人使用：开发 → 本地安装验收。公开市场：再发布到自己的 GitHub/npm，并首次提交收录 PR。**后续按自己的发布流程更新版本，无需每次重新申请收录；固定 Release 链接变化时仍需修改目录。
+# 工作台开发与验收规范
 
-当前工作台公共目录流水线尚待建设。AI 必须检查实际入口是否可用；下面规定的将来步骤，不能直接描述为已经完成。本地已有草稿记录也不证明已在 GitHub 投稿。
+本文记录工作台的产品约定，供开发、安装和运行验收使用。它与实现说明共同生成随 DSH Desktop 版本分发的《工作台开发指南》；该生成指南是对工作台作者和 Agent 公开的唯一开发合同。GitHub 工作台市场仓库只规定投稿渠道、材料格式和审核证据，不得重新定义或覆盖本文的运行规则。发生冲突时，工作台行为和宿主接口以当前安装版本的开发指南为准，投稿流程以市场仓库为准。
 
-## 1. 直接交给 AI 的任务
+## 第二期市场投稿 MVP
 
-开发时可以把需求与本文一起交给 AI：
+“制作我的工作台”是市场页上的独立操作入口，不属于“工作台市场”“我的收藏”“已安装的工作台”三个集合 Tab。用户按三步进行：先阅读随本机分发的规范，把开发指令交给自己的 Agent；开发完成后由 Agent 装到当前设备，用户确认工作台出现在“已安装的工作台”和左侧入口并实际打开；只有想投稿时，才按工作台市场仓库的要求准备材料并提交。DSH 不控制开发过程。本机安装并实际验证是投稿的前提，不是与投稿并列的另一种选择。投稿由 Agent 从项目核实名称、描述、作者及源码仓库的完整 commit SHA，校验并提交工作台 `.tgz` 包；GitHub 仓库地址可选。当前本机接口只保存待送审记录，尚未向平台发送。
 
-> 按这份指南开发我的 DSH 工作台。先检查当前项目、DSH Desktop 版本和可用 SDK，复用真实接口；完成必要测试、打包、本机安装，并实际打开验证。保留现有业务数据和会话，不擅自公开代码。最后告诉我哪些已验证、哪些仍未完成。
+Agent 可从项目中选择一张合适的产品截图随投稿提交。截图仅支持 PNG、JPEG 或 WebP，文件不得超过 2 MB。两个交付指令都要求测试、构建及可用的包校验；本地加载无法完成时，不得声称已加载。无法访问本机投稿接口时，应保留验证后的投稿数据并如实说明剩余步骤。本机记录状态为 `pending`，只表示材料保存在当前设备。未来平台人工或 AI 审核通过并收录后，工作台才会显示在工作台市场。
 
-开发完成，决定公开投稿后可以说：
+市场预览和详情页应显示已有的产品截图及作者名称，并为安装人数和点赞人数保留展示位置。没有可信市场服务数据时，必须明确显示为未知或暂无数据，不得虚构为 0、估算值或热度结论。
 
-> 按这份指南把工作台发布并提交公共市场。先确认待公开的仓库及内容，使用我已经授权的 GitHub/npm 身份执行发布和首次收录 PR，核对真实结果。已有授权不要逐步重复询问；缺少凭证、公开范围或入口时，先完成可完成的材料，再说明缺项，不能声称已上架。
+已有 `schemaVersion: 1` 工作台包继续有效，无需升级 schema。包描述文件可选声明 `author`，其值可以是作者名称字符串，也可以是含 `name` 的对象；还可选声明 1–5 张 `screenshots`。每张截图使用包内安全相对路径，可附带 `alt` 文本，文件必须真实存在、是普通文件、不得越出包目录，并满足 PNG/JPEG/WebP 和 2 MB 限制。
 
-AI 从项目读取名称、作者、仓库、版本、说明和现有测试命令；仅问无法查到的必要信息。开发请求本身不授权公开私有仓库、商业数据或用户凭证。
+每次提交的新版本都需要验收；个人创建的工作台可以先在本地使用。第二期当前只实现本机投稿接收；远程投稿传输、官方审核后台及公开市场收录尚未实现，不能将本地可用或本机提交等同于已通过官方收录。
 
-## 2. 开发前检查
+## 1. 定义与界面边界
 
-- 确认项目根目录、已有代码、未提交修改、包管理器、运行脚本和目标 Desktop 版本；不得覆盖别人修改。
-- 使用与本机版本匹配的 SDK。完整作者指南入口是 `GET /api/desktop-workbenches/author-guide`，挂在实际运行的 Desktop 服务地址下；旧的 `/development-guide` 地址仅用于兼容已有调用，不要假设固定端口。
-- 若本机指南仍描述“三个 Tab、GitHub 可选、本机 pending 即投稿”，这些是旧市场流程，公开投稿按本文与 v5 执行。SDK 字段仍以实际宿主实现为准。
-- 确认目标平台与架构，区分 JS/TS 包、外部程序和原生依赖。缺少宿主或工具链时明确说明，不能只凭构建通过声称可运行。
+工作台是一种面向具体工作场景的特殊插件。规范约束工作台、会话、工作区的关联关系和切换行为，不规定统一的业务面板设计。
 
-## 3. 工作台的基本规则
+工作台作者或用户可以定义业务面板的布局、内容、工具栏和业务操作。接入已有工作台时，优先复用原有界面和业务绑定流程，不要求加入统一顶部工具栏、会话下拉框、业务区折叠按钮或“通用聊天”按钮。
 
-工作台是插件，提供场景业务面板，并复用 Desktop 的原生会话。业务布局可自行设计；市场、设置、侧边栏等公共入口由宿主负责。
+市场、工作台切换和设置等公共入口由 DSH 保留，业务面板不得遮挡。使用 `customFrame` 的工作台必须限制在宿主分配的主内容区域内：根容器应按正常 flex 布局填满该区域；内部使用绝对定位、窗口最大化或拖拽换位时，都不得越过宿主容器的定位与裁剪边界，也不得覆盖 Desktop 左侧会话栏。原生会话能力与模式切换沿用 Desktop 的规则。
 
-现有客户端注册方式示意如下，先确认当前宿主具有该接口，再使用它：
+## 2. 工作台、会话与工作区
+
+- 一个工作台可以关联多个会话，每个会话最多归属一个工作台。
+- 工作区是 DSH Desktop 的项目资料环境；每个会话如绑定工作区，最多绑定一个工作区。同一工作区内的不同会话可以属于不同工作台。
+- 一个工作台可以处理多个工作区，不同工作台也可以使用同一个工作区。
+- 工作台内部的档案、业务项目不等同于 DSH 工作区，不要求重复绑定。例如，玄学档案和选址项目继续使用各自原有的创建、选择流程。
+
+## 3. 未绑定会话时的使用
+
+打开工作台后，即使没有会话或工作区，也应立即显示业务面板。浏览、创建、选择业务档案或项目，不得以已有原生会话或工作区为前提。
+
+仅当用户执行向 Agent 发起请求、写入会话草稿等依赖会话的操作时，才检查当前会话是否属于该工作台。尚未绑定时，在该操作处引导创建或打开会话，不阻断其他业务功能。
+
+工作台内部的原生会话区应支持明确执行“在此工作区新建工作台会话”或“新建工作区并开始工作台会话”。只有这类由工作台内部明确发起的动作，才创建会话并登记当前工作台归属。取消目录选择不创建会话，失败可重试，实现不得默默改用无关工作区。通过 Desktop 原生侧边栏切换工作区或新建会话属于普通导航，始终打开或创建普通未绑定会话，不得因为当前业务面板可见而关联工作台。
+
+先选择业务档案或项目，再创建第一条会话时，应保留当前业务选择。打开已有会话时，优先恢复该会话已有的业务映射，不被其他会话最近选择覆盖。
+
+接入时应保留工作台原有的项目创建引导。玄学和选址工作台创建业务资料后，使用业务资料目录自动创建对应工作区和会话，保存关联，再填入开场提示词草稿；已有业务资料恢复其保存的会话，缺失时新建。用户无需先手工新建会话。工作台通过 Desktop 接口发起创建或恢复，由宿主校验并登记会话归属。业务面板不等待会话创建完成才显示。
+
+开场提示词保留用户已输入的内容，由用户发送；会话创建失败或延迟时，待填入提示词保留用于重试。玄学原有的自动解读属于独立业务行为，不能与开场草稿混为一谈或在适配时删除；应在正确归属的会话中运行，避免隐藏工作台触发误发送。
+
+## 4. 固定入口与切换
+
+多个工作台可保留固定入口，支持拖动排序，同时只有一个前台工作台。再次单击侧边栏中当前打开的工作台图标，关闭工作台视图；再次点击可重新打开。关闭保留固定入口、会话和业务资料，不停止后台任务。打开另一个工作台时切换展示，不执行卸载重装，不停止已有后台任务。
+
+首次进入可以显示首页或空会话状态，也可以按工作台约定初始化会话；无论哪种方式，都不能将业务面板的显示依赖于会话初始化完成。后续进入恢复最近会话。
+
+点击会话时，如其工作台仍可用，则唤起对应工作台并打开这条会话；工作台已卸载时不自动唤起或重装。异步创建期间发生切换，不得将用户拉回旧工作台或将会话误绑到新工作台。
+
+工作区侧边栏中的切换和“新建会话”都保留 DSH 原生入口和用户选择的目标。从原生“新建会话”入口创建的会话始终是新的普通未绑定会话，即使有工作台前台面板或同一工作区里已有工作台所属空白会话，也不得复用或绑定它。只有从工作台内部明确发起的创建或恢复动作，才登记工作台归属。切换已有工作区或打开已有普通未绑定会话只更新原生会话区域并保留当前业务面板；只有用户明确点击已绑定工作台的会话时，才唤起对应工作台。异步创建完成前若用户继续导航，不得把界面拉回原工作台或覆盖用户后续选择。
+
+通过原生侧边栏新建或切换到普通会话时，当前工作台的业务面板继续保留，标准分栏中的会话区直接展示该原生会话。历史 owner 已移除、卸载或暂时不可用的会话也遵循这一规则：不唤起或重装该 owner，同时不关闭当前业务面板。保留业务面板只表示界面上下文没有被关闭，不表示这条会话获得了当前工作台能力：宿主不得新增会话归属、更新工作台最近会话，工作台发起 Agent 请求等依赖归属的操作仍需显式创建或恢复该工作台会话。仅在当前确实没有任何会话时，标准分栏才显示创建或绑定引导。
+
+
+---
+
+# 实现与交付说明
+
+# Local workbenches
+
+This document is the implementation appendix for the product rules in `docs/workbench-standard.zh.md`. The two files generate the versioned development guide shipped by Desktop. That generated guide is the only public development contract. This appendix does not independently define product behavior, and the market repository owns submission workflow only.
+
+Phase 1 adds a local workbench catalog and persistent sidebar entries. Phase 2 begins with local community-submission intake from the market; review, remote catalog publishing, and package upgrades remain later work. Settings > General has a single switch that turns the workbench feature on or off. Turning it off stops every workbench from loading and hides the sidebar entries and the market, while saved sessions, data and notes are retained.
+
+## Phase 2 market-submission MVP
+
+Users open **Make my workbench** from a separate action beside the three collection tabs: **Workbench market**, **Favorites**, and **Installed workbenches**. The UI guides three sequential steps: (1) read the specification and have the user's own Agent develop the workbench, (2) have that Agent install it locally and confirm the user can actually open it, and (3) submit it only if the user wants to, following the market repository's requirements. Local use is a prerequisite for submission rather than an alternative to it: review requires a workbench that was installed and verified on a real DSH Desktop version. Only steps 1 and 3 hand a copyable instruction to the Agent; step 2 ends the personal-use path. This follows the preset-transfer model of Agent-driven handoff without controlling the user's development Agent or asking the user to re-enter project metadata.
+
+Two prompts cover the flow. The development prompt asks the Agent to validate, install through an available project/plugin mechanism, and verify personal use. The submission prompt asks for a validated `.tgz` workbench package and an optional screenshot recorded through the local submission API. GitHub is optional. Both require relevant tests and build plus `scripts/check-workbench-package.mjs` when available. The submission path asks the user only for metadata that cannot be verified from the project.
+
+When the local endpoint is reachable, the submission prompt posts `{ title, description, author, package, screenshot?, repository? }` to `$DSH_WEB_URL/api/desktop-workbenches/submissions` and verifies an ID, SHA-256, and `pending` status. `package` is a `data:application/gzip;base64,...` URL containing a gzip tarball no larger than 8 MB. The server checks the gzip/tar envelope and stores the binary separately from the market JSON; this local intake does not install or execute submitted code. This record is **local only**; the platform's remote human/AI review service is not connected. If either the local install mechanism or submission endpoint is unavailable, the Agent preserves the validated artifact/payload and reports the remaining action without claiming success. An optional GitHub URL identifies proposed source; Desktop does not upload or modify that repository. The submission prompt also asks for the source repository's full commit SHA, because the market's review checklist rejects a bare branch or tag.
+
+One product screenshot is optional during submission. It must be a PNG, JPEG, or WebP image no larger than 2 MB. Accepted submissions are stored locally with `pending` status, displayed as **local, awaiting remote submission**. A validated, actually installed workbench may be used personally before review; it appears in the public gallery only after platform review and catalog admission are implemented and approval is granted.
+
+The market preview and detail view display an available product screenshot and author name. Market records also expose install and like counts. Until a trusted catalog service provides a value, the interface must represent it honestly as unknown or unavailable; it must not invent a zero, estimate, or popularity claim. Package descriptors may continue to use schemaVersion 1 and optionally declare `author` plus one to five packaged `screenshots` for later catalog ingestion. Each screenshot is a safe relative package path, optionally with alt text, and must meet the same PNG/JPEG/WebP and 2 MB rules.
+
+## User behavior
+
+The sidebar market opens the catalog. Adding a template puts it in Installed workbenches; opening it pins its entry. Favorites are independent from installation. Entries support dragging and accessible up/down controls. Clicking the active workbench in the sidebar closes its view; clicking an inactive entry opens it. Closing retains pinned entries, data and running sessions. The market’s Open action remains an explicit open. Opening another workbench replaces the foreground workbench without terminating sessions. Public navigation and Settings remain owned by Desktop.
+
+A workbench can own multiple new sessions. Each session has at most one immutable workbench binding. Workspaces remain native DSH projects: session creation takes a workspace ID; workbenches neither move project files nor redefine workspace membership. Clicking a bound session opens that exact session in its available workbench; opening a workbench entry restores its latest session. Removing a local workbench entry preserves sessions and notes, and those sessions subsequently open through native navigation without reviving the removed workbench.
+
+The host no longer registers Research Notes (`research-notebook`) or Content Writing (`writing-notebook`) in the market. The display layer also excludes these two retired IDs from Installed workbenches, its count, and the sidebar, including previously added or pinned entries. Existing notes, session bindings, recent sessions, and added/pinned IDs are retained without migration or deletion; their sessions remain accessible through native navigation. Other unavailable providers still show their existing unavailable entries. Other plugins can continue registering workbenches normally.
+
+An explicit workbench action in the conversation region may select an existing native workspace or create a new workspace and then create a conversation bound to the active workbench. Having no existing workspace must never leave that workbench action disabled. Cancelling the picker creates neither a workspace nor a session. By contrast, Desktop's native workspace switcher and native New Session action always navigate to or create ordinary unbound Sessions and never acquire workbench ownership from the visible panel. Workbenches use native session tools, permissions and presets.
+
+The frame embeds the existing native conversation once and renders a business component alongside it. Business components remain mounted while switching between workbenches; built-in notes are controller-owned and persist even when navigating to another main panel. Native conversation drafts and task execution remain under upstream session ownership. The market is a separate main panel, so third-party panels must persist their own drafts outside React component state if they need to survive leaving the frame.
+
+## Extension seam
+
+A client plugin injecting `desktopWorkbenches` can register a business component:
 
 ```js
 ctx.effect(() => ctx.desktopWorkbenches.register({
   id: 'my-workbench',
-  title: '我的工作台',
+  title: 'My workbench',
   icon: '◇',
-  panelTitle: '业务面板',
-  description: '说明它解决什么问题',
-  audience: '适用用户',
-  requirements: '所需原生配置'
+  panelTitle: 'Business panel',
+  description: 'What this workbench helps with',
+  audience: 'Who it serves',
+  requirements: 'Required native configuration',
+  // Omit for an empty start, or use 'new-session'.
+  initialization: 'new-session'
 }, BusinessPanel))
 ```
 
-插件需正确声明并注入 `desktopWorkbenches` 服务；上面只是注册部分，不是完整可安装项目。先读取项目对应的插件模板和 `package.json` / `cordis.patch.yml`，不要把示例当作完整 SDK。
+The component receives `{ service, entry }`. This is a local extension seam, not a stable public SDK. Registration returns an idempotent disposer. It does not grant tools, global navigation ownership, or additional permissions. Developers must use native session-scoped capability mechanisms; this feature does not implement a new runtime for arbitrary tool isolation.
 
-开发必须满足以下交互要求：
+`desktop.workbench.frame` is a single root slot owned by the native conversation panel. Its owner supplies `{ conversation }`. `uiWorkspace.registerSessionOpener` lets the workbench controller distinguish `explicit-session` from `workspace` navigation: only an explicitly selected, bound Session routes to its installed workbench. Workspace navigation keeps the current business panel and opens an existing ordinary unbound blank Session, or creates one when none exists. The native sidebar New Session action likewise always creates a fresh unbound Session in the user's selected workspace, even when a workbench panel is visible and even when an older blank workbench Session exists there. Workbench-owned Sessions are created only through explicit workbench actions. Opening an existing workspace or Session never acquires a binding merely because a business panel is visible.
 
-1. 打开工作台就显示业务面板；没有会话或工作区时，也能浏览、创建和选择业务资料。
-2. 一条会话最多属于一个工作台；只有工作台内部明确创建或恢复会话时，才通过宿主登记归属。不要自行改写原生历史会话 owner。
-3. 原生“新建会话”创建普通未绑定会话，不因为当前开着工作台就自动绑定。普通会话可与业务面板同时显示，但不会因此获得工作台能力。
-4. 发起工作台 Agent 请求、写入会话草稿等操作前，检查当前会话归属；不符合时引导明确创建/恢复，不阻断其他业务操作。
-5. 保留原有业务资料与会话映射；创建失败可重试，取消目录选择不创建会话。异步完成后不能把已经导航离开的用户拉回。
-6. 多工作台切换保留业务数据、会话和草稿；关闭视图不等于卸载，也不自动停止后台任务。
-7. 使用 `customFrame` 时把原生 conversation 放进业务布局，不重复创建原生聊天树；拖动、最大化和绝对定位都限制在宿主内容区域内，不覆盖侧边栏。
-8. 关闭视图、取消收藏、移除固定入口、卸载包均保留业务文件与会话。清除业务数据必须独立明确操作。
+When native navigation opens an ordinary unowned session, or a session whose recorded owner is removed or unavailable, Desktop keeps the current workbench business panel visible and shows that native session in a standard split frame. Keeping the panel visible does not grant the session workbench ownership or capabilities: `sessionBindings` and `recentSessions` remain unchanged, and provider actions that require ownership must still create or restore an owned session explicitly. The unavailable owner is neither woken nor reinstalled. The standard split frame shows its creation/binding guidance only when there is no current native session. `customFrame` providers keep their existing conversation placement behavior.
 
-## 4. 打包与说明材料
+If native New Session creation finishes after the user navigates elsewhere, Desktop does not reopen that Session or replace the user's newer navigation. It remains an ordinary unbound Session. Selecting any existing bound Session still opens its exact available owner.
 
-- 保留真实源码、README、使用条件、作者信息、许可证、反馈入口和安装说明。
-- 检查发布文件列表，排除 `.env`、token、客户数据、数据库、绝对本机路径和不应公开的素材。
-- 插件 `package.json` 的 `repository` 应指向真实作者仓库；公共 npm 映射会据此核对，monorepo 同时注明包目录。
-- 包需包含有效的 `dsh.bundle.patch` 声明及其指向的 `cordis.patch.yml`，仅声明前端入口不能替代可安装插件配置；工作台描述文件 id 应与宿主注册 id 一致，不能用目录仓库文件名替代会话 owner。
-- 按真实项目脚本构建和打包，读取 `package.json.scripts` 后再执行，不杜撰统一的“工作台发布命令”。
-- 项目中有 `scripts/check-workbench-package.mjs` 时，先查看其参数帮助/源码并使用它检查；其他项目没有该脚本时不能假装已运行。
-- 现有工作台描述文件 `schemaVersion: 1` 仍可使用；可提供作者信息与包内截图。包内图片使用安全相对路径，不越过包目录。
-- 产品截图使用 PNG/JPEG/WebP，现有 Desktop 单图上限 2 MB。可在作者仓库提供 `screenshots.json` 引用真实图片；发布前核对目录仓库接受的格式，不伪造截图。
-- 说明外部依赖、需要执行的安装/构建脚本、网络访问及本地数据位置。不要把“平台收录”写成安全保证。
+## Local persistence
 
-## 5. 本地安装与验收
+The host stores `desktop-workbenches/state.json` under the active DSH home. Version 1 records added, pinned, and favorited IDs, foreground workbench, session bindings, recent sessions, and template notes. Older version-1 files without `favorites` are migrated to an empty favorites list on read. Writes are serialized, atomic, and revision-checked. A stale window receives a conflict and must reload; unsaved template drafts remain in memory for retry. Invalid/corrupted state is reported rather than silently overwritten. Removing a workbench never deletes stored notes, bindings, or favorites.
 
-通过当前项目已经可用的插件安装方式安装到目标 Desktop。AI 应先检查真实 CLI 帮助或宿主工具，确认 profile 和路径；不猜测命令，不使用公共投稿 API 冒充安装。
+Phase-2 submissions are stored separately in `desktop-workbenches/submissions.json`; they do not change the version-1 workbench state schema. Submission writes are serialized and atomic, duplicate repositories are rejected, and read responses are not cached. The local queue is not a public registry and does not imply review approval.
 
-安装脚本默认不执行。若必须运行构建，向用户解释具体包、版本、来源和脚本用途，取得该项授权后执行；不能一次授权全部依赖。临时目录不等于安全沙箱。
+## Validation
 
-完成后检查：
+Run `npm test`, `npm run typecheck`, and `npm run build`. Controller tests cover navigation races, exact-session selection, removal fallback, immutable bindings, ordering, initialization, draft persistence, write conflicts and recovery. Store tests cover concurrent revisions, validation, limits and corruption. For manual testing, use a separate DSH_HOME so existing user sessions and credentials remain untouched.
 
-- 工作台确实出现在已安装列表，能实际打开，名称和作者正确。
-- 主要业务操作可用；没有会话时能看业务面板，需要会话的操作有正确引导。
-- 原生新会话保持未绑定；显式工作台会话创建/恢复正确，切换后不串业务资料。
-- 关闭、重开、切换工作台保留草稿和数据；侧边栏不被遮挡。
-- 按需重启 Desktop 后仍能加载；实际运行版本与要发布的版本一致。
-- 安装失败或用户取消时，原可用版本与数据仍在；数据迁移风险单独说明。
-- 记录 Desktop 版本、操作系统/架构、测试结果和未验证项。未测试平台不声明“已兼容”。
+Manual smoke validation used an isolated web profile and a synthetic workspace: add/open, both initialization flows, sidebar ordering, switching, native New Session interception, exact-session selection, returning from generic chat, removing without reactivation, per-session input draft recovery, notes surviving market navigation, and restoration after page reload. The rendered workbench contained one native editable conversation input. No model call was sent. Electron's OS folder dialog and actual background model execution still require desktop acceptance testing.
 
-本地可用就可以个人使用，不需要公开仓库或提交市场。私有工作台留在本机或授权团队内部即可。
+Run the desktop from the repository with `npm ci` followed by `npm run dev`. The implementation is in `packages/dsh-desktop-workbenches/`; the minimal upstream integration changes live in the existing conversation/workspace patch-package files.
 
-## 6. 公开发布：先准备作者自己的发布源
+## First-party catalog packages
 
-确认用户已授权公开相关源码和安装包；使用作者自己的 GitHub 仓库，DSH 不接管后续业务维护。若仍是私有仓库且没有公开授权，停在本地材料阶段并报告原因。
+The local catalog also includes `ming-life` (玄学人生) and `dsh-site-selection` (门店选址), adapted from the internal dataelement repositories. Their reviewed npm tarballs live under `vendor/workbenches/` and are pinned in the Desktop lockfile; installing Desktop does not automatically add or activate them. Open the market to add either provider. This is local catalog inclusion, not a public npm release or community-market listing.
 
-下载来源按以下优先级选择：
+Providers include a `workbench.json` with schemaVersion 1, stable ID, title, description, package version, client entry, compatibility requirements and declared capabilities. Before importing a provider, run `node scripts/check-workbench-package.mjs <package-directory>`. Repeat the check against the unpacked tarball, run the provider's tests and build, and verify with the native conversation and other installed workbenches. A custom frame must stay within the host's positioned and clipped main-content container, including during internal maximize and drag operations. Pin the resulting artifact checksum and source revision in `vendor/workbenches/catalog.json`.
 
-| 方式 | 作者要做什么 |
-|---|---|
-| npm 包 | 使用已授权账号发布真实版本，检查公开包可下载，`repository` 指回收录仓库 |
-| GitHub Release 安装包 | 发布版本并上传实际安装包，检查资源地址和内容；优先选择稳定的文件命名约定 |
-| GitHub 源码 | 仓库提供真实可安装配置及构建说明；客户端安装时解析并记录具体 commit |
+The descriptor may use `embedded: true` for an edge-to-edge business component and `layout: { businessSide: 'left', businessWidth: 0.65 }`. Width is a fraction of the main area, bounded to 0.25–0.70; the native conversation stays mounted in a stable tree position. These descriptor options are rendering choices, not a required business-panel design. Workbench authors and users define their business panels, including layout, content, toolbars and business interactions. Desktop does not inject a shared workbench toolbar or collapse control. Desktop preserves public sidebar, market and Settings access; business panels must not cover these public entries. Narrow windows stack the default frame regions.
 
-npm 不可用时可以选 Release 或源码，不强制每个人都开通 npm。源码含 `workspace:` 依赖或依赖作者本机路径时，必须先解决独立安装问题；不得期待用户机器上有同一 monorepo。
+Business projects/profiles remain independent of DSH workspaces. These providers preserve their original project-creation onboarding: automatically prepare the opening prompt in the owning native conversation draft, retaining existing draft text. When there is no conversation yet, retain the pending prompt and deliver it once the matching business selection has an available owned conversation, without duplicate delivery. Preparing this draft does not submit it. Providers may request session creation or restoration through Desktop's ensureSession bridge. Desktop records and validates workbench ownership; the original business-folder workspace and saved session mapping are retained. Creating a profile/project automatically creates or restores its conversation before filling its onboarding draft. Ming Life's original automatic interpretation is a separate business action and remains supported in the matching owned session. Hidden providers cannot write into the active conversation. Their iframe bridges validate origin and source, and host routes use `connection.requestRejection` so API and embedded resources require the existing Desktop authentication.
 
-## 7. 首次市场收录 PR
+## Workspace creation and business-flow acceptance
 
-先核实官方 `awesome-dsh-workbench` 仓库与投稿流水线已启用；如果尚未启用，就生成下面的材料并明确“尚未投稿”，不要改投普通插件市场冒充工作台收录。
+The right conversation region owns new-conversation and new-workspace actions. With zero existing workspaces, a user can choose ‘新建工作区并开始对话’, select or create a project folder in the native picker, and enter a conversation without leaving the workbench. Existing workspaces remain selectable. Creation failures must be shown with a retry path; switching workbenches during creation must not pull the user back or bind the session to the wrong workbench.
 
-按实际分类白名单，新增一个 `data/workbenches/owner__repo.yml`，示例：
+Reuse a provider's existing interface and business binding process wherever possible. Ming Life retains its profile creation/selection flow; Site Selection retains its business-project creation/selection flow. These business entities are not DSH workspaces. Desktop must not require a duplicate business binding or replace the provider's workflow merely to integrate native conversations.
 
-```yaml
-url: https://github.com/example-owner/example-workbench
-name: 示例工作台
-category: productivity
-description:
-  zh: 帮助整理项目资料和行动项。
-```
+## UI ownership
 
-示例仓库和分类必须替换为真实值。无需 `.dsh-market/ownership.json`，不用手改生成的 README/JSON，也不要手写自动探测得到的 npm 映射。若需要声明 Release 安装包链接，按届时目录 schema 填写真实 `tarball` 来源。
+The workbench standard governs workbench/session/workspace associations and switching behavior, not a uniform business UI. Do not require every workbench to include a shared toolbar, session selector, collapse button or generic-chat button. Native conversation controls and Desktop navigation provide session creation, session selection and workbench switching. Reuse provider interfaces; configuration options for the host frame do not prescribe the internal layout of a business panel.
 
-PR 描述写用途、本地验收结果、支持平台、发布来源与注意事项。使用已授权网页或 `gh` 提交；未登录时让用户完成必要的账号授权，完成后继续。投稿代码与凭证不复制到目录仓库。
+## Business panels before conversation binding
 
-遇到检查问题，按具体提示修复，再确认最新 PR 提交的检查结果。首次人工阅读通过、PR 合并、目录发布成功，并在公开目录读到条目后，才报告“已上架”。仅创建 PR 报告“已投稿”；仅合并报告“已合并，等待发布”。
+Opening an available workbench must show its business panel even when there are no native sessions or workspaces. Browsing, selecting and creating business profiles/projects do not require a native conversation. Only actions that send content to an Agent conversation require a currently owned session; explain that requirement at the action. Preserve business selection independently of native workspace membership, while retaining any existing per-session business mapping.
 
-## 8. 后续版本更新
+## Business-triggered session creation
 
-作者继续负责每版测试和本机验收，然后按选用渠道发布：
+`await service.ensureSession({ workbenchId, folder, sessionId })` creates or restores the business conversation through Desktop. The optional saved session is reused when valid; conflicting workbench ownership is rejected. Missing sessions use the business folder as the native workspace path. The host records ownership before activating the conversation, and does not take focus back after navigation changes. Providers preserve their original business-to-session persistence and opening prompts; a native creation failure must not hide their business panel.
 
-- npm：发布新版本，目录定时 probe 获取版本，无需每版 PR。
-- Release：发布新包与说明。若目录使用稳定的 `releases/latest/download/<固定文件名>` 链接，新 Release 保持同名资源即可；如果目录链接含旧 tag 或文件名改变，需要 PR 更新该链接。这是清单信息变更，不是每版人工审批。
-- 源码：更新仓库，市场可以发现 commit 变化；用户点击安装/更新时锁定本次解析的 commit。
+Original-workflow adaptation validation uses the fresh upstream sources (Ming Life 3666033, Site Selection 7bf06a1). An isolated real-host check starts with no native workspaces or sessions, invokes the Desktop session bridge for each business directory, verifies native workspace membership and persisted workbench ownership, and restores the saved session without duplication. It creates no model requests. Provider tests additionally exercise creation-to-onboarding and original automatic-interpretation routing with mocked model submission.
 
-改仓库地址、名称、分类、简介等清单信息也需 PR。目录探测是定时的，未发现时先检查发布是否真实成功、链接和 npm repository 是否正确，再查看流水线结果；不要因暂未同步反复发同一版本。
+## Custom conversation layout
 
-## 9. 失败时如何交付
+Server providers that customize session prompts can inject the internal
+`desktopWorkbenchOwnership` service and call `await read()`. It returns one
+persisted snapshot containing `revision`, `added`, and `sessionBindings`.
+Check both the session owner and whether the provider remains added before
+applying customization. Do not infer ownership from the visible panel, a
+legacy preset, or a provider-private settings namespace. The service is
+read-only, and storage errors propagate rather than returning an empty state.
 
-AI 最后应列出真实成果及证据：本地文件、包版本、验收结果、发布 URL、PR URL、目录可见性；缺哪项就写哪项，不虚构成功。
+A provider with an existing dock may register `customFrame: true`. Its component receives `{ service, entry, active, conversation }`; place the supplied `conversation` node in the existing chat dock rather than rendering another native conversation. Only the active workbench receives the mount node. Desktop retains the native conversation tree and moves its mount container between layouts so switching, closing and reopening preserve the input instance and draft. Hidden provider components remain mounted. Standard split-layout providers need no changes.
 
-凭证缺失、公共目录未启用、发布失败或网络不通时，保留已完成代码和材料，报告具体原因与下一步。旧本机 `pending` 仅为本地草稿，不能写成“官方正在审核”。
-
-遇到市场风险提示，由用户手动停用/卸载并反馈；本期市场不会远程删除业务数据。普通下架也不自动卸载已安装工作台。作者应在仓库维护反馈入口、修复问题和发布说明。
+The local catalog includes Content Operations (`media-workbench`, package `dsh-media-workbench`). Unlike the life/site providers, creating a topic or Campaign does not create a conversation: users explicitly choose New Session within that business scope. The original four-window dock hosts the supplied native conversation through customFrame. Existing business bindings and projectRoot remain in use.

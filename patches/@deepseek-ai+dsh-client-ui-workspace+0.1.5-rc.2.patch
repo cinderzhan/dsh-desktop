@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index a6834e1..7fe417c 100644
+index a6834e1..5caa9b5 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -28,6 +28,8 @@ window.__ModuleLoader__.load({
@@ -28,10 +28,11 @@ index a6834e1..7fe417c 100644
  					const summary = sessions.byId[id];
  					if (summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(summary.id) && !archived.includes(summary.id)) return summary.id;
  				}
-@@ -58,14 +60,23 @@ window.__ModuleLoader__.load({
+@@ -58,17 +60,26 @@ window.__ModuleLoader__.load({
  				this.connecting.set(workspaceId, attempt);
  				return attempt;
  			}
+-			openSession(sessionId) {
 +			/** Register one synchronous routing hook for explicit Session navigation. */
 +			registerSessionOpener(handler) {
 +				if (typeof handler !== "function") throw new TypeError("session opener must be a function");
@@ -40,8 +41,8 @@ index a6834e1..7fe417c 100644
 +				this.sessionOpener = lease;
 +				return () => { if (this.sessionOpener === lease) this.sessionOpener = null; };
 +			}
- 			openSession(sessionId) {
-+				if (this.sessionOpener?.handler(sessionId) === true) return;
++			openSession(sessionId, source = "explicit-session") {
++				if (this.sessionOpener?.handler(sessionId, source) === true) return;
  				this.sessions.open(sessionId);
  				this.ctx.layout.selectPanel(null);
  			}
@@ -53,7 +54,11 @@ index a6834e1..7fe417c 100644
 +				const sessionId = await this.connectWorkspace(workspaceId, fresh);
  				if (!isCurrent()) return;
  				beforeOpen?.(sessionId);
- 				if (isCurrent()) this.openSession(sessionId);
+-				if (isCurrent()) this.openSession(sessionId);
++				if (isCurrent()) this.openSession(sessionId, "workspace");
+ 			}
+ 			async forkSession(sessionId) {
+ 				const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal]);
 @@ -78,7 +89,16 @@ window.__ModuleLoader__.load({
  				});
  				if (!navigation.aborted) this.openSession(childId);
@@ -599,19 +604,29 @@ index e715e55..7c172b1 100644
      'hover.created': string;
      'hover.copied': string;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-index 48fe997..7557b57 100644
+index 48fe997..265393e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-@@ -10,6 +10,8 @@ export interface UiWorkspace {
+@@ -4,13 +4,17 @@ import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai
+ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
+ import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client';
+ import type { SessionId } from '@deepseek-ai/dsh-session/types';
++/** Why a Session is being opened. Older callers may omit this and get explicit Session semantics. */
++export type SessionNavigationSource = 'explicit-session' | 'workspace';
+ /** Workspace archive and directory operations consumed by Client UI domains. */
+ export interface UiWorkspace {
+     /**
       * Select a Session and show its Conversation as one UI navigation action.
       * @param sessionId - listed or retained Session to display.
       */
+-    openSession(sessionId: SessionId): void;
 +    /** Claim explicit Session navigation. Return true to handle it; dispose to release. Competing registration throws. */
-+    registerSessionOpener(handler: (sessionId: SessionId) => boolean): () => void;
-     openSession(sessionId: SessionId): void;
++    registerSessionOpener(handler: (sessionId: SessionId, source?: SessionNavigationSource) => boolean): () => void;
++    openSession(sessionId: SessionId, source?: SessionNavigationSource): void;
      /**
       * Connect a Workspace and open its Session unless a later navigation supersedes it.
-@@ -34,6 +36,8 @@ export interface UiWorkspace {
+      * @param workspaceId - target Workspace.
+@@ -34,6 +38,8 @@ export interface UiWorkspace {
       * Start a New Session flow and navigate to its Session.
       * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
       */
@@ -620,7 +635,7 @@ index 48fe997..7557b57 100644
      startSession(workspaceId?: WorkspaceId): void;
      /**
       * Archive a Session and clear it when it is the current selection.
-@@ -80,6 +84,8 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -80,6 +86,8 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
      private readonly sessions;
      private readonly connecting;
      private readonly lifetime;
@@ -629,13 +644,14 @@ index 48fe997..7557b57 100644
      /**
       * @param ctx - Client root Context.
       * @param directoryPicker - the directory-picking Remote namespace.
-@@ -88,9 +94,13 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -88,9 +96,13 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
       */
      constructor(ctx: Context, directoryPicker: ClientRemote['directoryPicker'], workspaces: IWorkspaces, sessions: ISessions);
      connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>;
+-    openSession(sessionId: SessionId): void;
 +    /** Claim explicit Session navigation. Return true to handle it; dispose to release. Competing registration throws. */
-+    registerSessionOpener(handler: (sessionId: SessionId) => boolean): () => void;
-     openSession(sessionId: SessionId): void;
++    registerSessionOpener(handler: (sessionId: SessionId, source?: SessionNavigationSource) => boolean): () => void;
++    openSession(sessionId: SessionId, source?: SessionNavigationSource): void;
      openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>;
      forkSession(sessionId: SessionId): Promise<void>;
 +    /** Claim New Session routing. Return true synchronously to handle creation; dispose to release. Competing registration throws. */

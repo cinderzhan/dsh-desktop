@@ -27,17 +27,17 @@ const valid = (patch = {}) => ({
 })
 
 describe('desktop workbench community submissions', () => {
-  it('serves the bundled development guide to the local Agent', async () => {
+  it('serves the bundled development guide through an opt-in state response', async () => {
     const { root } = await fixture()
     const routes = []
-    apply({ connection: { fetch: { register(route) { routes.push(route) } } } }, { root })
-    const route = routes.find(value => value.path === '/api/desktop-workbenches/development-guide')
-    const response = await route.fetch(new Request('http://localhost/api/desktop-workbenches/development-guide'))
+    apply({ effect: fn => fn(), reflect: { provide() {} }, connection: { fetch: { register(route) { routes.push(route) } } } }, { root })
+    const route = routes.find(value => value.path === '/api/desktop-workbenches/state')
+    const response = await route.fetch(new Request('http://localhost/api/desktop-workbenches/state?include=development-guide'))
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toContain('text/markdown')
-    expect(await response.text()).toContain('# DSH 工作台作者指南')
-    const authorRoute = routes.find(value => value.path === '/api/desktop-workbenches/author-guide')
-    expect(await (await authorRoute.fetch(new Request('http://localhost/api/desktop-workbenches/author-guide'))).text()).toContain('## 7. 首次市场收录 PR')
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect((await response.json()).developmentGuide).toContain('# DSH Desktop 工作台开发指南')
+    const ordinary = await route.fetch(new Request('http://localhost/api/desktop-workbenches/state'))
+    expect(await ordinary.json()).not.toHaveProperty('developmentGuide')
   })
   it('accepts a GitHub-free workbench package and keeps its binary outside the market JSON', async () => {
     const { root, store } = await fixture()
@@ -158,7 +158,7 @@ describe('desktop workbench community submissions', () => {
   it('registers GET/POST with no-store responses and enforces buffered request limits', async () => {
     const { root } = await fixture()
     const routes = []
-    apply({ connection: { fetch: { register(route) { routes.push(route) } } } }, { root })
+    apply({ effect: fn => fn(), reflect: { provide() {} }, connection: { fetch: { register(route) { routes.push(route) } } } }, { root })
     const route = routes.find(value => value.path === '/api/desktop-workbenches/submissions')
     expect(route).toMatchObject({ methods: ['GET', 'POST'], requestBody: 'buffered' })
     const url = `http://localhost${route.path}`

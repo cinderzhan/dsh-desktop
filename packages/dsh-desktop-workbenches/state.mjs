@@ -12,13 +12,13 @@ const validId = (value) => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9.
   && !['__proto__', 'prototype', 'constructor'].includes(value)
 
 export function emptyState() {
-  return { version: 1, added: [], pinned: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} }
+  return { version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} }
 }
 
 export function validateState(value, previous) {
   if (!isObject(value) || value.version !== 1) fail('Unsupported workbench state version.')
   if (Object.keys(value).some(key => !Object.hasOwn(emptyState(), key))) fail('Unknown workbench state field.')
-  for (const key of ['added', 'pinned']) {
+  for (const key of ['added', 'pinned', 'favorites']) {
     if (!Array.isArray(value[key]) || !value[key].every(validId)
       || new Set(value[key]).size !== value[key].length) fail(`Invalid ${key} workbench IDs.`)
   }
@@ -68,7 +68,10 @@ export function createStateStore(root) {
       if (raw.length > MAX_STATE_BYTES) throw new Error('File exceeds size limit')
       const saved = JSON.parse(raw.toString('utf8'))
       if (!Number.isSafeInteger(saved.revision) || saved.revision < 0) throw new Error('Invalid revision')
-      return { revision: saved.revision, state: validateState(saved.state) }
+      const state = isObject(saved.state) && saved.state.version === 1 && !Object.hasOwn(saved.state, 'favorites')
+        ? { ...saved.state, favorites: [] }
+        : saved.state
+      return { revision: saved.revision, state: validateState(state) }
     } catch {
       throw new StateError('Stored workbench state is invalid. Restore or repair state.json before saving.', 500)
     }
