@@ -15,13 +15,15 @@ const UiWorkspaceService = vm.runInNewContext(`(() => {
   ${source.slice(recentStart, recentEnd)}
   return (${source.slice(classStart, classEnd).trim().replace(/;$/, '')})
 })()`, { _deepseek_ai_cordis: { Service: class {} }, AbortController, AbortSignal, console })
-let Workbenches
+let apply, Workbenches
 vm.runInNewContext(workbenchSource, {
   window: { __ModuleLoader__: { load({ factory }) {
-    Workbenches = factory((name) => {
+    const client = factory((name) => {
       if (name === 'react') return { createElement() {}, Component: class {} }
       throw new Error(`Unexpected module ${name}`)
-    }).Workbenches
+    })
+    apply = client.apply
+    Workbenches = client.Workbenches
   } } },
   setTimeout, clearTimeout, AbortController
 })
@@ -62,6 +64,51 @@ function fixture() {
   return { service, sessionState, workspaceState, listeners }
 }
 
+function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
+  let controller
+  let revision = 0
+  const cleanups = []
+  const ctx = {
+    sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) },
+    workspaces: uiWorkspace.workspaces,
+    layout: uiWorkspace.ctx.layout,
+    uiWorkspace,
+    reflect: { provide: (_name, value) => { controller = value } },
+    slots: { inject: vi.fn() },
+    effect: (callback, label) => {
+      if (['workbenches: styles', 'workbenches: lifecycle'].includes(label)) return
+      const cleanup = callback()
+      if (typeof cleanup === 'function') cleanups.push(cleanup)
+    }
+  }
+  apply(ctx)
+  controller.request = vi.fn(async (_url, options = {}) => Response.json({
+    revision: options.method === 'POST' ? ++revision : revision,
+    state: options.body ? JSON.parse(options.body).state : controller.state
+  }))
+  controller.register({ id: 'media-workbench', title: 'Media Workbench' }, () => null)
+  controller.register({ id: 'huaxue', title: 'Huaxue' }, () => null)
+  controller.state = {
+    version: 1,
+    added: ['media-workbench', 'huaxue'],
+    pinned: ['media-workbench', 'huaxue'],
+    favorites: [],
+    active: 'media-workbench',
+    sessionBindings: {},
+    recentSessions: {},
+    notes: {}
+  }
+  controller.ready = true
+  controller.lastSession = sessionState.current
+  return {
+    controller,
+    dispose() {
+      for (const cleanup of cleanups.reverse()) cleanup()
+      controller.dispose()
+    }
+  }
+}
+
 describe('native Workspace navigation with workbench routing', () => {
   it('opens the initially connected workspace when no later navigation intervenes', async () => {
     const { service, listeners } = fixture()
@@ -93,7 +140,7 @@ describe('native Workspace navigation with workbench routing', () => {
     const handler = vi.fn(() => true)
     const release = service.registerSessionOpener(handler)
     service.openSession('bound-session')
-    expect(handler).toHaveBeenCalledWith('bound-session')
+    expect(handler).toHaveBeenCalledWith('bound-session', 'explicit-session')
     expect(service.sessions.open).not.toHaveBeenCalled()
     expect(() => service.registerSessionOpener(() => true)).toThrow('already registered')
     release()
@@ -106,6 +153,17 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(service.sessions.open).toHaveBeenCalledWith('ordinary-session')
     expect(service.ctx.layout.selectPanel).toHaveBeenCalledWith(null)
     second()
+  })
+
+  it('marks a session opened indirectly through openWorkspace with the workspace source', async () => {
+    const { service } = fixture()
+    const handler = vi.fn(() => false)
+    service.registerSessionOpener(handler)
+
+    await service.openWorkspace('project')
+
+    expect(handler).toHaveBeenCalledWith('new-session', 'workspace')
+    expect(service.sessions.open).toHaveBeenCalledWith('new-session')
   })
 
   it.each(['writer', 'research-notebook', 'media-workbench'])('keeps native New Session ordinary even while %s is open', async (workbenchId) => {
@@ -219,5 +277,68 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(controller.state.recentSessions).toEqual({})
     expect(request).not.toHaveBeenCalled()
     expect(workbenchSource).not.toContain('registerSessionStarter(')
+  })
+
+  it('keeps media-workbench active and prefers an unbound blank session when workspace navigation first finds a huaxue session', async () => {
+    const { service: uiWorkspace, sessionState, workspaceState } = fixture()
+    const bound = 'huaxue-blank'
+    const ordinary = 'ordinary-blank'
+    sessionState.ids.push(bound, ordinary)
+    sessionState.byId[bound] = { id: bound, sessionId: bound, blank: true, cwd: '/project' }
+    sessionState.byId[ordinary] = { id: ordinary, sessionId: ordinary, blank: true, cwd: '/project' }
+    workspaceState.items[0].sessionIds.push(bound, ordinary)
+    const { controller, dispose } = attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState)
+    controller.state.sessionBindings[bound] = 'huaxue'
+    controller.state.recentSessions.huaxue = bound
+
+    await uiWorkspace.openWorkspace('project')
+    await vi.waitFor(() => expect(uiWorkspace.sessions.open).toHaveBeenCalledWith(ordinary))
+
+    expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
+    expect(sessionState.current).toBe(ordinary)
+    expect(controller.state.active).toBe('media-workbench')
+    expect(controller.state.sessionBindings).toEqual({ [bound]: 'huaxue' })
+    expect(controller.state.recentSessions).toEqual({ huaxue: bound })
+    dispose()
+  })
+
+  it('creates an ordinary unbound session when workspace navigation only finds a huaxue-bound blank', async () => {
+    const { service: uiWorkspace, sessionState, workspaceState } = fixture()
+    const bound = 'huaxue-blank'
+    sessionState.ids.push(bound)
+    sessionState.byId[bound] = { id: bound, sessionId: bound, blank: true, cwd: '/project' }
+    workspaceState.items[0].sessionIds.push(bound)
+    const { controller, dispose } = attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState)
+    controller.state.sessionBindings[bound] = 'huaxue'
+    controller.state.recentSessions.huaxue = bound
+
+    await uiWorkspace.openWorkspace('project')
+    await vi.waitFor(() => expect(uiWorkspace.sessions.open).toHaveBeenCalledWith('new-session'))
+
+    expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
+    expect(sessionState.current).toBe('new-session')
+    expect(controller.state.active).toBe('media-workbench')
+    expect(controller.state.sessionBindings['new-session']).toBeUndefined()
+    expect(controller.state.recentSessions).toEqual({ huaxue: bound })
+    dispose()
+  })
+
+  it('still switches to huaxue when its bound session is opened explicitly', async () => {
+    const { service: uiWorkspace, sessionState, workspaceState } = fixture()
+    const bound = 'huaxue-blank'
+    sessionState.ids.push(bound)
+    sessionState.byId[bound] = { id: bound, sessionId: bound, blank: true, cwd: '/project' }
+    workspaceState.items[0].sessionIds.push(bound)
+    const { controller, dispose } = attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState)
+    controller.state.sessionBindings[bound] = 'huaxue'
+
+    uiWorkspace.openSession(bound)
+    await controller.queue
+    await vi.waitFor(() => expect(sessionState.current).toBe(bound))
+
+    expect(controller.state.active).toBe('huaxue')
+    expect(controller.state.recentSessions.huaxue).toBe(bound)
+    expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
+    dispose()
   })
 })
