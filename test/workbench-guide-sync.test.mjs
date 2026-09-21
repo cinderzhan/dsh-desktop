@@ -7,32 +7,31 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { GUIDE_SOURCES, GUIDE_TARGET, renderGuideFromSources } from '../scripts/build-workbench-guide.mjs'
+import { GUIDE_SOURCE, GUIDE_TARGET, renderGuideFromSource } from '../scripts/build-workbench-guide.mjs'
 
 const root = join(import.meta.dirname, '..')
 const read = path => readFileSync(join(root, path), 'utf8')
 
 describe('bundled workbench development guide', () => {
-  it('equals what its two source documents render to', () => {
-    expect(read(GUIDE_TARGET)).toBe(renderGuideFromSources(read))
+  it('equals the single author guide shipped to Agents', () => {
+    expect(read(GUIDE_TARGET)).toBe(renderGuideFromSource(read))
   })
 
-  it('keeps both sources and the section that separates them', () => {
+  it('contains development, local acceptance and publication in one document', () => {
     const guide = read(GUIDE_TARGET)
-    const standard = read(GUIDE_SOURCES.standard)
-    const implementation = read(GUIDE_SOURCES.implementation)
-    expect(guide).toContain(standard.trimEnd())
-    expect(guide).toContain(implementation.trimEnd())
-    expect(guide).toContain('# 实现与交付说明')
+    expect(guide).toBe(read(GUIDE_SOURCE))
+    expect(guide).toContain('## 3. 工作台的基本规则')
+    expect(guide).toContain('## 5. 本地安装与验收')
+    expect(guide).toContain('## 7. 首次市场收录 PR')
+    expect(guide).toContain('## 8. 后续版本更新')
     // The guide is self-contained: it must not depend on a path only this
     // repository has, because readers see it outside the checkout.
     expect(guide).not.toContain('../../docs/')
   })
 
-  it('does not repeat the acceptance checklist that the market repository owns', () => {
-    // The product specification states required behavior; the market repository
-    // states what a reviewer checks. Restating the checklist here is what made
-    // the two documents read as duplicates.
-    expect(read(GUIDE_SOURCES.standard)).not.toContain('## 5. 提交检查')
+  it('does not describe local storage as an official submission', () => {
+    const guide = read(GUIDE_SOURCE)
+    expect(guide).toContain('旧本机 `pending` 仅为本地草稿')
+    expect(guide).not.toContain('POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions')
   })
 })

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,7 +35,9 @@ describe('desktop workbench community submissions', () => {
     const response = await route.fetch(new Request('http://localhost/api/desktop-workbenches/development-guide'))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('text/markdown')
-    expect(await response.text()).toContain('# DSH Desktop 工作台开发指南')
+    expect(await response.text()).toContain('# DSH 工作台作者指南')
+    const authorRoute = routes.find(value => value.path === '/api/desktop-workbenches/author-guide')
+    expect(await (await authorRoute.fetch(new Request('http://localhost/api/desktop-workbenches/author-guide'))).text()).toContain('## 7. 首次市场收录 PR')
   })
   it('accepts a GitHub-free workbench package and keeps its binary outside the market JSON', async () => {
     const { root, store } = await fixture()
@@ -46,18 +49,72 @@ describe('desktop workbench community submissions', () => {
     const metadata = await readFile(join(root, 'submissions.json'), 'utf8')
     expect(metadata).not.toContain('base64')
   })
-  it('normalizes, persists and restores a pending submission without changing state v1', async () => {
+  it('normalizes, persists and restores a local draft in submission state v2 without changing app state', async () => {
     const { root, store } = await fixture()
     await writeFile(join(root, 'state.json'), '{"revision":0,"state":{"version":1}}')
     const created = await store.create(valid())
     expect(created).toMatchObject({
-      title: 'Research Desk', author: 'Ada', repository: 'https://github.com/Example/Research-Desk', status: 'pending'
+      title: 'Research Desk', author: 'Ada', repository: 'https://github.com/Example/Research-Desk', status: 'local-draft'
     })
     expect(created.id).toMatch(/^[0-9a-f-]{36}$/)
     expect(Number.isNaN(Date.parse(created.createdAt))).toBe(false)
     expect(await createSubmissionStore(root).read()).toEqual([created])
     expect(await readFile(join(root, 'state.json'), 'utf8')).toBe('{"revision":0,"state":{"version":1}}')
     expect((await readdir(root)).sort()).toEqual(['state.json', 'submissions.json'])
+    expect(JSON.parse(await readFile(join(root, 'submissions.json'), 'utf8')).version).toBe(2)
+  })
+
+  it('migrates submission state v1 once, preserving metadata and package with an exact backup', async () => {
+    const { root, store } = await fixture()
+    const id = '12345678-1234-4123-8123-123456789abc'
+    const bytes = packageBytes()
+    const legacy = {
+      version: 1,
+      submissions: [{
+        id,
+        title: 'Legacy Desk',
+        description: 'Kept exactly during migration.',
+        author: 'Ada',
+        repository: null,
+        screenshot: null,
+        packageSha256: createHash('sha256').update(bytes).digest('hex'),
+        packageBytes: bytes.length,
+        status: 'pending',
+        createdAt: '2026-09-20T12:34:56.000Z'
+      }]
+    }
+    const original = `${JSON.stringify(legacy, null, 2)}\n`
+    await writeFile(join(root, 'submissions.json'), original)
+    await writeFile(join(root, `${id}.tgz`), bytes)
+
+    const migrated = await store.read()
+    expect(migrated).toEqual([{ ...legacy.submissions[0], status: 'local-draft' }])
+    expect(await readFile(join(root, 'submissions.v1.backup.json'), 'utf8')).toBe(original)
+    expect(await readFile(join(root, `${id}.tgz`))).toEqual(bytes)
+    expect(JSON.parse(await readFile(join(root, 'submissions.json'), 'utf8'))).toEqual({ version: 2, submissions: migrated })
+
+    expect(await createSubmissionStore(root).read()).toEqual(migrated)
+    expect(await readFile(join(root, 'submissions.v1.backup.json'), 'utf8')).toBe(original)
+    expect((await readdir(root)).sort()).toEqual([`${id}.tgz`, 'submissions.json', 'submissions.v1.backup.json'])
+  })
+
+  it('accepts strictly valid optional v2 sync metadata and rejects malformed metadata without overwriting it', async () => {
+    const { root, store } = await fixture()
+    const entry = {
+      id: '12345678-1234-4123-8123-123456789abc',
+      title: 'Synced Desk', description: 'A synced local draft.', author: 'Ada',
+      repository: 'https://github.com/Example/Research-Desk', screenshot: null,
+      status: 'local-draft', createdAt: '2026-09-20T12:34:56.000Z',
+      pullRequestUrl: 'https://github.com/Example/market/pull/42', lastRemoteStatus: 'open',
+      lastSyncedAt: '2026-09-21T01:02:03.000Z', exportedAt: '2026-09-21T01:00:00.000Z', specVersion: '2026.09.1'
+    }
+    await writeFile(join(root, 'submissions.json'), JSON.stringify({ version: 2, submissions: [entry] }))
+    expect(await store.read()).toEqual([entry])
+
+    const malformed = JSON.stringify({ version: 2, submissions: [{ ...entry, pullRequestUrl: 'https://example.com/pull/42' }] })
+    await writeFile(join(root, 'submissions.json'), malformed)
+    await expect(store.read()).rejects.toMatchObject({ status: 500 })
+    expect(await readFile(join(root, 'submissions.json'), 'utf8')).toBe(malformed)
   })
 
   it('serializes concurrent submissions and rejects duplicate repositories case-insensitively', async () => {
@@ -113,7 +170,7 @@ describe('desktop workbench community submissions', () => {
     expect((await post('null')).status).toBe(400)
     const accepted = await post(JSON.stringify(valid()))
     expect(accepted.status).toBe(201)
-    expect((await accepted.json()).submission.status).toBe('pending')
+    expect((await accepted.json()).submission.status).toBe('local-draft')
     const oversized = await route.fetch(new Request(url, {
       method: 'POST', body: '{}', headers: { 'content-length': String(MAX_SUBMISSION_BYTES + 1) }
     }))

@@ -70,7 +70,7 @@ async function fixture(initial = emptyState()) {
   const request = vi.fn(async (url, options = {}) => {
     if (url === '/api/desktop-workbenches/submissions') {
       if (options.method !== 'POST') return Response.json({ submissions: storedSubmissions })
-      const submission = { id: `submission-${storedSubmissions.length + 1}`, status: 'pending', createdAt: '2026-09-14T00:00:00.000Z', ...JSON.parse(options.body) }
+      const submission = { id: `submission-${storedSubmissions.length + 1}`, status: 'local-draft', createdAt: '2026-09-14T00:00:00.000Z', ...JSON.parse(options.body) }
       storedSubmissions = [submission, ...storedSubmissions]
       return Response.json({ submission }, { status: 201 })
     }
@@ -127,9 +127,9 @@ describe('desktop workbench client navigation', () => {
     expect(development).toContain('左侧入口')
     expect(development).toContain('不要投稿')
     expect(development).toContain('不要声称已加载')
-    expect(development).toContain('$DSH_WEB_URL/api/desktop-workbenches/development-guide')
-    expect(development).toContain('dataelement/awesome-dsh-workbench')
-    expect(development).toContain('CONTRIBUTING.md')
+    expect(development).toContain('$DSH_WEB_URL/api/desktop-workbenches/author-guide')
+    expect(development).not.toContain('dataelement/awesome-dsh-workbench')
+    expect(development).not.toContain('CONTRIBUTING.md')
     // The preset-package document describes Agent presets, not workbench packages.
     expect(development).not.toContain('preset-packages')
     expect(development).not.toContain('review-checklist')
@@ -137,16 +137,16 @@ describe('desktop workbench client navigation', () => {
     expect(submissionAgentPrompt()).toBe(development)
 
     const submission = submissionWorkbenchAgentPrompt()
-    expect(submission).toContain('scripts/check-workbench-package.mjs')
+    expect(submission).toContain('完整作者指南')
     expect(submission).toContain('CONTRIBUTING.md')
-    expect(submission).toContain('验收要点')
+    expect(submission).toContain('owner__repo.yml')
     expect(submission).not.toContain('review-checklist')
-    expect(submission).toContain('完整 commit SHA')
-    expect(submission).toContain('PNG、JPEG 或 WebP')
-    expect(submission).toContain('{ title, description, author, package, screenshot?, repository? }')
-    expect(submission).toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
-    expect(submission).toContain('还没有传送给平台')
-    expect(submission).toContain('不要把 pending 说成已经投稿成功')
+    expect(submission).toContain('npm 包')
+    expect(submission).toContain('GitHub Release')
+    expect(submission).toContain('真实 PR URL')
+    expect(submission).toContain('local-draft')
+    expect(submission).not.toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
+    expect(submission).not.toContain('不要把 pending 说成已经投稿成功')
     expect(submission).not.toContain('preset-packages')
     expect(submissionAgentPrompt('submission')).toBe(submission)
   })
@@ -171,17 +171,17 @@ describe('desktop workbench client navigation', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
-  it('loads marketplace submissions and publishes a newly saved pending submission once', async () => {
+  it('loads local drafts and saves a new draft once', async () => {
     const { service, submissions } = await fixture()
     const payload = { title: '地图工作台', description: '比较地点与路线', author: 'Cinder', repository: 'https://github.com/example/maps', screenshot: 'data:image/png;base64,AA==' }
     const first = service.submit(payload)
     await expect(service.submit(payload)).rejects.toThrow('请勿重复提交')
     const saved = await first
-    expect(saved).toMatchObject({ ...payload, status: 'pending' })
+    expect(saved).toMatchObject({ ...payload, status: 'local-draft' })
     expect(service.getSnapshot().submissions).toHaveLength(1)
     expect(submissions()).toHaveLength(1)
     await service.load()
-    expect(service.getSnapshot().submissions[0]).toMatchObject({ title: '地图工作台', status: 'pending' })
+    expect(service.getSnapshot().submissions[0]).toMatchObject({ title: '地图工作台', status: 'local-draft' })
   })
 
   it('keeps core workbenches ready when submission history cannot be loaded', async () => {

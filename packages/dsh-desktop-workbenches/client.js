@@ -6,12 +6,11 @@ window.__ModuleLoader__.load({
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const SUBMISSIONS_API = '/api/desktop-workbenches/submissions'
-    // The product specification ships inside the application, so the bundled copy
-    // always matches the installed version. The market repository holds the
-    // submission guide and the acceptance checklist.
-    const GUIDE_API = '/api/desktop-workbenches/development-guide'
+    // One author guide ships with this Desktop version and covers development,
+    // local acceptance, first listing and later releases.
+    const GUIDE_API = '/api/desktop-workbenches/author-guide'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
-    const GUIDE_READING = `先阅读并遵循工作台开发指南：随本机安装版本分发的规范副本 $DSH_WEB_URL${GUIDE_API}（与所安装版本一致，优先）；投稿要求与验收要点见 ${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md 。`
+    const GUIDE_READING = `先阅读并遵循随本机安装版本分发的完整工作台作者指南：$DSH_WEB_URL${GUIDE_API}。它包含开发、本机验收和 GitHub 发布流程；以当前安装版本为准。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const workbenchPreference = {
       listeners: new Set(),
@@ -491,7 +490,7 @@ window.__ModuleLoader__.load({
         entry.version && h('span', null, `v${entry.version}`),
         h('span', null, `安装：${Number.isFinite(installs) && installs >= 0 ? compactCount(installs) : '暂无数据'}`),
         h('span', null, `点赞：${Number.isFinite(likes) && likes >= 0 ? compactCount(likes) : '暂无数据'}`),
-        entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'))
+        entry.pending && h('span', { className: 'dshWbPending' }, '本机草稿'))
     }
     function Preview({ entry, detail = false }) {
       const screenshot = screenshotFor(entry)
@@ -512,7 +511,7 @@ window.__ModuleLoader__.load({
       if (!submission) return null
       return h('div', { className: 'dshWbSubmitSuccess', role: 'status' },
         h('strong', null, '投稿已保存到本机'),
-        h('span', null, `标题：${submission.title}　作者：${submission.author}　状态：待送审`),
+        h('span', null, `标题：${submission.title}　作者：${submission.author}　状态：本机草稿`),
         submission.packageSha256 && h('span', null, `包 SHA-256：${submission.packageSha256.slice(0, 16)}…`),
         h('div', { className: 'dshWbActions', style: { marginTop: 6 } }, h(Button, { onClick: onDismiss }, '关闭')))
     }
@@ -539,7 +538,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dshWbModal', onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
               h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1 } }, entry.icon ? h('span', { 'aria-hidden': true }, entry.icon + ' ') : null, entry.title),
-              entry.pending && h('span', { className: 'dshWbPending' }, '本机待送审'),
+              entry.pending && h('span', { className: 'dshWbPending' }, '本机草稿'),
               h(Button, { onClick: onClose }, '关闭')
             ),
             h(ScreenshotGallery, { entry }),
@@ -562,15 +561,13 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
 若当前版本没有可用的本地安装接口，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确报告缺少的安装步骤；不要声称已加载。最后给我文件路径、验证结果和实际加载状态。`
     }
     function submissionWorkbenchAgentPrompt() {
-      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在只做投稿这一步，不用再改功能。
+      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按完整作者指南完成公开发布和首次市场收录，不用重复开发功能。
 
-先读市场投稿要求：${WORKBENCH_MARKET_REPO}/blob/main/CONTRIBUTING.md ；按其中的验收要点逐项准备证据；材料模板见 ${WORKBENCH_MARKET_REPO}/blob/main/examples/submission.md 。规范见 $DSH_WEB_URL${GUIDE_API}。
+${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图、支持平台和本机验收结果，不得公开密钥、业务数据或未经授权的私有代码。按可用来源优先发布 npm 包，其次 GitHub Release 安装包；两者都没有时确认仓库源码可独立安装。不要编造统一发布命令，先读取项目真实脚本和当前工具帮助。
 
-用 scripts/check-workbench-package.mjs 校验解包后的工作台，再打成不超过 8 MB 的 .tgz 包。核实 title、description、author，以及源码仓库的完整 commit SHA（不要只填分支或 tag）。可选一张不超过 2 MB 的 PNG、JPEG 或 WebP 截图。不要包含密钥或私密数据。
+确认 ${WORKBENCH_MARKET_REPO} 的 CONTRIBUTING.md 和 data/workbenches schema 已经可用，再新增一个 owner__repo.yml 首次收录 PR。只提交目录元数据，不复制工作台源码或凭证，也不要手改生成的目录 JSON。使用我已经授权的 GitHub 网页或 gh；若缺少登录、公共发布授权或市场仓库尚未启用，先完成可完成的材料并准确说明缺项。
 
-本机投稿服务可用时，POST 到 $DSH_WEB_URL/api/desktop-workbenches/submissions，提交 { title, description, author, package, screenshot?, repository? }，并确认返回 id、packageSha256 和 pending。
-
-注意：这只是存在我这台电脑上的待送审记录，还没有传送给平台，也没有人开始审核。不要把 pending 说成已经投稿成功。最后告诉我文件路径、校验结果、本机记录状态，以及还需要我手动完成的步骤（例如在 GitHub 提 PR）。`
+只有拿到真实 PR URL 才能说“已投稿”；PR 合并且公开目录能读到条目后才能说“已上架”。本机 submissions.json 中的 local-draft 只是草稿。最后给我发布 URL、PR URL、目录可见性、验证证据和仍未完成的事项。`
     }
     function submissionAgentPrompt(mode = 'development') {
       return mode === 'submission' ? submissionWorkbenchAgentPrompt() : developmentWorkbenchAgentPrompt()
@@ -602,8 +599,8 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
       const developmentPrompt = developmentWorkbenchAgentPrompt()
       const submissionPrompt = submissionWorkbenchAgentPrompt()
       const disabled = !ready || pending > 0 || service.blocked
-      const pendingEntries = submissions.filter((entry) => entry.status !== 'approved').map((entry) => ({ ...entry, id: `submission:${entry.id}`, submissionId: entry.id, pending: true, unavailable: true }))
-      const allEntries = tab === 'mine' ? state.added.map((id) => catalog.find((entry) => entry.id === id) || { id, title: id, unavailable: true, description: '提供此工作台的插件当前未加载。' }) : tab === 'market' ? [...pendingEntries, ...catalog] : []
+      const localDrafts = submissions.filter((entry) => entry.status === 'local-draft')
+      const allEntries = tab === 'mine' ? state.added.map((id) => catalog.find((entry) => entry.id === id) || { id, title: id, unavailable: true, description: '提供此工作台的插件当前未加载。' }) : tab === 'market' ? [...catalog] : []
       const entries = allEntries.filter((entry) => `${entry.title || ''} ${entry.description || ''} ${entry.author || ''}`.toLowerCase().includes(search.toLowerCase().trim()))
       const selected = allEntries.find((entry) => entry.id === detail)
       const copyPrompt = async (text) => {
@@ -648,7 +645,8 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),
               openPrompt === 'submission' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: submissionPrompt, 'aria-label': '投稿工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() }))),
           h(SubmitSuccess, { submission: lastSubmission, onDismiss: () => setLastSubmission(null) }),
-          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '投稿只是把材料存到这台电脑上。只有未来平台审核通过并收录，工作台才会出现在公共工作台广场。'),
+          localDrafts.length > 0 && h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, `本机保存了 ${localDrafts.length} 份投稿草稿。它们尚未提交到 GitHub；只有取得真实 PR 链接才算已投稿。`),
+          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '首次收录通过 GitHub PR。PR 合并且公开目录发布成功后，工作台才会出现在公共工作台市场。'),
           h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => h('article', { key: entry.id, className: 'dshWbCard' },
@@ -656,7 +654,7 @@ ${GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的未提交更
             h('h2', null, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, entry.icon || '◇'), entry.title), h('p', { className: 'dshWbMuted' }, entry.description),
             h(EntryMeta, { entry }),
             h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setDetail(entry.id) }, '查看详情'),
-              entry.pending ? h(Button, { disabled: true }, '本机待送审') : state.added.includes(entry.id)
+              state.added.includes(entry.id)
                 ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.open(entry.id)) }, '打开工作台')
                 : h(Button, { primary: true, disabled, onClick: () => service.run(service.add(entry.id)) }, '添加'),
               tab === 'mine' && h(Button, { disabled, onClick: () => setRemoving(entry.id) }, '移除')),

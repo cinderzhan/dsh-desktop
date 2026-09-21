@@ -35,8 +35,8 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const submissions = createSubmissionStore(config.root)
-  ctx.connection.fetch.register({
-    path: '/api/desktop-workbenches/development-guide',
+  const guideRoute = path => ({
+    path,
     methods: ['GET'],
     async fetch() {
       try {
@@ -47,6 +47,8 @@ export function apply(ctx, config) {
       }
     }
   })
+  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/development-guide'))
+  ctx.connection.fetch.register(guideRoute('/api/desktop-workbenches/author-guide'))
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/state',
     methods: ['GET', 'POST'],
