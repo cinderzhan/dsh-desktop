@@ -34,7 +34,6 @@ function deferred() {
 
 async function fixture(initial = emptyState()) {
   let stored = { revision: 0, state: structuredClone(initial) }
-  let storedSubmissions = []
   const list = { current: null, ids: ['old', 'writer-1', 'writer-2', 'research-1'], byId: {} }
   for (const id of list.ids) list.byId[id] = { sessionId: id, displayTitle: id }
   const projects = [{ workspaceId: 'project-1', title: 'User project', sessionIds: [...list.ids] }]
@@ -75,12 +74,6 @@ async function fixture(initial = emptyState()) {
       stale: false,
       catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
     })
-    if (url === '/api/desktop-workbenches/submissions') {
-      if (options.method !== 'POST') return Response.json({ submissions: storedSubmissions })
-      const submission = { id: `submission-${storedSubmissions.length + 1}`, status: 'local-draft', createdAt: '2026-09-14T00:00:00.000Z', ...JSON.parse(options.body) }
-      storedSubmissions = [submission, ...storedSubmissions]
-      return Response.json({ submission }, { status: 201 })
-    }
     if (options.method !== 'POST') return Response.json(stored)
     const payload = JSON.parse(options.body)
     if (payload.revision !== stored.revision) return Response.json({ error: 'Conflict' }, { status: 409 })
@@ -95,7 +88,7 @@ async function fixture(initial = emptyState()) {
   await service.load()
   return {
     service, ctx, request, list,
-    saved: () => structuredClone(stored), submissions: () => structuredClone(storedSubmissions),
+    saved: () => structuredClone(stored),
     externalUpdate: (state = stored.state) => { stored = { revision: stored.revision + 1, state: structuredClone(state) } }
   }
 }
@@ -292,15 +285,17 @@ describe('desktop workbench client navigation', () => {
 
     const submission = submissionWorkbenchAgentPrompt()
     expect(submission).toContain('完整作者指南')
-    expect(submission).toContain('CONTRIBUTING.md')
-    expect(submission).toContain('owner__repo.yml')
+    expect(submission).toContain('catalog/README.md')
+    expect(submission).toContain('data/workbenches/<owner>__<repo>.yml')
+    expect(submission).toContain('description.en')
     expect(submission).not.toContain('review-checklist')
     expect(submission).toContain('npm 包')
     expect(submission).toContain('GitHub Release')
     expect(submission).toContain('真实 PR URL')
-    expect(submission).toContain('local-draft')
+    expect(submission).toContain('本机不保存投稿状态')
+    expect(submission).not.toContain('local-draft')
+    expect(submission).not.toContain('submissions.json')
     expect(submission).not.toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
-    expect(submission).not.toContain('不要把 pending 说成已经投稿成功')
     expect(submission).not.toContain('preset-packages')
     expect(submissionAgentPrompt('submission')).toBe(submission)
   })
@@ -325,32 +320,12 @@ describe('desktop workbench client navigation', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
-  it('loads local drafts and saves a new draft once', async () => {
-    const { service, submissions } = await fixture()
-    const payload = { title: '地图工作台', description: '比较地点与路线', author: 'Cinder', repository: 'https://github.com/example/maps', screenshot: 'data:image/png;base64,AA==' }
-    const first = service.submit(payload)
-    await expect(service.submit(payload)).rejects.toThrow('请勿重复提交')
-    const saved = await first
-    expect(saved).toMatchObject({ ...payload, status: 'local-draft' })
-    expect(service.getSnapshot().submissions).toHaveLength(1)
-    expect(submissions()).toHaveLength(1)
-    await service.load()
-    expect(service.getSnapshot().submissions[0]).toMatchObject({ title: '地图工作台', status: 'local-draft' })
+  it('keeps no local submission state and never calls the removed submission API', async () => {
+    const { service, request } = await fixture()
+    expect(service.submit).toBeUndefined()
+    expect(service.getSnapshot()).not.toHaveProperty('submissions')
+    expect(request.mock.calls.some(([url]) => url === '/api/desktop-workbenches/submissions')).toBe(false)
   })
-
-  it('keeps core workbenches ready when submission history cannot be loaded', async () => {
-    const { service, request, saved } = await fixture()
-    const state = saved()
-    request.mockImplementation(async (url) => url === '/api/desktop-workbenches/submissions'
-      ? Response.json({ error: 'Submission service offline' }, { status: 503 })
-      : Response.json(state))
-    await service.load()
-    expect(service.ready).toBe(true)
-    expect(service.error).toBe('')
-    expect(service.getSnapshot().submissionError).toBe('Submission service offline')
-    expect(service.getSnapshot().submissions).toEqual([])
-  })
-
   it('starts a bound session from zero workspaces through the native creation flow', async () => {
     const { service, ctx } = await fixture(boundState())
     ctx.workspaces.list.getSnapshot().items.splice(0)
@@ -626,7 +601,8 @@ describe('desktop workbench client navigation', () => {
     expect(service.error).toBe('')
     service.register({ id: 'writer', title: 'Writer' }, () => null)
     await service.add('writer')
-    expect(reply).toHaveBeenCalledTimes(4)
+    // state and catalog on load, then one state write.
+    expect(reply).toHaveBeenCalledTimes(3)
     expect(service.revision).toBe(1)
     expect(service.state.added).toEqual(['writer'])
   })
@@ -1136,14 +1112,28 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('screenshotsFor')
   })
 
-  it('submission success feedback component is referenced in the submit panel', () => {
-    const source = Market.toString()
-    expect(source).toContain('SubmitSuccess')
-    expect(source).toContain('lastSubmission')
-    expect(fullSource).toContain('dshWbSubmitSuccess')
-    expect(fullSource).toContain('投稿已保存到本机')
+  it('queries a pasted PR link without keeping any local state', async () => {
+    const { service } = await fixture()
+    const original = service.request
+    const status = vi.fn(async () => Response.json({ number: 12, status: 'merged' }))
+    service.request = (url, options) => url.startsWith('/api/desktop-workbenches/submission-status') ? status(url) : original(url, options)
+    const before = JSON.stringify(service.getSnapshot())
+    expect(await service.readSubmissionStatus('https://github.com/dataelement/awesome-dsh-workbench/pull/12')).toEqual({ number: 12, status: 'merged' })
+    expect(status).toHaveBeenCalledWith('/api/desktop-workbenches/submission-status?url=https%3A%2F%2Fgithub.com%2Fdataelement%2Fawesome-dsh-workbench%2Fpull%2F12')
+    expect(JSON.stringify(service.getSnapshot())).toBe(before)
+    expect(Market.toString()).toContain('h(SubmissionStatus, { service })')
+    expect(code).toContain('需修改：审核者要求修改')
   })
 
+
+  it('points the submit panel at a market PR instead of a local draft', () => {
+    const source = Market.toString()
+    expect(source).not.toContain('SubmitSuccess')
+    expect(source).not.toContain('localDrafts')
+    expect(fullSource).not.toContain('投稿已保存到本机')
+    expect(source).toContain('提交 PR 就是进入审核')
+    expect(source).toContain('工作台市场仓库')
+  })
   it('uses a focused confirmation dialog for removal instead of inline card copy', () => {
     const source = Market.toString()
     expect(source).toContain('ConfirmRemoveModal')

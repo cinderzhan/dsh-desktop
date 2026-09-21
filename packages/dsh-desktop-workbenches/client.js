@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
     const API = '/api/desktop-workbenches/state'
     const WRITE_API = '/api/desktop-workbenches/state/write'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
-    const SUBMISSIONS_API = '/api/desktop-workbenches/submissions'
+    const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
     // One author guide ships with this Desktop version and covers development,
     // local acceptance, first listing and later releases.
     const GUIDE_API = '/api/desktop-workbenches/author-guide'
@@ -45,9 +45,6 @@ window.__ModuleLoader__.load({
         this.remoteCatalog = []
         this.catalogError = ''
         this.catalogStale = false
-        this.submissions = []
-        this.submissionPending = false
-        this.submissionError = ''
         this.draftNotes = new Map()
         this.noteTimers = new Map()
         this.queue = Promise.resolve()
@@ -88,7 +85,7 @@ window.__ModuleLoader__.load({
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
           catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen,
-          catalog: this.marketCatalog(), submissions: this.submissions, submissionPending: this.submissionPending, submissionError: this.submissionError }
+          catalog: this.marketCatalog() }
         for (const listener of this.listeners) listener()
       }
       report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
@@ -109,12 +106,6 @@ window.__ModuleLoader__.load({
           stale: data.stale === true
         }
       }
-      async readSubmissions() {
-        const response = await this.request(SUBMISSIONS_API, { credentials: 'same-origin', cache: 'no-store' })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
-        return Array.isArray(data) ? data : Array.isArray(data.submissions) ? data.submissions : []
-      }
       async load() {
         await this.queue
         const ticket = ++this.navigation
@@ -122,10 +113,9 @@ window.__ModuleLoader__.load({
         this.error = ''
         this.publish()
         try {
-          const [data, catalog, submissionsResult] = await Promise.all([
+          const [data, catalog] = await Promise.all([
             this.read(),
-            this.readCatalog().catch(error => ({ error })),
-            this.readSubmissions().then(value => ({ value, error: '' })).catch(error => ({ value: [], error: error instanceof Error ? error.message : String(error) }))
+            this.readCatalog().catch(error => ({ error }))
           ])
           await this.ctx.sessions.refresh()
           if (this.disposed || ticket !== this.navigation) return
@@ -137,8 +127,6 @@ window.__ModuleLoader__.load({
             this.catalogError = ''
             this.catalogStale = catalog.stale
           }
-          this.submissions = submissionsResult.value
-          this.submissionError = submissionsResult.error
           this.blocked = false
           this.ready = true
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
@@ -149,28 +137,12 @@ window.__ModuleLoader__.load({
           for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
         } catch (error) { this.report(error) }
       }
-      async submit(payload) {
-        if (!this.ready || this.blocked || this.disposed) throw new Error('投稿服务尚未就绪，请稍后再试。')
-        if (this.submissionPending) throw new Error('工作台正在保存，请勿重复提交。')
-        this.submissionPending = true
-        this.error = ''
-        this.publish()
-        try {
-          const response = await this.request(SUBMISSIONS_API, {
-            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-          })
-          const data = await response.json()
-          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
-          const submission = data.submission || data
-          if (!submission || typeof submission !== 'object' || !submission.id) throw new Error('投稿已保存，但服务器未返回有效记录。')
-          this.submissions = [submission, ...this.submissions.filter((item) => item.id !== submission.id)]
-          this.submissionError = ''
-          this.publish()
-          return submission
-        } finally {
-          this.submissionPending = false
-          this.publish()
-        }
+      // Only reads the pull request; the result is shown, never stored.
+      async readSubmissionStatus(link) {
+        const response = await this.request(`${SUBMISSION_STATUS_API}?url=${encodeURIComponent(link)}`, { credentials: 'same-origin', cache: 'no-store' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+        return data
       }
       commit(change) {
         if (!this.ready || this.blocked || this.disposed) return Promise.reject(new Error('工作台更改尚未保存，请先重新加载。'))
@@ -449,6 +421,7 @@ window.__ModuleLoader__.load({
       .dshWb button{cursor:pointer;transition:none}.dshWb button:disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
       .dshWb button:focus-visible,.dshWb input:focus-visible,.dshWb select:focus-visible,.dshWb textarea:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
       .dshWbBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:6px;padding:5px 10px;white-space:nowrap}
+      .dshWbStatusForm{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-top:12px}.dshWbStatusForm label{display:flex;flex-direction:column;gap:4px;flex:1 1 240px;min-width:0;font-size:13px}.dshWbStatusForm input{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 8px;background:var(--dsw-alias-bg-layer-1);color:inherit}.dshWbStatusResult{flex-basis:100%;font-size:13px;line-height:1.6}
       .dshWb .dshWbBtn:not(.dshWbPrimary):not([role=tab]):hover:not(:disabled),.dshWb .dshWbBtn:not(.dshWbPrimary):not([role=tab]):active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
       .dshWb .dshWbPrimary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);border-color:transparent}
       .dshWb .dshWbPrimary:hover:not(:disabled),.dshWb .dshWbPrimary:active:not(:disabled){background:var(--dsw-alias-button-primary-hover,var(--dsw-alias-button-primary-fill));color:var(--dsw-alias-label-primary-foreground)}
@@ -535,8 +508,6 @@ window.__ModuleLoader__.load({
       .dshWbDetailThumbButton:hover .dshWbDetailThumb,.dshWbDetailThumbButton:focus-visible .dshWbDetailThumb{box-shadow:0 0 0 2px var(--dsw-alias-label-primary)}
       .dshWbDetailLightbox{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);cursor:pointer}
       .dshWbDetailLightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:6px}.dshWbLightboxClose{position:fixed;right:22px;top:22px;width:36px;height:36px;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:20px;line-height:1}
-      .dshWbSubmitSuccess{padding:10px 14px;margin:12px 0 0;background:var(--dsw-alias-bg-layer-2);border-radius:6px;font-size:13px;line-height:1.6}
-      .dshWbSubmitSuccess strong{display:block;margin-bottom:2px}
       .dshWbModalBackdrop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(16,16,18,.52);padding:24px;overflow:auto;animation:dshWbFade .16s ease-out}
       .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:14px;max-width:680px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 18px 52px rgba(0,0,0,.24);animation:dshWbRise .2s cubic-bezier(.2,.8,.2,1)}
       .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}.dshWbConfirm{max-width:430px}.dshWbConfirmIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);margin-bottom:18px}.dshWbConfirm .dshWbActions{justify-content:flex-end;margin-top:24px}.dshWbDanger{color:#b42318}.dshWbDanger:hover:not(:disabled){background:rgba(180,35,24,.08)!important}
@@ -682,14 +653,6 @@ window.__ModuleLoader__.load({
         h('button', { ref: lightboxCloseRef, type: 'button', className: 'dshWbLightboxClose', 'aria-label': '关闭截图预览', onClick: () => setLightbox(null) }, '×'),
         h('img', { src: lightbox, alt: `${entry.title || '工作台'}截图放大`, onClick: (event) => event.stopPropagation() })))
     }
-    function SubmitSuccess({ submission, onDismiss }) {
-      if (!submission) return null
-      return h('div', { className: 'dshWbSubmitSuccess', role: 'status' },
-        h('strong', null, '投稿已保存到本机'),
-        h('span', null, `标题：${submission.title}　作者：${submission.author}　状态：本机草稿`),
-        submission.packageSha256 && h('span', null, `包 SHA-256：${submission.packageSha256.slice(0, 16)}…`),
-        h('div', { className: 'dshWbActions', style: { marginTop: 6 } }, h(Button, { onClick: onDismiss }, '关闭')))
-    }
     function useDialogFocus(open, onClose, dialogRef) {
       const closeRef = React.useRef(onClose)
       closeRef.current = onClose
@@ -732,13 +695,12 @@ window.__ModuleLoader__.load({
           h('div', { ref: dialogRef, className: 'dshWbModal', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${entry.title || '工作台'} 详情`, tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
               h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1, display: 'flex', alignItems: 'center', gap: 8 } }, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })), entry.title),
-              entry.pending && h('span', { className: 'dshWbPending' }, '本机草稿'),
               h(Button, { autoFocus: true, onClick: onClose }, '关闭')
             ),
             h(ScreenshotGallery, { entry }),
             entry.description && h('p', null, entry.description),
             h(EntryMeta, { entry }),
-            !entry.pending && h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
+            h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
             entry.repository && h('p', { className: 'dshWbMuted' }, 'GitHub：', h('a', { href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, entry.repository))
           )
         ),
@@ -862,13 +824,13 @@ ${DEVELOPMENT_GUIDE_READING}核对工作台规范及 SDK；不要覆盖已有的
 若当前版本没有可用的本地安装接口，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确报告缺少的安装步骤；不要声称已加载。最后给我文件路径、验证结果和实际加载状态。`
     }
     function submissionWorkbenchAgentPrompt() {
-      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按完整作者指南完成公开发布和首次市场收录，不用重复开发功能。
+      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按完整作者指南把它提交到公共工作台市场，不用重复开发功能。
 
-${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图、支持平台和本机验收结果，不得公开密钥、业务数据或未经授权的私有代码。按可用来源优先发布 npm 包，其次 GitHub Release 安装包；两者都没有时确认仓库源码可独立安装。不要编造统一发布命令，先读取项目真实脚本和当前工具帮助。
+${GUIDE_READING}先确认要公开的仓库和内容，不得公开密钥、业务数据或未经授权的私有代码。把代码提交到我自己的公共 GitHub 仓库；有 npm 包就发布 npm，也可以发布 GitHub Release 安装包，或者只提供可直接安装的源码。先读取项目真实脚本和工具帮助，不要编造发布命令。
 
-确认 ${WORKBENCH_MARKET_REPO} 的 CONTRIBUTING.md 和 data/workbenches schema 已经可用，再新增一个 owner__repo.yml 首次收录 PR。只提交目录元数据，不复制工作台源码或凭证，也不要手改生成的目录 JSON。使用我已经授权的 GitHub 网页或 gh；若缺少登录、公共发布授权或市场仓库尚未启用，先完成可完成的材料并准确说明缺项。
+然后向 ${WORKBENCH_MARKET_REPO} 提交一个 PR，只新增 data/workbenches/<owner>__<repo>.yml。格式以该仓库的 catalog/README.md 为准：url、name、category、description.zh 和 description.en 必填，screenshots 填 1–5 张我仓库里的真实截图地址，没有 npm 时可以填 tarball。不要填写版本、npm 包名或校验值，也不要修改生成的文件。使用我已经授权的 GitHub 网页或 gh；缺少登录或公开授权时，先完成能完成的部分，再准确说明缺什么。
 
-只有拿到真实 PR URL 才能说“已投稿”；PR 合并且公开目录能读到条目后才能说“已上架”。本机 submissions.json 中的 local-draft 只是草稿。最后给我发布 URL、PR URL、目录可见性、验证证据和仍未完成的事项。`
+提交 PR 就是进入审核，本机不保存投稿状态。只有拿到真实 PR URL 才能说“已提交”；PR 合并且市场目录能读到条目后才能说“已上架”。最后给我发布地址、PR URL、目录是否可见、验收证据和仍未完成的事项。`
     }
     function submissionAgentPrompt(mode = 'development') {
       return mode === 'submission' ? submissionWorkbenchAgentPrompt() : developmentWorkbenchAgentPrompt()
@@ -885,8 +847,38 @@ ${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图�
         if (!targetWindow.document.execCommand?.('copy')) throw new Error('浏览器未允许复制。')
       } finally { textarea.remove() }
     }
+    const SUBMISSION_STATUS_TEXT = {
+      open: '审核中：PR 已提交，正在等待检查和维护者审核。',
+      draft: '草稿：PR 还是草稿状态，标记为可审核后才会进入审核。',
+      'changes-requested': '需修改：审核者要求修改，请在 GitHub 上查看意见并更新 PR。',
+      merged: '已合并：市场目录更新后，工作台就会出现在工作台市场中。',
+      closed: '已关闭：这个 PR 没有合并。可以在 GitHub 上查看原因。'
+    }
+    function SubmissionStatus({ service }) {
+      const [link, setLink] = React.useState('')
+      const [result, setResult] = React.useState(null)
+      const [error, setError] = React.useState('')
+      const [checking, setChecking] = React.useState(false)
+      const check = async (event) => {
+        event.preventDefault()
+        setChecking(true)
+        setError('')
+        setResult(null)
+        try { setResult(await service.readSubmissionStatus(link)) }
+        catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
+        finally { setChecking(false) }
+      }
+      return h('form', { className: 'dshWbStatusForm', onSubmit: check },
+        h('label', null, h('span', null, '已经提交了 PR？粘贴链接查看进度'),
+          h('input', { type: 'url', value: link, placeholder: 'https://github.com/dataelement/awesome-dsh-workbench/pull/…', 'aria-label': '投稿 PR 链接', onChange: (event) => setLink(event.target.value) })),
+        h(Button, { type: 'submit', disabled: checking || !link.trim() }, checking ? '正在查询…' : '查询'),
+        h('div', { role: 'status', 'aria-live': 'polite', className: 'dshWbStatusResult' },
+          error && h('p', { className: 'dshWbMuted' }, `无法查询：${error}`),
+          result && h('p', null, h('strong', null, `#${result.number} ${result.title}`), h('br'), SUBMISSION_STATUS_TEXT[result.status] || result.status, ' ',
+            h('a', { href: result.url, target: '_blank', rel: 'noopener noreferrer' }, '在 GitHub 查看'))))
+    }
     function Market({ service }) {
-      const { state, catalog, submissions, submissionError, submissionPending, ready, pending } = useWorkbench(service)
+      const { state, catalog, ready, pending } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
@@ -895,14 +887,12 @@ ${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图�
       const [removing, setRemoving] = React.useState(null)
       const [openPrompt, setOpenPrompt] = React.useState(null)
       const [copyStatus, setCopyStatus] = React.useState('')
-      const [lastSubmission, setLastSubmission] = React.useState(null)
       const [guideOpen, setGuideOpen] = React.useState(false)
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const developmentPrompt = developmentWorkbenchAgentPrompt()
       const submissionPrompt = submissionWorkbenchAgentPrompt()
       const disabled = !ready || pending > 0 || service.blocked
-      const localDrafts = submissions.filter((entry) => entry.status === 'local-draft')
       const added = state.added.filter(visibleWorkbench)
       const favorites = (state.favorites || []).filter(visibleWorkbench)
       const unavailableEntry = (id) => ({ id, title: id, category: '其他', unavailable: true, description: '提供此工作台的插件当前未加载。' })
@@ -942,7 +932,6 @@ ${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图�
             h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。选择适合当前任务的工作台，并随时从左侧切换。')),
           h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台')),
         h(Notice, { service }),
-        submissionError && h('div', { className: 'dshWbNotice', role: 'status' }, '投稿记录暂时无法读取，其他工作台仍可正常使用。 ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重试')),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': '工作台集合' },
             h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, '工作台市场'),
@@ -972,14 +961,13 @@ ${GUIDE_READING}核对真实源码仓库、许可证、版本、作者、截图�
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, '想投稿，再按市场要求提交'),
-              h('p', null, '对照', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '市场投稿要求'), '准备材料，把指令复制给 Agent。'),
+              h('p', null, '先把代码提交到你自己的 GitHub 仓库，再向', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场仓库'), '提交一个 YAML 的 PR。把指令复制给 Agent 即可。'),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(submissionPrompt) }, '复制投稿指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),
-              openPrompt === 'submission' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: submissionPrompt, 'aria-label': '投稿工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() }))),
-          h(SubmitSuccess, { submission: lastSubmission, onDismiss: () => setLastSubmission(null) }),
-          localDrafts.length > 0 && h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, `本机保存了 ${localDrafts.length} 份投稿草稿。它们尚未提交到 GitHub；只有取得真实 PR 链接才算已投稿。`),
-          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '首次收录通过 GitHub PR。PR 合并且公开目录发布成功后，工作台才会出现在公共工作台市场。'),
+              openPrompt === 'submission' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: submissionPrompt, 'aria-label': '投稿工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() }),
+              h(SubmissionStatus, { service }))),
+          h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '提交 PR 就是进入审核，进度以 GitHub 上的 PR 为准，本机不保存投稿状态。PR 合并、市场目录更新后，工作台就会出现在工作台市场中。'),
           h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => {
