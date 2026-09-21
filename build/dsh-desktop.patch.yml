@@ -30,6 +30,9 @@
     - id: media-workbench
       name: dsh-media-workbench
 
+    - id: huaxue
+      name: dsh-huaxue-workbench
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.

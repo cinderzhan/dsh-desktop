@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "workbenches": [
     {
+      "id": "huaxue",
+      "package": "dsh-huaxue-workbench",
+      "version": "0.3.5-desktop.1",
+      "artifact": "dsh-huaxue-workbench-0.3.5-desktop.1.tgz",
+      "sha256": "fc3dd67197fa3732974314eabada0e92f4fb5c2c96fd35aacbbd96d6d654dc2b",
+      "source": {
+        "repository": "https://github.com/gjz18342624299-arch/dsh-huaxue-workbench",
+        "commit": "2c770bd12fac52dcf243c23faa3d9396b3cfcdda",
+        "branch": "main",
+        "reviewSource": "huaxue-source-review.zip (received 2026-09-20)",
+        "localAdaptation": true,
+        "review": "docs/huaxue-workbench-review.zh.md",
+        "publication": "local-only"
+      }
+    },
+    {
       "id": "ming-life",
       "package": "ming-life",
       "version": "1.2.0",

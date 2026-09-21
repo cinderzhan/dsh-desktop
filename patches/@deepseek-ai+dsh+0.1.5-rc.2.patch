@@ -1,7 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -28,6 +28,15 @@
+@@ -28,6 +28,16 @@
    },
    "license": "MIT",
    "dependencies": {
@@ -14,6 +14,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 +    "ming-life": "1.2.0",
 +    "dsh-site-selection": "1.2.0",
 +    "dsh-media-workbench": "0.12.1",
++    "dsh-huaxue-workbench": "0.3.5-desktop.1",
      "commander": "^15.0.0",
      "js-yaml": "^4.2.0",
      "node-addon-require-builtin": "^0.1.4",

@@ -1,16 +1,19 @@
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyState, validateState } from '../packages/dsh-desktop-workbenches/state.mjs'
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
-let Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
+let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
   window: { __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
       if (name === 'react') return { createElement() {}, Component: class {} }
       throw new Error(`Unexpected module ${name}`)
     })
+    apply = client.apply
     Workbenches = client.Workbenches
     Market = client.Market
     submissionAgentPrompt = client.submissionAgentPrompt
@@ -70,7 +73,7 @@ async function fixture(initial = emptyState()) {
   const request = vi.fn(async (url, options = {}) => {
     if (url === '/api/desktop-workbenches/submissions') {
       if (options.method !== 'POST') return Response.json({ submissions: storedSubmissions })
-      const submission = { id: `submission-${storedSubmissions.length + 1}`, status: 'local-draft', createdAt: '2026-09-14T00:00:00.000Z', ...JSON.parse(options.body) }
+      const submission = { id: `submission-${storedSubmissions.length + 1}`, status: 'pending', createdAt: '2026-09-14T00:00:00.000Z', ...JSON.parse(options.body) }
       storedSubmissions = [submission, ...storedSubmissions]
       return Response.json({ submission }, { status: 201 })
     }
@@ -98,12 +101,118 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
-  it('renders submission as a third top-level tab with its own panel', () => {
+  it('tracks the market as the current sidebar destination and clears it when a workbench opens', async () => {
+    const { service, ctx } = await fixture()
+    service.showMarket()
+    expect(service.getSnapshot().marketOpen).toBe(true)
+    expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith('desktop-workbenches')
+
+    await service.add('writer')
+    await service.open('writer')
+    expect(service.getSnapshot().marketOpen).toBe(false)
+    expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
+    service.dispose()
+  })
+
+  it('hides retired IDs from old-state cards, counts and sidebar while retaining other unavailable providers', async () => {
+    const ids = ['research-notebook', 'writer', 'writing-notebook', 'missing-provider']
+    const initial = {
+      ...emptyState(), added: ids, pinned: ids,
+      notes: { 'research-notebook': '研究资料', 'writing-notebook': '创作草稿' },
+      sessionBindings: { old: 'research-notebook' }, recentSessions: { 'research-notebook': 'old' }
+    }
+    const { service, saved } = await fixture(initial)
+    let client, Sidebar
+    vm.runInNewContext(code, {
+      window: { __ModuleLoader__: { load({ factory }) {
+        client = factory(() => ({ ...React,
+          useState: (value) => React.useState(value === 'market' ? 'mine' : value),
+          useSyncExternalStore: (_subscribe, snapshot) => snapshot()
+        }))
+      } } }
+    })
+    client.apply({
+      effect: () => {},
+      slots: {
+        inject: (_name, callback) => callback(),
+        register: (descriptor, Component) => { if (descriptor.name === 'sidebar.footer.action') Sidebar = Component }
+      }
+    })
+    const market = renderToStaticMarkup(React.createElement(client.Market, { service }))
+    const sidebar = renderToStaticMarkup(React.createElement(Sidebar, { service, wide: true }))
+    for (const html of [market, sidebar]) {
+      expect(html).not.toContain('research-notebook')
+      expect(html).not.toContain('writing-notebook')
+      expect(html).toContain('missing-provider')
+      expect(html).toContain('Writer')
+    }
+    expect(market).toContain('已安装的工作台 (2)')
+    expect(market).toContain('提供此工作台的插件当前未加载。')
+    expect(sidebar).toContain('missing-provider（不可用）')
+    expect(sidebar).toMatch(/aria-label="Writer向上移动" disabled=""/)
+    expect(sidebar).toMatch(/aria-label="missing-provider（不可用）向下移动" disabled=""/)
+    expect(service.state).toEqual(initial)
+    expect(saved().state).toEqual(initial)
+    service.dispose()
+  })
+
+  it('does not register the retired notebook templates when the plugin is applied', () => {
+    let service
+    const ctx = {
+      reflect: { provide: (name, value) => { if (name === 'desktopWorkbenches') service = value } },
+      effect: (callback, label) => {
+        // Exercise registration effects without mounting DOM styles or starting network I/O.
+        if (!['workbenches: styles', 'workbenches: lifecycle'].includes(label)) callback()
+      },
+      slots: { inject: (_name, callback) => callback(), register: vi.fn() },
+      sessions: { list: { subscribe: vi.fn() } },
+      uiWorkspace: { registerSessionOpener: vi.fn() }
+    }
+    apply(ctx)
+    expect(service).toBeInstanceOf(Workbenches)
+    expect(service.getSnapshot().catalog).toEqual([])
+    service.register({ id: 'external-workbench', title: 'External workbench' }, () => null)
+    expect(service.getSnapshot().catalog.map(entry => entry.id)).toEqual(['external-workbench'])
+    service.dispose()
+  })
+
+  it.each(['research-notebook', 'writing-notebook'])('preserves retired %s data across loading, native navigation and saving', async (id) => {
+    const initial = {
+      ...emptyState(), added: [id], pinned: [id], active: id,
+      notes: { 'research-notebook': '来源与证据', 'writing-notebook': '未发布稿件' },
+      sessionBindings: { old: id }, recentSessions: { [id]: 'old' }
+    }
+    const { service, ctx, saved } = await fixture(initial)
+    expect(service.state).toEqual(initial)
+    expect(saved().state).toEqual(initial)
+    expect(ctx.sessions.create).not.toHaveBeenCalled()
+    expect(ctx.sessions.open).not.toHaveBeenCalled()
+    await expect(service.add(id)).rejects.toThrow('工作台当前不可用')
+    await expect(service.open(id)).rejects.toThrow('请先添加可用的工作台')
+    await service.add('writer')
+    await service.open('writer')
+    ctx.sessions.open('old')
+    await service.queue
+    expect(service.state.active).toBe('writer')
+    expect(saved().state.notes).toEqual(initial.notes)
+    expect(saved().state.sessionBindings).toEqual(initial.sessionBindings)
+    expect(saved().state.recentSessions).toEqual(initial.recentSessions)
+    expect(saved().state.added).toContain(id)
+    expect(saved().state.pinned).toContain(id)
+    expect(service.getSnapshot().catalog.some(entry => entry.id === id)).toBe(false)
+    service.dispose()
+  })
+
+  it('renders workbench creation as a separate action instead of a collection tab', () => {
     const source = Market.toString()
-    expect(source).toContain("'aria-selected': tab === 'submit'")
-    expect(source).toContain("'aria-controls': 'dsh-workbench-submit-panel'")
-    expect(source).toContain("id: 'dsh-workbench-submit-panel', role: 'tabpanel'")
+    expect(source).not.toContain("'aria-selected': tab === 'submit'")
+    expect(source).not.toContain("'aria-controls': 'dsh-workbench-submit-panel'")
+    expect(source).toContain("id: 'dsh-workbench-submit-panel'")
     expect(source).toContain('制作我的工作台')
+    expect(source).toContain('dshWbCreate')
+    expect(source).toContain("'aria-selected': tab === 'favorites'")
+    expect(source).toContain('我的收藏')
+    expect(source).toContain('已安装的工作台')
     expect(source).toContain('先看规范，让 Agent 开发')
     expect(source).toContain('装到本机，打开确认能用')
     expect(source).toContain('想投稿，再按市场要求提交')
@@ -113,21 +222,28 @@ describe('desktop workbench client navigation', () => {
     expect(source).not.toContain('选择交付方式')
     expect(source).not.toContain('提交到工作台广场')
     expect(source).not.toContain('submitMode')
-    expect(source).toContain("tab !== 'submit' && h('input'")
+    expect(source).toContain("tab !== 'submit' && h('div', { className: 'dshWbToolbar'")
     expect(source).toContain("tab !== 'submit' && h('section'")
     expect(source).not.toContain('showSubmit')
     expect(source).not.toContain("'aria-expanded'")
+    expect(source).toContain('setGuideOpen(true)')
+    expect(source).not.toContain('GUIDE_PAGE')
+    expect(code).toContain("service.request(GUIDE_API, { cache: 'no-store', credentials: 'same-origin' })")
+    expect(code).toContain('当前安装版本 · 与 Agent 读取同一份规范')
   })
 
   it('provides one prompt for local development and one for submission', () => {
     const development = developmentWorkbenchAgentPrompt()
     expect(development).toContain('workbench.json')
     expect(development).toContain('scripts/check-workbench-package.mjs')
-    expect(development).toContain('我的工作台')
+    expect(development).toContain('已安装的工作台')
     expect(development).toContain('左侧入口')
     expect(development).toContain('不要投稿')
     expect(development).toContain('不要声称已加载')
-    expect(development).toContain('$DSH_WEB_URL/api/desktop-workbenches/author-guide')
+    expect(development).toContain('$DSH_WEB_URL/api/desktop-workbenches/state?include=development-guide')
+    expect(development).toContain('version、entry、兼容性')
+    expect(development).not.toContain('version、client、兼容性')
+    expect(development).toContain('不需要读取或处理任何市场投稿要求')
     expect(development).not.toContain('dataelement/awesome-dsh-workbench')
     expect(development).not.toContain('CONTRIBUTING.md')
     // The preset-package document describes Agent presets, not workbench packages.
@@ -137,16 +253,17 @@ describe('desktop workbench client navigation', () => {
     expect(submissionAgentPrompt()).toBe(development)
 
     const submission = submissionWorkbenchAgentPrompt()
-    expect(submission).toContain('完整作者指南')
+    expect(submission).toContain('scripts/check-workbench-package.mjs')
+    expect(submission).toContain('dataelement/awesome-dsh-workbench')
     expect(submission).toContain('CONTRIBUTING.md')
-    expect(submission).toContain('owner__repo.yml')
+    expect(submission).toContain('验收要点')
     expect(submission).not.toContain('review-checklist')
-    expect(submission).toContain('npm 包')
-    expect(submission).toContain('GitHub Release')
-    expect(submission).toContain('真实 PR URL')
-    expect(submission).toContain('local-draft')
-    expect(submission).not.toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
-    expect(submission).not.toContain('不要把 pending 说成已经投稿成功')
+    expect(submission).toContain('完整 commit SHA')
+    expect(submission).toContain('PNG、JPEG 或 WebP')
+    expect(submission).toContain('{ title, description, author, package, screenshot?, repository? }')
+    expect(submission).toContain('$DSH_WEB_URL/api/desktop-workbenches/submissions')
+    expect(submission).toContain('还没有传送给平台')
+    expect(submission).toContain('不要把 pending 说成已经投稿成功')
     expect(submission).not.toContain('preset-packages')
     expect(submissionAgentPrompt('submission')).toBe(submission)
   })
@@ -171,17 +288,17 @@ describe('desktop workbench client navigation', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
-  it('loads local drafts and saves a new draft once', async () => {
+  it('loads marketplace submissions and publishes a newly saved pending submission once', async () => {
     const { service, submissions } = await fixture()
     const payload = { title: '地图工作台', description: '比较地点与路线', author: 'Cinder', repository: 'https://github.com/example/maps', screenshot: 'data:image/png;base64,AA==' }
     const first = service.submit(payload)
     await expect(service.submit(payload)).rejects.toThrow('请勿重复提交')
     const saved = await first
-    expect(saved).toMatchObject({ ...payload, status: 'local-draft' })
+    expect(saved).toMatchObject({ ...payload, status: 'pending' })
     expect(service.getSnapshot().submissions).toHaveLength(1)
     expect(submissions()).toHaveLength(1)
     await service.load()
-    expect(service.getSnapshot().submissions[0]).toMatchObject({ title: '地图工作台', status: 'local-draft' })
+    expect(service.getSnapshot().submissions[0]).toMatchObject({ title: '地图工作台', status: 'pending' })
   })
 
   it('keeps core workbenches ready when submission history cannot be loaded', async () => {
@@ -537,6 +654,23 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.active).toBe('writer')
   })
 
+  it('returns to the workbench home without deleting the recent session', async () => {
+    const { service, ctx, list, saved } = await fixture(boundState())
+    await service.open('writer')
+    expect(list.current).toBe('writer-1')
+    ctx.sessions.clear.mockClear()
+
+    await service.home('writer')
+    expect(ctx.sessions.clear).toHaveBeenCalledOnce()
+    expect(list.current).toBe(null)
+    expect(saved().state.active).toBe('writer')
+    expect(saved().state.recentSessions.writer).toBe('writer-1')
+    expect(ctx.sessions.stop).not.toHaveBeenCalled()
+
+    await service.open('writer')
+    expect(ctx.sessions.open).toHaveBeenLastCalledWith('writer-1')
+  })
+
   it('preserves sidebar order on repeated add and restores added entries after reload', async () => {
     const { service, saved } = await fixture()
     await service.add('writer')
@@ -548,6 +682,17 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.pinned).toEqual(['research', 'writer'])
     await service.remove('research')
     expect(saved().state.pinned).toEqual(['writer'])
+  })
+
+  it('persists favorites independently from installation and lets an unavailable favorite be removed', async () => {
+    const { service, saved } = await fixture()
+    await service.toggleFavorite('writer')
+    expect(saved().state.favorites).toEqual(['writer'])
+    expect(saved().state.added).toEqual([])
+    service.catalog.delete('writer')
+    await service.toggleFavorite('writer')
+    expect(saved().state.favorites).toEqual([])
+    await expect(service.toggleFavorite('missing')).rejects.toThrow('工作台当前不可用')
   })
 
   it('restores the recent session but gives an explicitly clicked session priority', async () => {
@@ -845,8 +990,44 @@ describe('workbench business layout contract', () => {
 
 describe('workbench market screenshot and metadata display', () => {
   const fullSource = code
-  it('shows "暂无数据" for installations and likes when values are missing or non-finite', () => {
-    expect(fullSource).toContain('暂无数据')
+  it('explains the workbench concept and the persistent sidebar switching model', () => {
+    expect(fullSource).toContain('切换工作台，进入不同工作方式')
+    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。选择适合当前任务的工作台，并随时从左侧切换。')
+  })
+
+  it('ships the supplied product screenshots as defaults for the two matching workbenches', async () => {
+    const { service } = await fixture()
+    service.register({ id: 'ming-life', title: '玄学人生工作台' }, () => null)
+    service.register({ id: 'huaxue', title: '花少2 · 花学工作台' }, () => null)
+
+    for (const id of ['ming-life', 'huaxue']) {
+      const entry = service.catalog.get(id)
+      expect(entry.screenshot).toMatch(/^data:image\/jpeg;base64,/)
+      expect(entry.screenshotPosition).toBe('center top')
+    }
+    service.dispose()
+  })
+
+  it('uses a four-column desktop grid with explicit responsive reductions', () => {
+    expect(fullSource).toContain('.dshWbGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}')
+    expect(fullSource).toContain('.dshWbCard{min-width:0;border:1px solid var(--dsw-alias-border-l2);')
+    expect(fullSource).toContain('@container workbench-market (max-width:980px){.dshWbGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}')
+    expect(fullSource).toContain('@container workbench-market (max-width:620px){.dshWbGrid{grid-template-columns:1fr}}')
+    expect(fullSource).toContain('.dshWbMeta{display:grid;grid-template-columns:minmax(0,1fr) auto auto;')
+    expect(fullSource).not.toContain('未安装')
+  })
+
+  it('marks the market entry as the current page and uses the dedicated market action', () => {
+    expect(fullSource).toContain("'aria-current': marketOpen ? 'page' : undefined")
+    expect(fullSource).toContain('onClick: () => service.showMarket()')
+    expect(fullSource).toContain("h(MarketIcon, { name: 'market', size: 15 })")
+    expect(fullSource).toContain('.dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;')
+    expect(fullSource).not.toContain('.dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:5px;border-bottom:1px')
+  })
+
+  it('shows zero for installations and likes when values are missing or non-finite', () => {
+    expect(fullSource).toContain("compactCount(installs) : '0'")
+    expect(fullSource).toContain("compactCount(likes) : '0'")
     expect(fullSource).toContain('Number.isFinite(installs)')
     expect(fullSource).toContain('Number.isFinite(likes)')
   })
@@ -866,7 +1047,7 @@ describe('workbench market screenshot and metadata display', () => {
     // return statement parses fine but never renders, which silently breaks
     // "查看详情".
     const source = Market.toString()
-    const start = source.lastIndexOf('return ')
+    const start = source.indexOf("return h('section'", source.indexOf('const copyPrompt'))
     expect(start).toBeGreaterThan(-1)
     let index = source.indexOf('(', start)
     let depth = 0
@@ -899,14 +1080,17 @@ describe('workbench market screenshot and metadata display', () => {
   it('portals the detail modal to document.body so panel containment cannot clip it', () => {
     // The market panel sets container-type, which makes it the containing block
     // for fixed-position descendants and clips them with its own overflow.
-    const modal = fullSource.slice(fullSource.indexOf('function DetailModal'), fullSource.indexOf('function developmentWorkbenchAgentPrompt'))
+    const modal = fullSource.slice(fullSource.indexOf('function DetailModal'), fullSource.indexOf('function ConfirmRemoveModal'))
+    const focusHook = fullSource.slice(fullSource.indexOf('function useDialogFocus'), fullSource.indexOf('function DetailModal'))
     expect(modal).toContain("require('react-dom').createPortal")
     expect(modal).toContain('document.body')
-    expect(modal.indexOf('React.useEffect')).toBeLessThan(modal.indexOf('if (!entry) return null'))
+    expect(modal.indexOf('useDialogFocus')).toBeLessThan(modal.indexOf('if (!entry) return null'))
+    expect(focusHook).toContain('React.useEffect')
   })
 
   it('card screenshot uses dedicated card-level CSS class', () => {
     expect(fullSource).toContain('dshWbCardScreenshot')
+    expect(fullSource).toContain('onError: () => setFailedScreenshot(screenshot)')
   })
 
   it('ScreenshotGallery supports multiple screenshots with gallery- and lightbox CSS' , () => {
@@ -922,5 +1106,24 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).toContain('lastSubmission')
     expect(fullSource).toContain('dshWbSubmitSuccess')
     expect(fullSource).toContain('投稿已保存到本机')
+  })
+
+  it('uses a focused confirmation dialog for removal instead of inline card copy', () => {
+    const source = Market.toString()
+    expect(source).toContain('ConfirmRemoveModal')
+    expect(source).not.toContain("removing === entry.id && h('div'")
+    expect(fullSource).toContain("'aria-labelledby': 'dsh-workbench-remove-title'")
+    expect(fullSource).toContain("'aria-describedby': 'dsh-workbench-remove-description'")
+    expect(fullSource).toContain('market.inert = true')
+    expect(fullSource).toContain('已有会话、项目文件和工作台笔记都会保留')
+  })
+
+  it('implements roving keyboard navigation for the three collection tabs', () => {
+    const source = Market.toString()
+    expect(source).toContain("event.key === 'ArrowRight'")
+    expect(source).toContain("event.key === 'ArrowLeft'")
+    expect(source).toContain("event.key === 'Home'")
+    expect(source).toContain("event.key === 'End'")
+    expect(source).toContain("tabIndex: tab === 'favorites' ? 0 : -1")
   })
 })

@@ -274,6 +274,7 @@
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
     "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
+    "dsh-huaxue-workbench": "file:vendor/workbenches/dsh-huaxue-workbench-0.3.5-desktop.1.tgz",
     "dsh-media-workbench": "file:vendor/workbenches/dsh-media-workbench-0.12.1.tgz",
     "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
     "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
