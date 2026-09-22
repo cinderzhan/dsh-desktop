@@ -1114,6 +1114,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain("'GitHub：'")
   })
 
+  it('shows a short update action in place of 已安装 so card actions stay on one row', () => {
+    expect(fullSource).toContain("installing === catalogId ? '正在更新…' : '检测到更新')")
+    expect(fullSource).toContain("title: `更新到 v${entry.listedVersion}`")
+    expect(fullSource).not.toContain(": `更新到 v${entry.listedVersion}`),")
+    expect(fullSource).toContain('.dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center;flex-wrap:nowrap}')
+  })
+
   it('bookmarks favorites and shows a quiet 已安装 state for added workbenches', () => {
     expect(fullSource).toContain("h(MarketIcon, { name: 'bookmark', size: 17 })")
     expect(fullSource).toContain("h(Button, { className: 'dshWbBtn dshWbInstalled', disabled: true }, '已安装')")
