@@ -1087,6 +1087,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
+  it('shows a single display-mode toggle and no fill behind the open market', () => {
+    expect(fullSource).toContain("const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'")
+    expect(fullSource).toContain('onClick: () => changeMode(next) }, h(ModeIcon, { mode: next })')
+    expect(fullSource).not.toContain("...['list', 'icons'].map((value) => h('button'")
+    expect(fullSource).not.toContain('.dshWbNavMarket[data-active=true]{background')
+  })
+
   it('marks the market entry as the current page and uses the dedicated market action', () => {
     expect(fullSource).toContain("'aria-current': marketOpen ? 'page' : undefined")
     expect(fullSource).toContain('onClick: () => service.showMarket()')
