@@ -586,13 +586,11 @@ window.__ModuleLoader__.load({
       .dshWbSetting input{width:18px;height:18px;flex:none;accent-color:var(--dsw-alias-label-primary);cursor:pointer}
       .dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:2px}
       .dshWbNavModes{display:flex;gap:2px;flex-shrink:0}
-      .dshWb .dshWbMode{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-secondary)}
-      .dshWb .dshWbMode[aria-pressed=true]{background:transparent;color:var(--dsw-alias-label-primary)}
+      .dshWb .dshWbMode{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-primary)}
       .dshWbNavItems{display:flex;flex-direction:column;gap:2px}
       .dshWbNavRow{display:flex;align-items:center;gap:2px;border-radius:7px;min-width:0}.dshWbNavRow[data-active=true]{background:var(--dsw-alias-bg-layer-2)}
       .dshWbNavOpen{border:0;background:none;display:flex;align-items:center;gap:9px;text-align:left;padding:5px 7px;flex:1;min-width:0;border-radius:7px}
       .dshWbNavMarket{font-weight:600;letter-spacing:-.01em}.dshWbNavMarket .dshWbNavIcon{background:transparent;color:var(--dsw-alias-label-primary)}
-      .dshWbNavMarket[data-active=true]{background:var(--dsw-alias-bg-layer-2)}
       .dshWb .dshWbNavOpen:hover:not(:disabled),.dshWb .dshWbMove:hover:not(:disabled),.dshWb .dshWbMode:hover:not(:disabled),.dshWb .dshWbNavOpen:active:not(:disabled),.dshWb .dshWbMove:active:not(:disabled),.dshWb .dshWbMode:active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
       .dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary)}
       .dshWbNavRow[data-active=true] .dshWbNavIcon{color:var(--dsw-alias-label-primary)}
@@ -727,8 +725,13 @@ window.__ModuleLoader__.load({
       return h('nav', { className: 'dshWb dshWbNav', 'data-mode': iconMode ? 'icons' : 'list', 'data-wide': !!wide, 'aria-label': '工作台' },
         h('div', { className: 'dshWbNavHeader' },
           h('button', { type: 'button', className: 'dshWbNavOpen dshWbNavMarket', 'data-active': marketOpen, 'aria-current': marketOpen ? 'page' : undefined, title: '工作台市场', 'aria-label': '工作台市场', onClick: () => service.showMarket() }, h('span', { className: 'dshWbNavIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'market', size: 15 })), wide && h('span', { className: 'dshWbNavLabel' }, '工作台市场')),
-          wide && h('div', { className: 'dshWbNavModes', role: 'group', 'aria-label': '工作台显示方式' },
-            ...['list', 'icons'].map((value) => h('button', { key: value, type: 'button', className: 'dshWbMode', 'aria-label': value === 'list' ? '列表模式' : '图标模式', title: value === 'list' ? '列表模式' : '图标模式', 'aria-pressed': mode === value, onClick: () => changeMode(value) }, h(ModeIcon, { mode: value }))))),
+          wide && (() => {
+            // One button that shows the mode a click switches to.
+            const next = mode === 'list' ? 'icons' : 'list'
+            const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'
+            return h('div', { className: 'dshWbNavModes' },
+              h('button', { type: 'button', className: 'dshWbMode', 'aria-label': label, title: label, onClick: () => changeMode(next) }, h(ModeIcon, { mode: next })))
+          })()),
         h('div', { className: 'dshWbNavItems' }, pinned.map((id, index) => {
           const entry = catalog.find((item) => item.id === id)
           const title = entry?.title || `${id}（不可用）`
