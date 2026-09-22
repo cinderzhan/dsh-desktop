@@ -638,21 +638,29 @@ window.__ModuleLoader__.load({
       .dshWbCardScreenshot{display:block;width:100%;height:100%;object-fit:cover;background:var(--dsw-alias-bg-module-platform)}
       .dshWbFavorite{position:absolute;right:10px;top:10px;z-index:2;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;transform:translateY(-3px);transition:opacity .16s,transform .16s,color .16s}
       .dshWbCard:hover .dshWbFavorite,.dshWbFavorite:focus-visible,.dshWbFavorite[aria-pressed=true]{opacity:1;transform:none}.dshWbFavorite:hover,.dshWbFavorite[aria-pressed=true]{color:var(--dsw-alias-label-primary)}.dshWbFavorite[aria-pressed=true] svg{fill:currentColor}
+      .dshWbTitleLink{color:inherit;text-decoration:none}.dshWbTitleLink:hover{text-decoration:underline;text-underline-offset:3px}.dshWbTitleLink:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px;border-radius:3px}
+      .dshWbAvatar{width:18px;height:18px;flex:0 0 auto;border-radius:50%;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform)}
+      .dshWb .dshWbInstalled:disabled{opacity:1;cursor:default;background:var(--dsw-alias-bg-layer-1);border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
       .dshWbMeta{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2);font-variant-numeric:tabular-nums;min-width:0}
-      .dshWbMetaItem{display:flex;align-items:center;gap:5px;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;min-width:0}.dshWbMetaItem svg{flex:0 0 auto}.dshWbMetaItem b{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}.dshWbMetaItem small{font-size:10px;line-height:16px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbMetaItem:not(:first-child) small{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+      .dshWbMetaItem{display:flex;align-items:center;gap:5px;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;min-width:0}.dshWbMetaItem svg{flex:0 0 auto}.dshWbMetaItem b{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}.dshWbMetaItem small{font-size:10px;line-height:16px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbAuthor b{font-size:12px}.dshWbMetaItem:not(:first-child) small{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
       .dshWbVersion{font-size:10px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbPending{font-weight:600;color:var(--dsw-alias-label-primary)}
       .dshWbEmpty{grid-column:1/-1;display:flex;min-height:240px;align-items:center;justify-content:center;text-align:center;padding:32px;border:1px dashed var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-module-platform)}.dshWbEmpty strong{display:block;font-size:15px;margin-bottom:5px}.dshWbEmpty p{margin:0}
       .dshWbDetail{padding:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;margin-bottom:16px;background:var(--dsw-alias-bg-layer-1)}
       .dshWbDetail h2{font-size:16px;line-height:24px;margin:0 auto 0 0}.dshWbDetail p{font-size:13px;line-height:21px;margin:10px 0 0}
-      .dshWbDetailHeroButton{display:block;width:100%;padding:0;border:0;background:none;margin-top:12px}.dshWbDetailImage{display:block;width:100%;max-height:360px;object-fit:contain;border-radius:6px;background:var(--dsw-alias-bg-module-platform)}
-      .dshWbDetailGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:10px;margin-top:12px}
-      .dshWbDetailThumbButton{display:block;padding:0;border:0;border-radius:6px;background:none}.dshWbDetailThumb{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);cursor:pointer;transition:box-shadow .15s}
-      .dshWbDetailThumbButton:hover .dshWbDetailThumb,.dshWbDetailThumbButton:focus-visible .dshWbDetailThumb{box-shadow:0 0 0 2px var(--dsw-alias-label-primary)}
+      .dshWbCarousel{position:relative;margin:0 -4px;border-radius:10px;overflow:hidden;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2)}
+      .dshWbCarouselTrack{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}.dshWbCarouselTrack::-webkit-scrollbar{display:none}
+      .dshWbCarouselSlide{flex:0 0 100%;scroll-snap-align:start;display:block;padding:0;border:0;background:none;cursor:zoom-in;aspect-ratio:16/10}.dshWbCarouselSlide img{display:block;width:100%;height:100%;object-fit:contain}
+      .dshWbCarouselSlide:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}
+      .dshWbCarouselNav{position:absolute;top:50%;display:grid;place-items:center;width:34px;height:34px;margin-top:-17px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:50%;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;transition:opacity .16s}
+      .dshWbCarouselNav[data-side=prev]{left:12px}.dshWbCarouselNav[data-side=next]{right:12px}.dshWbCarousel:hover .dshWbCarouselNav:not(:disabled),.dshWbCarouselNav:focus-visible{opacity:1}
+      .dshWbCarouselDots{position:absolute;left:50%;bottom:10px;display:flex;gap:6px;transform:translateX(-50%)}.dshWbCarouselDots span{width:6px;height:6px;border-radius:50%;background:rgba(0,0,0,.22);transition:width .16s,background .16s}.dshWbCarouselDots span[data-active=true]{width:16px;border-radius:3px;background:rgba(0,0,0,.6)}
+      .dshWbCarouselCount{position:absolute;right:10px;bottom:8px;padding:1px 7px;border-radius:9px;background:rgba(0,0,0,.45);color:#fff;font-size:11px;line-height:18px;font-variant-numeric:tabular-nums}
+      @media(hover:none){.dshWbCarouselNav:not(:disabled){opacity:1}}
       .dshWbDetailLightbox{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);cursor:pointer}
       .dshWbDetailLightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:6px}.dshWbLightboxClose{position:fixed;right:22px;top:22px;width:36px;height:36px;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:20px;line-height:1}
       .dshWbModalBackdrop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(16,16,18,.52);padding:24px;overflow:auto;animation:dshWbFade .16s ease-out}
-      .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:14px;max-width:680px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 18px 52px rgba(0,0,0,.24);animation:dshWbRise .2s cubic-bezier(.2,.8,.2,1)}
-      .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}.dshWbConfirm{max-width:430px}.dshWbConfirmIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);margin-bottom:18px}.dshWbConfirm .dshWbActions{justify-content:flex-end;margin-top:24px}.dshWbDanger{color:#b42318}.dshWbDanger:hover:not(:disabled){background:rgba(180,35,24,.08)!important}
+      .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:14px;max-width:880px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 18px 52px rgba(0,0,0,.24);animation:dshWbRise .2s cubic-bezier(.2,.8,.2,1)}
+      .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}.dshWbConfirm{max-width:430px}.dshWbModal .dshWbMeta{margin-top:14px}.dshWbConfirmIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);margin-bottom:18px}.dshWbConfirm .dshWbActions{justify-content:flex-end;margin-top:24px}.dshWbDanger{color:#b42318}.dshWbDanger:hover:not(:disabled){background:rgba(180,35,24,.08)!important}
       .dshWbGuideModal{max-width:920px;height:min(85vh,820px);padding:0;overflow:hidden;display:flex;flex-direction:column}
       .dshWbGuideHeader{display:flex;align-items:center;gap:18px;padding:18px 22px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:0 0 auto}.dshWbGuideHeaderText{min-width:0;flex:1}.dshWbGuideHeader h2{font-size:18px;line-height:26px}.dshWbGuideHeader p{margin:2px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
       .dshWbGuideBody{min-height:0;overflow:auto;padding:28px 34px 42px}.dshWbGuideSource{padding:12px 14px;margin-bottom:26px;border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:19px}
@@ -749,26 +757,48 @@ window.__ModuleLoader__.load({
       const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
       if (name === 'author') return h('svg', common, h('circle', { cx: 12, cy: 8, r: 3.5 }), h('path', { d: 'M5.5 20c.7-4 2.9-6 6.5-6s5.8 2 6.5 6' }))
       if (name === 'install') return h('svg', common, h('path', { d: 'M12 3v12m0 0 4-4m-4 4-4-4M5 20h14' }))
-      if (name === 'like') return h('svg', common, h('path', { d: 'M7 10v10H4V10h3Zm0 9h9.2a2 2 0 0 0 1.9-1.4l1.6-5A2 2 0 0 0 17.8 10H14l.7-3.1A2.4 2.4 0 0 0 12.4 4L7 10v9Z' }))
+      if (name === 'bookmark') return h('svg', common, h('path', { d: 'M6.5 4.5A1.5 1.5 0 0 1 8 3h8a1.5 1.5 0 0 1 1.5 1.5V21L12 17.2 6.5 21V4.5Z' }))
+      if (name === 'star') return h('svg', common, h('path', { d: 'm12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z' }))
       if (name === 'search') return h('svg', common, h('circle', { cx: 10.5, cy: 10.5, r: 6.5 }), h('path', { d: 'm16 16 4 4' }))
       if (name === 'plus') return h('svg', common, h('path', { d: 'M12 5v14M5 12h14' }))
       if (name === 'remove') return h('svg', common, h('path', { d: 'M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5' }))
       if (name === 'market') return h('svg', common, h('rect', { x: 3.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 3.5, y: 13.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 13.5, width: 7, height: 7, rx: 1.5 }))
+      if (name === 'chevronLeft') return h('svg', common, h('path', { d: 'm14 7-5 5 5 5' }))
+      if (name === 'chevronRight') return h('svg', common, h('path', { d: 'm10 7 5 5-5 5' }))
       if (name === 'chevronUp') return h('svg', common, h('path', { d: 'm7 14 5-5 5 5' }))
       if (name === 'chevronDown') return h('svg', common, h('path', { d: 'm7 10 5 5 5-5' }))
       return h('svg', common, h('path', { d: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z' }))
     }
     function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }
     function MetaItem({ icon, label, value }) {
-      return h('span', { className: 'dshWbMetaItem' }, h(MarketIcon, { name: icon }), h('b', { title: value }, value), h('small', null, label))
+      return h('span', { className: 'dshWbMetaItem', title: label }, h(MarketIcon, { name: icon }), h('b', null, value), h('small', null, label))
     }
+    const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+    // The listing owner is a GitHub login, so its avatar comes from GitHub.
+    function AuthorItem({ entry }) {
+      const login = typeof entry.owner === 'string' && GITHUB_LOGIN.test(entry.owner) ? entry.owner : ''
+      const [failed, setFailed] = React.useState(false)
+      const name = login || entry.author || '暂无'
+      return h('span', { className: 'dshWbMetaItem dshWbAuthor', title: `作者：${name}` },
+        login && !failed
+          ? h('img', { className: 'dshWbAvatar', src: `https://github.com/${login}.png?size=40`, alt: '', loading: 'lazy', onError: () => setFailed(true) })
+          : h(MarketIcon, { name: 'author' }),
+        h('b', null, name),
+        entry.version && h('small', null, `· v${entry.version}`))
+    }
+    function metricValue(...values) { return values.find(value => Number.isSafeInteger(value) && value >= 0) }
     function EntryMeta({ entry }) {
-      const installs = entry.metrics?.npmDownloads30d?.value ?? entry.installations ?? entry.installCount
-      const likes = entry.metrics?.githubStars?.value ?? entry.likes ?? entry.likeCount
+      const downloads = metricValue(entry.metrics?.npmDownloads30d?.value, entry.metrics?.githubReleaseDownloads?.value, entry.installations, entry.installCount)
+      const stars = metricValue(entry.metrics?.githubStars?.value, entry.githubStars)
       return h('div', { className: 'dshWbMeta', 'aria-label': '工作台信息' },
-        h(MetaItem, { icon: 'author', label: entry.version ? `作者 · v${entry.version}` : '作者', value: entry.author || '暂无' }),
-        Number.isFinite(installs) && installs >= 0 && h(MetaItem, { icon: 'install', label: '近 30 天下载', value: compactCount(installs) }),
-        Number.isFinite(likes) && likes >= 0 && h(MetaItem, { icon: 'like', label: 'GitHub Stars', value: compactCount(likes) }))
+        h(AuthorItem, { entry }),
+        h(MetaItem, { icon: 'star', label: stars === undefined ? 'GitHub Stars：暂无数据' : 'GitHub Stars', value: stars === undefined ? '—' : compactCount(stars) }),
+        h(MetaItem, { icon: 'install', label: downloads === undefined ? '下载数：暂无数据' : '下载数', value: downloads === undefined ? '—' : compactCount(downloads) }))
+    }
+    // The workbench name opens its GitHub repository.
+    function EntryTitle({ entry }) {
+      const href = typeof entry.repository === 'string' && /^https:\/\/github\.com\//.test(entry.repository) ? entry.repository : ''
+      return href ? h('a', { className: 'dshWbTitleLink', href, target: '_blank', rel: 'noopener noreferrer', title: `在 GitHub 上查看${entry.title || ''}` }, entry.title) : entry.title
     }
     function Preview({ entry, detail = false }) {
       const screenshot = screenshotFor(entry)
@@ -786,6 +816,8 @@ window.__ModuleLoader__.load({
     function ScreenshotGallery({ entry }) {
       const screenshots = screenshotsFor(entry)
       const [lightbox, setLightbox] = React.useState(null)
+      const [index, setIndex] = React.useState(0)
+      const trackRef = React.useRef(null)
       const lightboxCloseRef = React.useRef(null)
       const triggerRef = React.useRef(null)
       React.useEffect(() => {
@@ -796,12 +828,26 @@ window.__ModuleLoader__.load({
         return () => { document.removeEventListener('keydown', handler); triggerRef.current?.focus() }
       }, [lightbox])
       const openLightbox = (event, src) => { triggerRef.current = event.currentTarget; setLightbox(src) }
+      // A scroll-snap track, so trackpad and touch swipes work natively.
+      const go = (next) => {
+        const track = trackRef.current
+        const target = Math.max(0, Math.min(screenshots.length - 1, next))
+        if (track) track.scrollTo({ left: target * track.clientWidth, behavior: 'smooth' })
+        setIndex(target)
+      }
       if (screenshots.length === 0) return null
-      const gallery = screenshots.length === 1
-        ? h('button', { type: 'button', className: 'dshWbDetailHeroButton', 'aria-label': `放大${entry.title || '工作台'}产品截图`, onClick: (event) => openLightbox(event, screenshots[0]) }, h('img', { className: 'dshWbDetailImage', src: screenshots[0], alt: `${entry.title || '工作台'}产品截图`, loading: 'lazy' }))
-        : h('div', { className: 'dshWbDetailGallery' }, screenshots.map((src, index) => h('button', { key: index, type: 'button', className: 'dshWbDetailThumbButton', 'aria-label': `放大${entry.title || '工作台'}截图 ${index + 1}`, onClick: (event) => openLightbox(event, src) }, h('img', { className: 'dshWbDetailThumb', src, alt: '', loading: 'lazy' }))))
-      if (!lightbox) return gallery
-      return h(React.Fragment, null, gallery, h('div', { className: 'dshWbDetailLightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': '截图放大预览', onClick: () => setLightbox(null) },
+      const many = screenshots.length > 1
+      const carousel = h('div', { className: 'dshWbCarousel', role: 'region', 'aria-roledescription': '轮播', 'aria-label': `${entry.title || '工作台'}产品截图`,
+        onKeyDown: (event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); go(index - 1) } else if (event.key === 'ArrowRight') { event.preventDefault(); go(index + 1) } } },
+        h('div', { ref: trackRef, className: 'dshWbCarouselTrack', onScroll: (event) => { const track = event.currentTarget; if (track.clientWidth) setIndex(Math.round(track.scrollLeft / track.clientWidth)) } },
+          screenshots.map((src, i) => h('button', { key: src, type: 'button', className: 'dshWbCarouselSlide', 'aria-label': `放大截图 ${i + 1}/${screenshots.length}`, tabIndex: i === index ? 0 : -1, onClick: (event) => openLightbox(event, src) },
+            h('img', { src, alt: '', loading: i === 0 ? 'eager' : 'lazy' })))),
+        many && h('button', { type: 'button', className: 'dshWbCarouselNav', 'data-side': 'prev', 'aria-label': '上一张', disabled: index === 0, onClick: () => go(index - 1) }, h(MarketIcon, { name: 'chevronLeft', size: 18 })),
+        many && h('button', { type: 'button', className: 'dshWbCarouselNav', 'data-side': 'next', 'aria-label': '下一张', disabled: index === screenshots.length - 1, onClick: () => go(index + 1) }, h(MarketIcon, { name: 'chevronRight', size: 18 })),
+        many && h('div', { className: 'dshWbCarouselDots', 'aria-hidden': true }, screenshots.map((src, i) => h('span', { key: src, 'data-active': i === index }))),
+        many && h('span', { className: 'dshWbCarouselCount', 'aria-live': 'polite' }, `${index + 1} / ${screenshots.length}`))
+      if (!lightbox) return carousel
+      return h(React.Fragment, null, carousel, h('div', { className: 'dshWbDetailLightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': '截图放大预览', onClick: () => setLightbox(null) },
         h('button', { ref: lightboxCloseRef, type: 'button', className: 'dshWbLightboxClose', 'aria-label': '关闭截图预览', onClick: () => setLightbox(null) }, '×'),
         h('img', { src: lightbox, alt: `${entry.title || '工作台'}截图放大`, onClick: (event) => event.stopPropagation() })))
     }
@@ -846,14 +892,13 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dshWbModalBackdrop', onClick: onClose },
           h('div', { ref: dialogRef, className: 'dshWbModal', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${entry.title || '工作台'} 详情`, tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
-              h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1, display: 'flex', alignItems: 'center', gap: 8 } }, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })), entry.title),
+              h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1, display: 'flex', alignItems: 'center', gap: 8 } }, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })), h(EntryTitle, { entry })),
               h(Button, { autoFocus: true, onClick: onClose }, '关闭')
             ),
             h(ScreenshotGallery, { entry }),
             entry.description && h('p', null, entry.description),
             h(EntryMeta, { entry }),
-            h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`),
-            entry.repository && h('p', { className: 'dshWbMuted' }, 'GitHub：', h('a', { href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, entry.repository))
+            h('p', { className: 'dshWbMuted' }, `适用人群：${entry.audience || '暂无'}。${entry.requirements || ''}`)
           )
         ),
         document.body
@@ -1131,9 +1176,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             const catalogId = entry.catalogId || entry.id
             const isFavorite = favorites.includes(catalogId)
             return h('article', { key: catalogId, className: 'dshWbCard' },
-              h('div', { className: 'dshWbMedia' }, h(Preview, { entry }), h('button', { type: 'button', className: 'dshWbFavorite', title: isFavorite ? '取消收藏' : '收藏工作台', 'aria-label': isFavorite ? `取消收藏${entry.title}` : `收藏${entry.title}`, 'aria-pressed': isFavorite, disabled: disabled, onClick: () => service.run(service.toggleFavorite(catalogId)) }, h(MarketIcon, { name: 'favorite', size: 17 }))),
+              h('div', { className: 'dshWbMedia' }, h(Preview, { entry }), h('button', { type: 'button', className: 'dshWbFavorite', title: isFavorite ? '取消收藏' : '收藏工作台', 'aria-label': isFavorite ? `取消收藏${entry.title}` : `收藏${entry.title}`, 'aria-pressed': isFavorite, disabled: disabled, onClick: () => service.run(service.toggleFavorite(catalogId)) }, h(MarketIcon, { name: 'bookmark', size: 17 }))),
               h('div', { className: 'dshWbCardBody' },
-                h('div', { className: 'dshWbCardTitle' }, h('h2', null, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 15 })), entry.title), h('span', { className: 'dshWbCategory' }, entry.category || '其他')),
+                h('div', { className: 'dshWbCardTitle' }, h('h2', null, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 15 })), h(EntryTitle, { entry })), h('span', { className: 'dshWbCategory' }, entry.category || '其他')),
                 h('p', { className: 'dshWbMuted dshWbCardDescription' }, entry.description || '这个工作台暂时还没有填写介绍。'),
                 h(EntryMeta, { entry }),
                 h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setDetail(catalogId) }, '查看详情'),
@@ -1141,7 +1186,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                   entry.installed && installs[catalogId] && entry.listedVersion && installs[catalogId].version !== entry.listedVersion
                     && h(Button, { disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在更新…' : `更新到 v${entry.listedVersion}`),
                   state.added.includes(entry.id)
-                    ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.open(entry.id)) }, '打开工作台')
+                    ? h(Button, { className: 'dshWbBtn dshWbInstalled', disabled: true }, '已安装')
                     : entry.installed
                       ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.add(entry.id)) }, '添加到我的工作台')
                       : installs[catalogId]
@@ -1155,7 +1200,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                   tab === 'mine' && h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: () => setRemoving(entry.id) }, '移除'))))
           }), entries.length === 0 && h('div', { className: 'dshWbEmpty' }, h('div', null,
             h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : '没有找到匹配的工作台'),
-            h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击星标即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
+            h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击书签即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
         removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }),
         guideOpen && h(GuideModal, { service, open: !!guideOpen, document: guideOpen, onClose: () => setGuideOpen(null) }))
