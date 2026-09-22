@@ -54,6 +54,8 @@ window.__ModuleLoader__.load({
         this.listeners = new Set()
         this.catalog = new Map()
         this.remoteCatalog = []
+        // The market's own category list; submissions choose from it.
+        this.marketCategories = []
         this.catalogError = ''
         this.catalogStale = false
         // Workbenches installed from the market, keyed by Awesome repository
@@ -154,7 +156,7 @@ window.__ModuleLoader__.load({
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
           catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen,
-          catalog: this.marketCatalog(), installs: this.installs, installing: this.installing, restartNeeded: this.restartNeeded }
+          catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, restartNeeded: this.restartNeeded }
         for (const listener of this.listeners) listener()
       }
       report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
@@ -172,6 +174,7 @@ window.__ModuleLoader__.load({
         const categories = new Map(data.catalog.categories.map(category => [category.id, category.name.zh]))
         return {
           entries: data.catalog.workbenches.map(entry => ({ ...entry, categoryName: categories.get(entry.category) || entry.category })),
+          categories: data.catalog.categories.map(({ id, name }) => ({ id, name: name.zh })),
           stale: data.stale === true
         }
       }
@@ -257,6 +260,7 @@ window.__ModuleLoader__.load({
           if (catalog.error) this.catalogError = catalog.error instanceof Error ? catalog.error.message : String(catalog.error)
           else {
             this.remoteCatalog = catalog.entries
+            this.marketCategories = catalog.categories
             this.catalogError = ''
             this.catalogStale = catalog.stale
           }
@@ -628,6 +632,9 @@ window.__ModuleLoader__.load({
       .dshWbStepActions{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
       .dshWbStepLink{background:none;border:0;padding:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
       .dshWbStep .dshWbPrompt{margin-top:12px;min-height:150px}
+      .dshWbSubmitCategory{display:flex;flex-wrap:wrap;gap:8px 16px;margin:10px 0 2px}
+      .dshWbSubmitCategory label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+      .dshWbSubmitCategory select,.dshWbSubmitCategory input{height:28px;min-width:0;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit}
       .dshWbSubmitOutcome{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2);font-size:13px}
       .dshWbPrompt{display:block;width:100%;min-height:160px;resize:vertical;margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:11px!important;line-height:18px!important}
       .dshWbCopyStatus{min-height:20px;margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}
@@ -1053,12 +1060,19 @@ ${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 
 
 若当前版本没有可用的本地安装方式，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确说明缺少的步骤，不要声称已加载。最后告诉我修改的文件、自测结果、实际加载状态和未验证的项目。`
     }
-    function submissionWorkbenchAgentPrompt() {
+    // One line, no Markdown or YAML syntax: the text lands in a prompt and a PR body.
+    const categorySuggestion = (value) => String(value || '').replace(/[\r\n`"'<>{}\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 20)
+    function categoryInstruction(category, suggestion) {
+      if (!category?.id) return '分类按市场仓库 data/categories.json 选最贴切的一个。'
+      const wanted = category.id === 'other' && categorySuggestion(suggestion)
+      return `category 填 ${category.id}（${category.name}），这是作者自己选的分类，不要改成别的。${wanted ? `现有分类都不合适，请在 PR 描述里写一句“建议新增分类：${wanted}”，由市场维护者决定是否新增。` : ''}`
+    }
+    function submissionWorkbenchAgentPrompt({ category, suggestion } = {}) {
       return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按工作台市场验收规范把它提交到公共工作台市场，不用重复开发功能。
 
 ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥、业务数据或未经授权的私有代码。按规范的上架流程，把代码提交到我自己的公开 GitHub 仓库；有 npm 包就发布 npm，也可以发布 GitHub Release 安装包，或者只提供可直接安装的源码。先读取项目真实脚本和工具帮助，不要编造发布命令。
 
-然后向 ${WORKBENCH_MARKET_REPO} 提交一个 PR，只新增 data/workbenches/<owner>__<repo>.yml。格式以该仓库的 catalog/README.md 为准：url、name、category、description.zh 和 description.en 必填，screenshots 填 1–5 张我仓库里的真实截图地址，没有 npm 时可以填 tarball。不要填写版本、npm 包名或校验值，也不要修改生成的文件。使用我已经授权的 GitHub 网页或 gh；缺少登录或公开授权时，先完成能完成的部分，再准确说明缺什么。
+然后向 ${WORKBENCH_MARKET_REPO} 提交一个 PR，只新增 data/workbenches/<owner>__<repo>.yml。格式以该仓库的 catalog/README.md 为准：url、name、category、description.zh 和 description.en 必填，screenshots 填 1–5 张我仓库里的真实截图地址，没有 npm 时可以填 tarball。${categoryInstruction(category, suggestion)}不要填写版本、npm 包名或校验值，也不要修改生成的文件。使用我已经授权的 GitHub 网页或 gh；缺少登录或公开授权时，先完成能完成的部分，再准确说明缺什么。
 
 提交前按规范第 6 节的验收清单逐项自查。提交 PR 就是进入审核，本机不保存投稿状态。只有拿到真实 PR URL 才能说“已提交”；PR 合并且市场目录能读到条目后才能说“已上架”。最后给我发布地址、PR URL、目录是否可见、验收证据和仍未完成的事项。`
     }
@@ -1108,7 +1122,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('a', { href: result.url, target: '_blank', rel: 'noopener noreferrer' }, '在 GitHub 查看'))))
     }
     function Market({ service }) {
-      const { state, catalog, ready, pending, installs, installing } = useWorkbench(service)
+      const { state, catalog, categories: marketCategories = [], ready, pending, installs, installing } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
@@ -1118,10 +1132,13 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [openPrompt, setOpenPrompt] = React.useState(null)
       const [copyStatus, setCopyStatus] = React.useState('')
       const [guideOpen, setGuideOpen] = React.useState(null)
+      const [submitCategory, setSubmitCategory] = React.useState('')
+      const [categoryIdea, setCategoryIdea] = React.useState('')
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const developmentPrompt = developmentWorkbenchAgentPrompt()
-      const submissionPrompt = submissionWorkbenchAgentPrompt()
+      const chosenCategory = marketCategories.find((item) => item.id === submitCategory)
+      const submissionPrompt = submissionWorkbenchAgentPrompt({ category: chosenCategory, suggestion: categoryIdea })
       const disabled = !ready || pending > 0 || service.blocked
       const added = state.added.filter(visibleWorkbench)
       const favorites = (state.favorites || []).filter(visibleWorkbench)
@@ -1192,6 +1209,13 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, '想上架，再按验收规范提交'),
               h('p', null, '按', h('a', { href: ACCEPTANCE_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场验收规范'), h('button', { type: 'button', className: 'dshWbStepLink dshWbOffline', onClick: () => setGuideOpen('acceptance') }, '离线查看'), '，把代码上传到你自己的 GitHub 仓库，准备简介和截图，再向', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场仓库'), '提交收录 PR。把投稿指令复制给 Agent 即可。'),
+              marketCategories.length > 0 && h('div', { className: 'dshWbSubmitCategory' },
+                h('label', null, h('span', null, '上架分类'),
+                  h('select', { value: submitCategory, onChange: (event) => setSubmitCategory(event.target.value), 'aria-label': '上架分类' },
+                    h('option', { value: '' }, '让 Agent 按规范选择'),
+                    marketCategories.map((item) => h('option', { key: item.id, value: item.id }, item.name)))),
+                submitCategory === 'other' && h('label', null, h('span', null, '想要的新分类（可选）'),
+                  h('input', { type: 'text', maxLength: 20, value: categoryIdea, placeholder: '例如：法务合规', onChange: (event) => setCategoryIdea(event.target.value), 'aria-label': '想要的新分类' }))),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(submissionPrompt) }, '复制投稿指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'submission' ? null : 'submission') }, openPrompt === 'submission' ? '收起指令' : '查看指令')),

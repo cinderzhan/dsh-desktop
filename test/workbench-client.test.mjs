@@ -137,6 +137,8 @@ describe('desktop workbench client navigation', () => {
     await service.load()
     const entry = service.getSnapshot().catalog.find(item => item.catalogId === 'owner/remote')
     expect(entry).toMatchObject({ id: 'owner/remote', title: '远程工作台', category: '内容', description: '中文简介', installed: false })
+    // Submissions choose from the market's own list, not a Desktop copy.
+    expect(service.getSnapshot().categories).toEqual([{ id: 'content', name: '内容' }])
     await service.toggleFavorite('owner/remote')
     expect(service.state.favorites).toEqual(['owner/remote'])
     await expect(service.add('owner/remote')).rejects.toThrow('工作台当前不可用')
@@ -352,6 +354,25 @@ describe('desktop workbench client navigation', () => {
     expect(submission).not.toContain('不要把 pending 说成已经投稿成功')
     expect(submission).not.toContain('preset-packages')
     expect(submissionAgentPrompt('submission')).toBe(submission)
+  })
+
+  it('writes the author-chosen market category into the submission prompt', () => {
+    expect(submissionWorkbenchAgentPrompt()).toContain('分类按市场仓库 data/categories.json 选最贴切的一个')
+    const chosen = submissionWorkbenchAgentPrompt({ category: { id: 'retail', name: '零售与门店' } })
+    expect(chosen).toContain('category 填 retail（零售与门店），这是作者自己选的分类，不要改成别的。')
+    expect(chosen).not.toContain('选最贴切的一个')
+    // A new-category idea is only relayed for "other", as one sanitized line.
+    expect(submissionWorkbenchAgentPrompt({ category: { id: 'retail', name: '零售与门店' }, suggestion: '法务' })).not.toContain('建议新增分类')
+    const other = submissionWorkbenchAgentPrompt({ category: { id: 'other', name: '其他' }, suggestion: ' 法务`合规\n\n## x ' })
+    expect(other).toContain('category 填 other（其他）')
+    expect(other).toContain('“建议新增分类：法务 合规 ## x”')
+    expect(submissionWorkbenchAgentPrompt({ category: { id: 'other', name: '其他' }, suggestion: '   ' })).not.toContain('建议新增分类')
+  })
+
+  it('offers the category picker only when the market list is available', () => {
+    expect(code).toContain("marketCategories.length > 0 && h('div', { className: 'dshWbSubmitCategory' }")
+    expect(code).toContain("h('option', { value: '' }, '让 Agent 按规范选择')")
+    expect(code).toContain("submitCategory === 'other' && h('label'")
   })
 
   it('copies the Agent prompt through the clipboard API', async () => {
