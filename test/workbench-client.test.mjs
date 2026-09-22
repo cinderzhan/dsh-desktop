@@ -1105,18 +1105,43 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('.dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:5px;border-bottom:1px')
   })
 
+  it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {
+    expect(fullSource).toContain("h(MetaItem, { icon: 'star', label: stars === undefined ? 'GitHub Stars：暂无数据' : 'GitHub Stars'")
+    expect(fullSource).toContain('entry.metrics?.githubReleaseDownloads?.value')
+    expect(fullSource).toContain("value: downloads === undefined ? '—' : compactCount(downloads)")
+    expect(fullSource).not.toContain("icon: 'like'")
+  })
+
+  it('shows the author as a GitHub avatar and name without an author label', () => {
+    expect(fullSource).toContain('src: `https://github.com/${login}.png?size=40`')
+    expect(fullSource).toContain("entry.version && h('small', null, `· v${entry.version}`)")
+    expect(fullSource).not.toContain('`作者 · v${entry.version}`')
+  })
+
+  it('links the workbench name to its GitHub repository and drops the separate GitHub row', () => {
+    expect(fullSource).toContain("h('a', { className: 'dshWbTitleLink', href, target: '_blank', rel: 'noopener noreferrer'")
+    expect(fullSource).toContain('h(WorkbenchIcon, { entry, size: 15 })), h(EntryTitle, { entry }))')
+    expect(fullSource).not.toContain("'GitHub：'")
+  })
+
+  it('shows a short update action in place of 已安装 so card actions stay on one row', () => {
+    expect(fullSource).toContain("installing === catalogId ? '正在更新…' : '检测到更新')")
+    expect(fullSource).toContain("title: `更新到 v${entry.listedVersion}`")
+    expect(fullSource).not.toContain(": `更新到 v${entry.listedVersion}`),")
+    expect(fullSource).toContain('.dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center;flex-wrap:nowrap}')
+  })
+
+  it('bookmarks favorites and shows a quiet 已安装 state for added workbenches', () => {
+    expect(fullSource).toContain("h(MarketIcon, { name: 'bookmark', size: 17 })")
+    expect(fullSource).toContain("h(Button, { className: 'dshWbBtn dshWbInstalled', disabled: true }, '已安装')")
+    expect(fullSource).toContain('.dshWb .dshWbInstalled:disabled{opacity:1;')
+  })
+
   it('gives each workbench its own icon instead of the shared market glyph', () => {
     expect(fullSource).toContain("if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph'")
     expect(fullSource).toContain("[/玄学|命理|人生|life/i, 'life']")
     expect(fullSource).toContain("if (name === 'life') return h('svg'")
     expect(fullSource).not.toContain("function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }")
-  })
-
-  it('only shows installation and like metrics when the catalog provides real values', () => {
-    expect(fullSource).not.toContain("compactCount(installs) : '0'")
-    expect(fullSource).not.toContain("compactCount(likes) : '0'")
-    expect(fullSource).toContain('Number.isFinite(installs)')
-    expect(fullSource).toContain('Number.isFinite(likes)')
   })
 
   it('includes version display in EntryMeta when available', () => {
@@ -1180,11 +1205,14 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('onError: () => setFailedScreenshot(screenshot)')
   })
 
-  it('ScreenshotGallery supports multiple screenshots with gallery- and lightbox CSS' , () => {
-    expect(fullSource).toContain('dshWbDetailGallery')
-    expect(fullSource).toContain('dshWbDetailThumb')
+  it('shows screenshots as a large swipeable carousel that starts on the first image', () => {
+    expect(fullSource).toContain('.dshWbCarouselTrack{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;')
+    expect(fullSource).toContain('.dshWbCarouselSlide{flex:0 0 100%;scroll-snap-align:start;')
+    expect(fullSource).toContain("const [index, setIndex] = React.useState(0)")
+    expect(fullSource).toContain("'aria-label': '上一张'")
     expect(fullSource).toContain('dshWbDetailLightbox')
-    expect(fullSource).toContain('screenshotsFor')
+    expect(fullSource).toContain('max-width:880px')
+    expect(fullSource).not.toContain('dshWbDetailGallery')
   })
 
   it('queries a pasted PR link without keeping any local state', async () => {
