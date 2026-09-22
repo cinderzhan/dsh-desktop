@@ -628,7 +628,7 @@ window.__ModuleLoader__.load({
       .dshWbCard:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.08)}
       .dshWbCardBody{display:flex;flex-direction:column;gap:10px;padding:16px 16px 15px;flex:1}.dshWbCardTitle{display:flex;align-items:center;gap:8px;min-width:0}
       .dshWbCard h2{overflow-wrap:anywhere;display:flex;align-items:center;gap:7px;min-width:0;font-size:17px;line-height:24px;letter-spacing:-.018em;font-weight:650;margin:0}.dshWbCard p{overflow-wrap:anywhere;margin:0;font-size:13px;line-height:20px}.dshWbCardDescription{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:40px}
-      .dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center}.dshWbCard .dshWbActions>.dshWbBtn:first-child{margin-right:auto;border-color:transparent;background:transparent;color:var(--dsw-alias-label-secondary)}.dshWbCard .dshWbActions>.dshWbBtn:first-child:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbCardIcon{display:grid;place-items:center;width:20px;height:20px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dshWbCard .dshWbBtn{font-size:12px;line-height:18px;padding:6px 11px}
+      .dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center}.dshWbCard .dshWbActions>.dshWbBtn:first-child{margin-right:auto;border-color:transparent;background:transparent;color:var(--dsw-alias-label-secondary)}.dshWbCard .dshWbActions>.dshWbBtn:first-child:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbCardIcon{display:grid;place-items:center;width:20px;height:20px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dshWbGlyph{display:inline-grid;place-items:center;line-height:1;flex-shrink:0}.dshWbMonogram{box-sizing:border-box;border:1.3px solid currentColor;border-radius:4px;font-weight:600}.dshWbCard .dshWbBtn{font-size:12px;line-height:18px;padding:6px 11px}
       .dshWbCategory{margin-left:auto;font-size:11px;line-height:18px;color:var(--dsw-alias-label-secondary);background:transparent;padding:0;white-space:nowrap}
       .dshWbMedia{position:relative;aspect-ratio:16/9;background:var(--dsw-alias-bg-module-platform);overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l2)}
       .dshWbPreview{position:absolute;inset:0;display:grid;grid-template-rows:22px 1fr;background:var(--dsw-alias-bg-module-platform);overflow:hidden;color:var(--dsw-alias-label-secondary)}
@@ -754,11 +754,26 @@ window.__ModuleLoader__.load({
       if (name === 'plus') return h('svg', common, h('path', { d: 'M12 5v14M5 12h14' }))
       if (name === 'remove') return h('svg', common, h('path', { d: 'M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5' }))
       if (name === 'market') return h('svg', common, h('rect', { x: 3.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 3.5, y: 13.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 13.5, width: 7, height: 7, rx: 1.5 }))
+      if (name === 'content') return h('svg', common, h('rect', { x: 3.5, y: 4, width: 17, height: 16, rx: 2 }), h('path', { d: 'M8 4v16M8 9h12M8 15h12' }))
+      if (name === 'location') return h('svg', common, h('path', { d: 'M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z' }), h('circle', { cx: 12, cy: 10, r: 2 }))
+      if (name === 'life') return h('svg', common, h('circle', { cx: 12, cy: 12, r: 8.5 }), h('path', { d: 'M12 3.5c3.2 2.2 3.2 6.4 0 8.5s-3.2 6.3 0 8.5' }), h('circle', { cx: 12, cy: 7.7, r: .7, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 12, cy: 16.3, r: .7, fill: 'currentColor', stroke: 'none' }))
+      if (name === 'flower') return h('svg', common, h('path', { d: 'M12 9.5C8.4 8 8.2 3.6 12 3.5c3.8.1 3.6 4.5 0 6Zm2.5 2.5c1.5-3.6 5.9-3.8 6-.1-.1 3.9-4.5 3.7-6 .1ZM12 14.5c3.6 1.5 3.8 5.9 0 6-3.8-.1-3.6-4.5 0-6ZM9.5 12c-1.5 3.6-5.9 3.8-6 .1.1-3.9 4.5-3.7 6-.1Z' }), h('circle', { cx: 12, cy: 12, r: 2 }))
       if (name === 'chevronUp') return h('svg', common, h('path', { d: 'm7 14 5-5 5 5' }))
       if (name === 'chevronDown') return h('svg', common, h('path', { d: 'm7 10 5 5 5-5' }))
       return h('svg', common, h('path', { d: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z' }))
     }
-    function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }
+    // A workbench's own short icon (an emoji or character) wins; otherwise its
+    // category and title pick a themed glyph, then its first character.
+    const TOPIC_ICONS = [[/内容|运营|媒体|content|media/i, 'content'], [/选址|地图|地理|location|map/i, 'location'], [/玄学|命理|人生|life/i, 'life'], [/花|植物|flower/i, 'flower']]
+    function WorkbenchIcon({ entry, size = 16 }) {
+      const own = typeof entry?.icon === 'string' ? entry.icon.trim() : ''
+      if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph', style: { fontSize: size } }, own)
+      const topic = TOPIC_ICONS.find(([pattern]) => pattern.test(`${entry?.category || ''} ${entry?.title || ''}`))
+      if (topic) return h(MarketIcon, { name: topic[1], size })
+      const initial = [...(entry?.title || '').trim()][0]
+      if (initial) return h('span', { className: 'dshWbGlyph dshWbMonogram', style: { width: size, height: size, fontSize: Math.round(size * 0.68) } }, initial)
+      return h(MarketIcon, { name: 'market', size })
+    }
     function MetaItem({ icon, label, value }) {
       return h('span', { className: 'dshWbMetaItem' }, h(MarketIcon, { name: icon }), h('b', { title: value }, value), h('small', null, label))
     }
