@@ -67,6 +67,7 @@ window.__ModuleLoader__.load({
         this.sessionRequests = new Map()
         this.navigation = 0
         this.suppressSelection = false
+        this.internalSessionOpen = null
         this.lastSession = undefined
         this.publish()
       }
@@ -76,8 +77,14 @@ window.__ModuleLoader__.load({
         const matched = new Set()
         const providers = [...this.catalog.values()]
         const remote = this.remoteCatalog.map((item) => {
-          const provider = providers.find(candidate => typeof candidate.repository === 'string'
-            && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
+          const install = this.installs[item.id]
+          const provider = providers.find(candidate =>
+            (typeof candidate.repository === 'string'
+              && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
+            // A market installation also has a stable runtime identity. This
+            // covers packages that do not expose their repository descriptor.
+            || (install && install.workbenchId === candidate.id)
+          )
           if (provider) matched.add(provider.id)
           return {
             ...item,
@@ -99,6 +106,20 @@ window.__ModuleLoader__.load({
           if (!matched.has(provider.id)) remote.push({ ...provider, catalogId: provider.id, installed: true })
         }
         return remote
+      }
+      reconcileMarketInstalls() {
+        if (!this.ready || this.blocked || this.disposed) return
+        const additions = this.marketCatalog().filter((entry) => {
+          const install = this.installs[entry.catalogId]
+          return entry.installed && install && !this.state.added.includes(entry.id)
+        })
+        if (!additions.length) return
+        this.run(this.commit((state) => {
+          for (const entry of additions) {
+            if (!state.added.includes(entry.id)) state.added.push(entry.id)
+            if (!state.pinned.includes(entry.id)) state.pinned.push(entry.id)
+          }
+        }))
       }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
@@ -154,6 +175,7 @@ window.__ModuleLoader__.load({
         const previous = this.installs[catalogId]
         const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId)
         const workbenchId = data.install?.workbenchId
+        if (typeof workbenchId !== 'string') throw new Error('市场条目缺少有效的工作台 ID。')
         if (!previous && workbenchId && this.catalog.has(workbenchId)) {
           // A workbench with this ID is already loaded from elsewhere; never shadow it.
           await this.marketPackage('/api/desktop-workbenches/market-uninstall', catalogId).catch(() => {})
@@ -161,9 +183,6 @@ window.__ModuleLoader__.load({
         }
         this.installs = { ...this.installs, [catalogId]: data.install }
         this.publish()
-        // Without workbench.json the runtime ID is only known after the provider
-        // registers, so there is nothing to pin until then.
-        if (!workbenchId) return
         return this.commit((state) => {
           if (!state.added.includes(workbenchId)) state.added.push(workbenchId)
           if (!state.pinned.includes(workbenchId)) state.pinned.push(workbenchId)
@@ -215,6 +234,7 @@ window.__ModuleLoader__.load({
           this.ready = true
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
           this.publish()
+          this.reconcileMarketInstalls()
           const active = this.state.active
           if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
           else this.selectionChanged()
@@ -263,6 +283,7 @@ window.__ModuleLoader__.load({
           layout: { businessSide: layout.businessSide || 'right', businessWidth: layout.businessWidth ?? 0.36 }, Component }
         this.catalog.set(entry.id, entry)
         this.publish()
+        this.reconcileMarketInstalls()
         return () => {
           if (this.catalog.get(entry.id) !== entry) return
           this.catalog.delete(entry.id)
@@ -291,8 +312,7 @@ window.__ModuleLoader__.load({
         const listed = this.ctx.sessions.list.getSnapshot().byId
         this.suppressSelection = true
         try {
-          if (target && listed[target] && this.state.sessionBindings[target] === id) this.ctx.sessions.open(target)
-          else this.ctx.sessions.clear()
+          if (target && listed[target] && this.state.sessionBindings[target] === id) this.openSession(target)
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
@@ -308,7 +328,6 @@ window.__ModuleLoader__.load({
         if (this.disposed || signal.aborted || ticket !== this.navigation) return
         this.suppressSelection = true
         try {
-          this.ctx.sessions.clear()
           this.lastSession = null
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
@@ -317,6 +336,11 @@ window.__ModuleLoader__.load({
         this.marketOpen = true
         this.publish()
         this.ctx.layout.selectPanel(PANEL)
+      }
+      openSession(sessionId) {
+        this.internalSessionOpen = sessionId
+        try { this.ctx.uiWorkspace.openSession(sessionId) }
+        finally { this.internalSessionOpen = null }
       }
       toggle(id) {
         return this.state.active === id ? this.leave() : this.open(id)
@@ -395,7 +419,7 @@ window.__ModuleLoader__.load({
         if (this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== active) return sessionId
         this.suppressSelection = true
         try {
-          this.ctx.sessions.open(sessionId)
+          this.openSession(sessionId)
           this.lastSession = sessionId
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
@@ -429,7 +453,7 @@ window.__ModuleLoader__.load({
           })
           if (!this.disposed && !signal.aborted && ticket === this.navigation && this.state.active === workbenchId) {
             this.suppressSelection = true
-            try { this.ctx.sessions.open(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
+            try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
             finally { this.suppressSelection = false }
           }
           return sessionId
@@ -469,7 +493,7 @@ window.__ModuleLoader__.load({
         })
         if (this.disposed || signal.aborted || ticket !== this.navigation) return sessionId
         this.suppressSelection = true
-        try { this.ctx.sessions.open(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
+        try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
         finally { this.suppressSelection = false }
         return sessionId
       }
@@ -918,7 +942,7 @@ window.__ModuleLoader__.load({
     function developmentWorkbenchAgentPrompt() {
       return `请帮我制作一个 DSH Desktop 工作台，只在本机开发和使用，不需要上传或投稿。你可以使用自己的开发流程，DSH 不控制开发过程。
 
-${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口；workbench.json 可选），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
 完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。然后按规范第 8 节“本地自测清单”逐项检查，确认它出现在「已安装的工作台」和左侧入口，并实际打开使用。
 
@@ -1144,7 +1168,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const id = entry?.id
       const customFrame = entry?.customFrame === true
       const conversationMount = h(ConversationMount, { container: conversationContainer })
-      const hasCurrentSession = sessions.current != null
+      const hasCurrentSession = !!(entry && sessions.current != null && state.sessionBindings[sessions.current] === entry.id)
       const disabled = !ready || pending > 0 || service.blocked
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),
@@ -1183,6 +1207,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       ctx.slots.inject('desktop.workbench.frame', () => ctx.slots.register({ name: 'desktop.workbench.frame', inject: () => ({ service }) }, Frame))
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
       ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId, source = 'explicit-session') => {
+        if (service.internalSessionOpen === sessionId) return false
         if (source === 'workspace' && service.routeWorkspaceSession(sessionId)) return true
         const id = service.state.sessionBindings[sessionId]
         if (!service.ready || !id || !service.state.added.includes(id) || !service.catalog.has(id)) return false
