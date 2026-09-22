@@ -38,7 +38,7 @@ const patchedPackages = [
     name: 'dsh-api-session-controller',
     version: '0.1.6-alpha.2',
     file: 'lib/client.js',
-    markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'if (this.watched === sessionId) this.watched = void 0']
+    markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'uiWorkspace, which releases its main view after this resolves']
   },
   {
     name: 'dsh-api-session-controller',
@@ -50,7 +50,7 @@ const patchedPackages = [
     name: 'dsh-client-ui-workspace',
     version: '0.1.6-alpha.2',
     file: 'lib/client.js',
-    markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await sessions.delete(sessionId)']
+    markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await uiWorkspace.deleteSession(sessionId)', 'if (this.mainReference?.sessionId === sessionId) this.clearMain()']
   }
 ] as const
 

@@ -232,7 +232,7 @@ window.__ModuleLoader__.load({
           }
           this.blocked = false
           this.ready = true
-          this.lastSession = this.ctx.sessions.list.getSnapshot().current
+          this.lastSession = this.currentSession()
           this.publish()
           this.reconcileMarketInstalls()
           const active = this.state.active
@@ -313,7 +313,7 @@ window.__ModuleLoader__.load({
         this.suppressSelection = true
         try {
           if (target && listed[target] && this.state.sessionBindings[target] === id) this.openSession(target)
-          this.lastSession = this.ctx.sessions.list.getSnapshot().current
+          this.lastSession = this.currentSession()
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
         if (target && listed[target]) await this.commit((state) => { state.recentSessions[id] = target })
@@ -341,6 +341,17 @@ window.__ModuleLoader__.load({
         this.internalSessionOpen = sessionId
         try { this.ctx.uiWorkspace.openSession(sessionId) }
         finally { this.internalSessionOpen = null }
+      }
+      // Harness 0.1.6 has no list.current: uiWorkspace's main view holds a
+      // `mainView` retention, which the session list projects onto the summary.
+      // Public so workbench providers read the same fact.
+      currentSession() {
+        const { byId } = this.ctx.sessions.list.getSnapshot()
+        return Object.keys(byId).find((id) => (byId[id]?.retainedBy?.mainView ?? 0) > 0)
+      }
+      showSession(sessionId) {
+        this.openSession(sessionId)
+        this.lastSession = sessionId
       }
       toggle(id) {
         return this.state.active === id ? this.leave() : this.open(id)
@@ -393,7 +404,7 @@ window.__ModuleLoader__.load({
         return this.ctx.workspaces.list.getSnapshot().items.find((item) => item.sessionIds.includes(sessionId))
       }
       defaultWorkspace() {
-        const current = this.ctx.sessions.list.getSnapshot().current
+        const current = this.currentSession()
         return this.workspaceFor(current) || this.ctx.workspaces.list.getSnapshot().items[0]
       }
       routeWorkspaceSession(sessionId) {
@@ -419,8 +430,7 @@ window.__ModuleLoader__.load({
         if (this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== active) return sessionId
         this.suppressSelection = true
         try {
-          this.openSession(sessionId)
-          this.lastSession = sessionId
+          this.showSession(sessionId)
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
         return sessionId
@@ -453,7 +463,7 @@ window.__ModuleLoader__.load({
           })
           if (!this.disposed && !signal.aborted && ticket === this.navigation && this.state.active === workbenchId) {
             this.suppressSelection = true
-            try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
+            try { this.showSession(sessionId); this.ctx.layout.selectPanel(null) }
             finally { this.suppressSelection = false }
           }
           return sessionId
@@ -493,13 +503,13 @@ window.__ModuleLoader__.load({
         })
         if (this.disposed || signal.aborted || ticket !== this.navigation) return sessionId
         this.suppressSelection = true
-        try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
+        try { this.showSession(sessionId); this.ctx.layout.selectPanel(null) }
         finally { this.suppressSelection = false }
         return sessionId
       }
       selectionChanged() {
         if (!this.ready || this.suppressSelection || this.disposed) return
-        const current = this.ctx.sessions.list.getSnapshot().current
+        const current = this.currentSession()
         if (current === this.lastSession) return
         this.lastSession = current
         ++this.navigation
@@ -1155,7 +1165,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
     function Frame({ service, conversation }) {
       const { state, catalog, ready, pending } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-      const sessions = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.sessions.list.subscribe(listener), [service]), () => service.ctx.sessions.list.getSnapshot())
+      // The list snapshot changes whenever the main-view retention moves.
+      React.useSyncExternalStore(React.useCallback((listener) => service.ctx.sessions.list.subscribe(listener), [service]), () => service.ctx.sessions.list.getSnapshot())
       const workspaces = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.workspaces.list.subscribe(listener), [service]), () => service.ctx.workspaces.list.getSnapshot())
       const [workspaceId, setWorkspaceId] = React.useState('')
       const [conversationContainer] = React.useState(() => {
@@ -1168,7 +1179,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const id = entry?.id
       const customFrame = entry?.customFrame === true
       const conversationMount = h(ConversationMount, { container: conversationContainer })
-      const hasCurrentSession = !!(entry && sessions.current != null && state.sessionBindings[sessions.current] === entry.id)
+      const currentSession = service.currentSession()
+      const hasCurrentSession = !!(entry && currentSession != null && state.sessionBindings[currentSession] === entry.id)
       const disabled = !ready || pending > 0 || service.blocked
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),

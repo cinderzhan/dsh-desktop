@@ -28,10 +28,14 @@ vm.runInNewContext(workbenchSource, {
   setTimeout, clearTimeout, AbortController
 })
 
+function mainViewOf(sessionState) {
+  return Object.keys(sessionState.byId).find(id => sessionState.byId[id].retainedBy?.mainView > 0)
+}
+
 function fixture() {
   const service = Object.create(UiWorkspaceService.prototype)
   let navigation = new AbortController()
-  const sessionState = { phase: 'ready', ids: [], byId: {}, current: undefined }
+  const sessionState = { phase: 'ready', ids: [], byId: {} }
   const workspaceState = { phase: 'ready', items: [{ workspaceId: 'project', path: '/project', createdAt: '2026-01-01T00:00:00Z', sessionIds: [] }], archivedSessionIds: [] }
   const listeners = new Set()
   const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
@@ -57,16 +61,18 @@ function fixture() {
       if (!target.sessionIds.includes(id)) target.sessionIds.push(id)
       return id
     }),
-    open: vi.fn(id => {
-      if (!sessionState.byId[id]) throw new Error(`Session not projected before open: ${id}`)
-      sessionState.current = id
-    }),
-    clear: vi.fn(() => { sessionState.current = undefined }),
-    retain: vi.fn(target => {
+    // The real controller has no selection: uiWorkspace retains the main view
+    // and the list projects that retention onto the summary.
+    retain: vi.fn((target, { source }) => {
       const id = typeof target === 'string' ? target : target.parentSessionId
       if (!sessionState.byId[id]) throw new Error(`Session not projected before retain: ${id}`)
-      service.sessions.open(id)
-      return { sessionId: id, release: vi.fn() }
+      const count = delta => {
+        const summary = sessionState.byId[id]
+        const retainedBy = { ...summary.retainedBy, [source]: (summary.retainedBy?.[source] ?? 0) + delta }
+        sessionState.byId[id] = { ...summary, retainedBy }
+      }
+      count(1)
+      return { sessionId: id, release: vi.fn(() => count(-1)) }
     }),
     refreshSubagents: vi.fn(),
     subagentAddress: vi.fn(() => undefined)
@@ -109,7 +115,7 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
     notes: {}
   }
   controller.ready = true
-  controller.lastSession = sessionState.current
+  controller.lastSession = mainViewOf(sessionState)
   return {
     controller,
     dispose() {
@@ -123,7 +129,7 @@ describe('native Workspace navigation with workbench routing', () => {
   it('opens the initially connected workspace when no later navigation intervenes', async () => {
     const { service, listeners } = fixture()
     const cleanup = service.watchNavigation()
-    await vi.waitFor(() => expect(service.sessions.open).toHaveBeenCalledWith('new-session'))
+    await vi.waitFor(() => expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
     expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
     cleanup()
     expect(listeners.size).toBe(0)
@@ -141,19 +147,18 @@ describe('native Workspace navigation with workbench routing', () => {
     // Wait until connectWorkspace has completed its own cleanup as well.
     await vi.waitFor(() => expect(service.connecting.size).toBe(0))
     for (const listener of listeners) listener()
-    expect(service.sessions.open).not.toHaveBeenCalled()
+    expect(service.sessions.retain).not.toHaveBeenCalled()
     expect(service.sessions.create).toHaveBeenCalledTimes(1)
     cleanup()
   })
 
   it('routes even a repeat click on the same session, then restores native opening on release', () => {
     const { service, sessionState } = fixture()
-    sessionState.current = 'bound-session'
     const handler = vi.fn(() => true)
     const release = service.registerSessionOpener(handler)
     service.openSession('bound-session')
     expect(handler).toHaveBeenCalledWith('bound-session', 'explicit-session')
-    expect(service.sessions.open).not.toHaveBeenCalled()
+    expect(service.sessions.retain).not.toHaveBeenCalled()
     expect(() => service.registerSessionOpener(() => true)).toThrow('already registered')
     release()
     release()
@@ -162,7 +167,7 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(() => service.registerSessionOpener(() => true)).toThrow('already registered')
     sessionState.byId['ordinary-session'] = { id: 'ordinary-session', sessionId: 'ordinary-session' }
     service.openSession('ordinary-session')
-    expect(service.sessions.open).toHaveBeenCalledWith('ordinary-session')
+    expect(service.sessions.retain).toHaveBeenCalledWith('ordinary-session', { source: 'mainView' })
     expect(service.ctx.layout.selectPanel).toHaveBeenCalledWith(null)
     second()
   })
@@ -175,7 +180,7 @@ describe('native Workspace navigation with workbench routing', () => {
     await service.openWorkspace('project')
 
     expect(handler).toHaveBeenCalledWith('new-session', 'workspace')
-    expect(service.sessions.open).toHaveBeenCalledWith('new-session')
+    expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' })
   })
 
   it.each(['writer', 'research-notebook', 'media-workbench'])('keeps native New Session ordinary even while %s is open', async (workbenchId) => {
@@ -199,14 +204,14 @@ describe('native Workspace navigation with workbench routing', () => {
     }
     controller.ready = true
     uiWorkspace.startSession('target-project')
-    await vi.waitFor(() => expect(uiWorkspace.sessions.open).toHaveBeenCalledWith('new-session'))
+    await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
 
     expect(uiWorkspace.sessions.create).toHaveBeenCalledTimes(1)
     expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'target-project' })
     expect(controller.state.sessionBindings['new-session']).toBeUndefined()
     expect(controller.state.recentSessions[workbenchId]).toBe('old-recent')
     expect(controller.state.active).toBe(workbenchId)
-    expect(uiWorkspace.sessions.open).not.toHaveBeenCalledWith('old-recent')
+    expect(uiWorkspace.sessions.retain).not.toHaveBeenCalledWith('old-recent', { source: 'mainView' })
   })
 
   it('does not reuse a blank session already bound to a workbench when native New Session is clicked', async () => {
@@ -216,9 +221,9 @@ describe('native Workspace navigation with workbench routing', () => {
     sessionState.byId[blankId] = { id: blankId, sessionId: blankId, blank: true, cwd: '/project' }
     workspaceState.items[0].sessionIds.push(blankId)
     service.startSession('project')
-    await vi.waitFor(() => expect(service.sessions.open).toHaveBeenCalledWith('new-session'))
+    await vi.waitFor(() => expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
     expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
-    expect(service.sessions.open).not.toHaveBeenCalledWith(blankId)
+    expect(service.sessions.retain).not.toHaveBeenCalledWith(blankId, { source: 'mainView' })
     expect(sessionState.byId['new-session']).toMatchObject({ blank: true, cwd: '/project' })
     expect(workspaceState.items[0].sessionIds).toContain('new-session')
   })
@@ -228,7 +233,7 @@ describe('native Workspace navigation with workbench routing', () => {
     const handler = vi.fn(() => false)
     service.registerSessionStarter(handler)
     service.startSession('project')
-    await vi.waitFor(() => expect(service.sessions.open).toHaveBeenCalledWith('new-session'))
+    await vi.waitFor(() => expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
     expect(handler).toHaveBeenCalledWith('project')
     expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
     expect(service.ctx.layout.selectPanel).toHaveBeenCalledWith(null)
@@ -267,9 +272,11 @@ describe('native Workspace navigation with workbench routing', () => {
     controller.ready = true
     controller.lastSession = undefined
 
-    uiWorkspace.sessions.open.mockImplementation((id) => {
-      sessionState.current = id
+    const retain = uiWorkspace.sessions.retain.getMockImplementation()
+    uiWorkspace.sessions.retain.mockImplementation((...args) => {
+      const reference = retain(...args)
       controller.selectionChanged()
+      return reference
     })
     uiWorkspace.registerSessionOpener((sessionId) => {
       const id = controller.state.sessionBindings[sessionId]
@@ -282,8 +289,8 @@ describe('native Workspace navigation with workbench routing', () => {
     await controller.queue
 
     expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
-    expect(uiWorkspace.sessions.open).toHaveBeenCalledWith(removedSession)
-    expect(sessionState.current).toBe(removedSession)
+    expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith(removedSession, { source: 'mainView' })
+    expect(mainViewOf(sessionState)).toBe(removedSession)
     expect(controller.state.active).toBe('writer')
     expect(controller.state.sessionBindings[removedSession]).toBe('research-notebook')
     expect(controller.state.recentSessions).toEqual({})
@@ -304,10 +311,10 @@ describe('native Workspace navigation with workbench routing', () => {
     controller.state.recentSessions.huaxue = bound
 
     await uiWorkspace.openWorkspace('project')
-    await vi.waitFor(() => expect(uiWorkspace.sessions.open).toHaveBeenCalledWith(ordinary))
+    await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith(ordinary, { source: 'mainView' }))
 
     expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
-    expect(sessionState.current).toBe(ordinary)
+    expect(mainViewOf(sessionState)).toBe(ordinary)
     expect(controller.state.active).toBe('media-workbench')
     expect(controller.state.sessionBindings).toEqual({ [bound]: 'huaxue' })
     expect(controller.state.recentSessions).toEqual({ huaxue: bound })
@@ -325,10 +332,10 @@ describe('native Workspace navigation with workbench routing', () => {
     controller.state.recentSessions.huaxue = bound
 
     await uiWorkspace.openWorkspace('project')
-    await vi.waitFor(() => expect(uiWorkspace.sessions.open).toHaveBeenCalledWith('new-session'))
+    await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
 
     expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
-    expect(sessionState.current).toBe('new-session')
+    expect(mainViewOf(sessionState)).toBe('new-session')
     expect(controller.state.active).toBe('media-workbench')
     expect(controller.state.sessionBindings['new-session']).toBeUndefined()
     expect(controller.state.recentSessions).toEqual({ huaxue: bound })
@@ -346,11 +353,27 @@ describe('native Workspace navigation with workbench routing', () => {
 
     uiWorkspace.openSession(bound)
     await controller.queue
-    await vi.waitFor(() => expect(sessionState.current).toBe(bound))
+    await vi.waitFor(() => expect(mainViewOf(sessionState)).toBe(bound))
 
     expect(controller.state.active).toBe('huaxue')
     expect(controller.state.recentSessions.huaxue).toBe(bound)
     expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
     dispose()
+  })
+
+  it('clears the main view after deleting the current session', async () => {
+    const { service: uiWorkspace, sessionState } = fixture()
+    const current = 'doomed'
+    sessionState.ids.push(current)
+    sessionState.byId[current] = { id: current, sessionId: current, cwd: '/project' }
+    uiWorkspace.sessions.delete = vi.fn(async () => {})
+    uiWorkspace.openSession(current)
+    expect(mainViewOf(sessionState)).toBe(current)
+
+    await uiWorkspace.deleteSession(current)
+
+    expect(uiWorkspace.sessions.delete).toHaveBeenCalledWith(current)
+    expect(mainViewOf(sessionState)).toBeUndefined()
+    expect(uiWorkspace.selection.getSnapshot()).toEqual({})
   })
 })
