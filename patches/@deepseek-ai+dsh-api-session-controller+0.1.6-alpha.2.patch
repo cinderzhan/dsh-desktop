@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
-index 5ccbae5..7cff1c2 100644
+index 5ccbae5..bc4c044 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
 @@ -2507,6 +2507,15 @@ window.__ModuleLoader__.load({
@@ -36,23 +36,22 @@ index 5ccbae5..7cff1c2 100644
  		/**
  		* Display title projection: durable title, project directory basename, then
  		* the raw id.
-@@ -3168,6 +3188,16 @@ window.__ModuleLoader__.load({
- 				this.projectList();
+@@ -3169,6 +3189,15 @@ window.__ModuleLoader__.load({
  				return result.value.sessionId;
  			}
-+			/** Permanently delete one ordinary Session and clear its selected stage. */
+ 			/**
++			* Permanently delete one ordinary Session. Selection belongs to
++			* uiWorkspace, which releases its main view after this resolves.
++			*/
 +			async delete(sessionId) {
-+				const deletingCurrent = this.list.getSnapshot().current === sessionId;
 +				const result = await this.manager.delete(sessionId);
 +				if (!result.ok) throw new SessionDeleteError(result.error, sessionId);
-+				const current = this.list.getSnapshot().current;
-+				if (deletingCurrent && (current === void 0 || current === sessionId)) this.clear();
-+				if (this.watched === sessionId) this.watched = void 0;
 +				this.projectList();
 +			}
- 			/**
++			/**
  			* Fork a Session from a completed-turn prefix of the source and publish
  			* the child in the catalog before resolving.
+ 			* @param opts - source session id, the optional event seq anchoring the
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 index ce165c0..4036a8f 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
@@ -574,7 +573,7 @@ index 2d29f5c..302484c 100644
       * Contract session.fork; on success merge the child into summaries
       * immediately (same synchronous-addressability guarantee as create). The
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts
-index 758c051..67e0e72 100644
+index 758c051..5c34171 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts
 @@ -77,6 +77,13 @@ export declare class SessionForkError extends Error {
@@ -595,13 +594,13 @@ index 758c051..67e0e72 100644
          cwd?: string;
          sessionId?: SessionId;
      }): Promise<SessionId>;
-+    /** Permanently delete one ordinary Session and clear its selected stage. */
++    /** Permanently delete one ordinary Session; uiWorkspace owns clearing the selection. */
 +    delete(sessionId: SessionId): Promise<void>;
      /**
       * Fork a Session from a completed-turn prefix of the source and publish
       * the child in the catalog before resolving.
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js
-index e4f49a0..e998bec 100644
+index e4f49a0..a005757 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js
 @@ -34,6 +34,17 @@ export class SessionForkError extends Error {
@@ -622,21 +621,18 @@ index e4f49a0..e998bec 100644
  // Scope primitives live in ../scope.ts (the client mirror of host
  // dsh-scope, keyed by Agent identity); re-exported here so existing
  // consumers keep their import site.
-@@ -331,6 +342,19 @@ export class ClientSessions {
+@@ -331,6 +342,16 @@ export class ClientSessions {
          this.projectList();
          return result.value.sessionId;
      }
-+    /** Permanently delete one ordinary Session and clear its selected stage. */
++    /**
++     * Permanently delete one ordinary Session. Selection belongs to
++     * uiWorkspace, which releases its main view after this resolves.
++     */
 +    async delete(sessionId) {
-+        const deletingCurrent = this.list.getSnapshot().current === sessionId;
 +        const result = await this.manager.delete(sessionId);
 +        if (!result.ok)
 +            throw new SessionDeleteError(result.error, sessionId);
-+        const current = this.list.getSnapshot().current;
-+        if (deletingCurrent && (current === undefined || current === sessionId))
-+            this.clear();
-+        if (this.watched === sessionId)
-+            this.watched = undefined;
 +        this.projectList();
 +    }
      /**

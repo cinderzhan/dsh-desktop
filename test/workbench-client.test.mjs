@@ -32,9 +32,18 @@ function deferred() {
   return { promise, resolve }
 }
 
+// Harness 0.1.6 projects uiWorkspace's main view as a `mainView` retention.
+function currentOf(list) {
+  return Object.keys(list.byId).find(id => list.byId[id].retainedBy?.mainView > 0) ?? null
+}
+
+function selectIn(list, target) {
+  for (const id of Object.keys(list.byId)) list.byId[id] = { ...list.byId[id], retainedBy: id === target ? { mainView: 1 } : {} }
+}
+
 async function fixture(initial = emptyState()) {
   let stored = { revision: 0, state: structuredClone(initial) }
-  const list = { current: null, ids: ['old', 'writer-1', 'writer-2', 'research-1'], byId: {} }
+  const list = { ids: ['old', 'writer-1', 'writer-2', 'research-1'], byId: {} }
   for (const id of list.ids) list.byId[id] = { sessionId: id, displayTitle: id }
   const projects = [{ workspaceId: 'project-1', title: 'User project', sessionIds: [...list.ids] }]
   let sessionCount = 0
@@ -44,8 +53,6 @@ async function fixture(initial = emptyState()) {
     sessions: {
       list: { getSnapshot: () => list },
       refresh: vi.fn(async () => {}),
-      open: vi.fn((id) => { list.current = id; service?.selectionChanged() }),
-      clear: vi.fn(() => { list.current = null; service?.selectionChanged() }),
       create: vi.fn(async ({ workspaceId }) => {
         const id = `fresh-${++sessionCount}`
         list.ids.push(id)
@@ -61,7 +68,7 @@ async function fixture(initial = emptyState()) {
     },
     uiWorkspace: {
       pickDirectory: vi.fn(async () => '/chosen/new-project'),
-      openSession: vi.fn((id) => ctx.sessions.open(id))
+      openSession: vi.fn((id) => { selectIn(list, id); service?.selectionChanged() })
     },
     workspaces: {
       list: { getSnapshot: () => ({ items: projects }) },
@@ -254,12 +261,12 @@ describe('desktop workbench client navigation', () => {
     expect(service.state).toEqual(initial)
     expect(saved().state).toEqual(initial)
     expect(ctx.sessions.create).not.toHaveBeenCalled()
-    expect(ctx.sessions.open).not.toHaveBeenCalled()
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
     await expect(service.add(id)).rejects.toThrow('工作台当前不可用')
     await expect(service.open(id)).rejects.toThrow('请先添加可用的工作台')
     await service.add('writer')
     await service.open('writer')
-    ctx.sessions.open('old')
+    ctx.uiWorkspace.openSession('old')
     await service.queue
     expect(service.state.active).toBe('writer')
     expect(saved().state.notes).toEqual(initial.notes)
@@ -382,7 +389,7 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.workspaces.create).toHaveBeenCalledWith({ path: '/chosen/new-project' })
     expect(ctx.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project-1' })
     expect(service.state.sessionBindings[session]).toBe('writer')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith(session)
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith(session)
   })
 
   it('allows creating a different workspace even when one already exists', async () => {
@@ -449,7 +456,7 @@ describe('desktop workbench client navigation', () => {
     ctx.workspaces.list.getSnapshot().items.splice(0)
     list.ids.splice(0)
     list.byId = {}
-    list.current = null
+    selectIn(list, null)
     await service.add('standalone')
     await service.open('standalone')
     const conversation = { native: true }
@@ -478,7 +485,7 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.workspaces.create).toHaveBeenCalledWith({ path: '/business/profile' })
     expect(ctx.uiWorkspace.pickDirectory).not.toHaveBeenCalled()
     expect(service.state.sessionBindings[id]).toBe('writer')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith(id)
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith(id)
   })
 
   it('restores an owned saved session or adopts a real unowned session without changing its workspace', async () => {
@@ -516,7 +523,7 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.sessions.create).toHaveBeenCalledTimes(1)
     expect(service.state.sessionBindings[id]).toBe('writer')
     expect(service.state.active).toBe('research')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith('research-1')
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('research-1')
   })
 
   it('rejects inactive providers and aborts removed providers before creating a session', async () => {
@@ -543,14 +550,14 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.pinned).toEqual(pinned)
     expect(service.state.sessionBindings).toEqual(bindings)
     expect(service.state.notes).toEqual(notes)
-    expect(list.current).toBe('writer-1')
+    expect(currentOf(list)).toBe('writer-1')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
     await service.toggle('writer')
     expect(service.state.active).toBe('writer')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith('writer-1')
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('writer-1')
     await service.toggle('research')
     expect(service.state.active).toBe('research')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith('research-1')
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('research-1')
     // Market's explicit open remains idempotently open, not a toggle.
     await service.open('research')
     expect(service.state.active).toBe('research')
@@ -590,7 +597,7 @@ describe('desktop workbench client navigation', () => {
       await React.act(async () => root.render(React.createElement(Frame, { service, conversation: React.createElement(Native) })))
       const input = dom.window.document.querySelector('[contenteditable]')
       expect(input).not.toBeNull()
-      await React.act(async () => { ctx.sessions.open('old'); await service.queue })
+      await React.act(async () => { ctx.uiWorkspace.openSession('old'); await service.queue })
       expect(service.state.active).toBe('writer')
       expect(service.state.sessionBindings.old).toBeUndefined()
       expect(dom.window.document.querySelector('.dshWbBusiness').hidden).toBe(false)
@@ -707,42 +714,39 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.pinned).toEqual(['writer'])
     expect(saved().state.active).toBe(null)
     expect(ctx.layout.selectPanel).not.toHaveBeenCalled()
-    expect(ctx.sessions.clear).not.toHaveBeenCalled()
     await service.open('writer')
     expect(saved().state.pinned).toEqual(['writer'])
-    expect(ctx.sessions.clear).not.toHaveBeenCalled()
     const session = await service.newSession('project-1')
     await service.leave()
     await service.open('writer')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith(session)
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith(session)
     expect(saved().state.active).toBe('writer')
   })
 
   it('returns to the workbench home without deleting the recent session', async () => {
     const { service, ctx, list, saved } = await fixture(boundState())
     await service.open('writer')
-    expect(list.current).toBe('writer-1')
-    ctx.sessions.clear.mockClear()
+    expect(currentOf(list)).toBe('writer-1')
 
     await service.home('writer')
-    expect(ctx.sessions.clear).not.toHaveBeenCalled()
-    expect(list.current).toBe('writer-1')
+    expect(currentOf(list)).toBe('writer-1')
     expect(saved().state.active).toBe('writer')
     expect(saved().state.recentSessions.writer).toBe('writer-1')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
 
     await service.open('writer')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith('writer-1')
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('writer-1')
   })
 
-  it('uses uiWorkspace navigation when the current sessions service has no open or clear methods', async () => {
+  it('reads the current session from the main-view retention, not the removed list.current', async () => {
     const { service, ctx, list } = await fixture(boundState())
-    ctx.uiWorkspace.openSession.mockImplementation((id) => { list.current = id; service.selectionChanged() })
-    delete ctx.sessions.open
-    delete ctx.sessions.clear
-
-    await expect(service.open('writer')).resolves.toBeUndefined()
+    expect(ctx.sessions.open).toBeUndefined()
+    expect(ctx.sessions.clear).toBeUndefined()
+    await service.open('writer')
     expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('writer-1')
+    list.current = 'old'
+    expect(service.currentSession()).toBe('writer-1')
+    expect(service.lastSession).toBe('writer-1')
     await expect(service.home('writer')).resolves.toBeUndefined()
   })
 
@@ -774,11 +778,11 @@ describe('desktop workbench client navigation', () => {
     const { service, ctx, saved } = await fixture(boundState())
     await service.open('research')
     await service.open('writer', 'writer-2')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith('writer-2')
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('writer-2')
     expect(saved().state.recentSessions.writer).toBe('writer-2')
     await service.open('research')
     await service.open('writer')
-    expect(ctx.sessions.open).toHaveBeenLastCalledWith('writer-2')
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('writer-2')
     expect(saved().state.active).toBe('writer')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
   })
@@ -786,7 +790,7 @@ describe('desktop workbench client navigation', () => {
   it('only the latest of overlapping workbench opens changes the visible session', async () => {
     const { service, ctx, saved } = await fixture(boundState())
     await Promise.all([service.open('writer'), service.open('research')])
-    expect(ctx.sessions.open.mock.calls).toEqual([['research-1']])
+    expect(ctx.uiWorkspace.openSession.mock.calls).toEqual([['research-1']])
     expect(saved().state.active).toBe('research')
     expect(saved().state.pinned).toEqual(['writer', 'research'])
   })
@@ -798,8 +802,7 @@ describe('desktop workbench client navigation', () => {
     const { service, ctx, request, saved, list } = await fixture(boundState())
     await service.open('research')
     ctx.layout.selectPanel.mockClear()
-    ctx.sessions.open.mockClear()
-    ctx.sessions.clear.mockClear()
+    ctx.uiWorkspace.openSession.mockClear()
     const gate = deferred()
     const started = deferred()
     const handleRequest = request.getMockImplementation()
@@ -817,23 +820,22 @@ describe('desktop workbench client navigation', () => {
     gate.resolve()
     await operation
     expect(ctx.layout.selectPanel.mock.calls).toEqual([[panel]])
-    expect(ctx.sessions.open).not.toHaveBeenCalled()
-    expect(ctx.sessions.clear).not.toHaveBeenCalled()
-    expect(list.current).toBe('research-1')
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    expect(currentOf(list)).toBe('research-1')
     expect(saved().state.active).toBe(action === 'open' ? 'writer' : null)
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
   })
 
   it('sidebar session selection wakes its workbench, but preserves the current panel for a removed owner', async () => {
     const { service, ctx, saved } = await fixture(boundState())
-    ctx.sessions.open('writer-2')
+    ctx.uiWorkspace.openSession('writer-2')
     await service.queue
     expect(saved().state.active).toBe('writer')
     expect(saved().state.recentSessions.writer).toBe('writer-2')
     await service.remove('writer')
-    ctx.sessions.open('research-1')
+    ctx.uiWorkspace.openSession('research-1')
     await service.queue
-    ctx.sessions.open('writer-1')
+    ctx.uiWorkspace.openSession('writer-1')
     await service.queue
     expect(saved().state.active).toBe('research')
     expect(saved().state.added).toEqual(['research'])
@@ -878,22 +880,22 @@ describe('desktop workbench client navigation', () => {
     list.ids.push('slow-created')
     creation.resolve('slow-created')
     await pendingCreation
-    expect(list.current).toBe('research-1')
+    expect(currentOf(list)).toBe('research-1')
     expect(saved().state.active).toBe('research')
     expect(saved().state.sessionBindings['slow-created']).toBe('writer')
-    expect(ctx.sessions.open).not.toHaveBeenCalledWith('slow-created')
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('slow-created')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
   })
 
   it('keeps the active business panel when native navigation opens or clears an ordinary session', async () => {
-    const { service, ctx, request, saved } = await fixture(boundState())
+    const { service, ctx, request, saved, list } = await fixture(boundState())
     await service.open('writer')
     const bindings = structuredClone(saved().state.sessionBindings)
     const recent = structuredClone(saved().state.recentSessions)
     const navigation = service.navigation
     request.mockClear()
 
-    ctx.sessions.open('old')
+    ctx.uiWorkspace.openSession('old')
     await service.queue
     expect(service.navigation).toBe(navigation + 1)
     expect(saved().state.active).toBe('writer')
@@ -901,7 +903,8 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.recentSessions).toEqual(recent)
     expect(request).not.toHaveBeenCalled()
 
-    ctx.sessions.clear()
+    selectIn(list, null)
+    service.selectionChanged()
     await service.queue
     expect(service.navigation).toBe(navigation + 2)
     expect(saved().state.active).toBe('writer')
@@ -917,17 +920,17 @@ describe('desktop workbench client navigation', () => {
     ctx.sessions.create.mockImplementationOnce(() => creation.promise)
     const pendingCreation = service.newSession('project-1')
 
-    ctx.sessions.open('old')
+    ctx.uiWorkspace.openSession('old')
     list.byId['native-superseded'] = { sessionId: 'native-superseded', displayTitle: 'Native superseded' }
     list.ids.push('native-superseded')
     creation.resolve('native-superseded')
     await pendingCreation
 
-    expect(list.current).toBe('old')
+    expect(currentOf(list)).toBe('old')
     expect(saved().state.active).toBe('writer')
     expect(saved().state.sessionBindings.old).toBeUndefined()
     expect(saved().state.sessionBindings['native-superseded']).toBe('writer')
-    expect(ctx.sessions.open).not.toHaveBeenCalledWith('native-superseded')
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('native-superseded')
   })
 
   it('blocks subsequent writes after a conflict and resumes only after loading authoritative state', async () => {
@@ -1031,7 +1034,7 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.notes.writer).toBe('Retained business draft')
     expect(saved().state.active).toBe(null)
     expect(service.blocked).toBe(false)
-    expect(ctx.sessions.open).not.toHaveBeenCalledWith('late-created')
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('late-created')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
     await service.open('research')
     expect(saved().state.active).toBe('research')
@@ -1087,6 +1090,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
+  it('shows a single display-mode toggle and no fill behind the open market', () => {
+    expect(fullSource).toContain("const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'")
+    expect(fullSource).toContain('onClick: () => changeMode(next) }, h(ModeIcon, { mode: next })')
+    expect(fullSource).not.toContain("...['list', 'icons'].map((value) => h('button'")
+    expect(fullSource).not.toContain('.dshWbNavMarket[data-active=true]{background')
+  })
+
   it('marks the market entry as the current page and uses the dedicated market action', () => {
     expect(fullSource).toContain("'aria-current': marketOpen ? 'page' : undefined")
     expect(fullSource).toContain('onClick: () => service.showMarket()')
@@ -1125,6 +1135,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("h(MarketIcon, { name: 'bookmark', size: 17 })")
     expect(fullSource).toContain("h(Button, { className: 'dshWbBtn dshWbInstalled', disabled: true }, '已安装')")
     expect(fullSource).toContain('.dshWb .dshWbInstalled:disabled{opacity:1;')
+  })
+
+  it('gives each workbench its own icon instead of the shared market glyph', () => {
+    expect(fullSource).toContain("if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph'")
+    expect(fullSource).toContain("[/玄学|命理|人生|life/i, 'life']")
+    expect(fullSource).toContain("if (name === 'life') return h('svg'")
+    expect(fullSource).not.toContain("function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }")
   })
 
   it('includes version display in EntryMeta when available', () => {
