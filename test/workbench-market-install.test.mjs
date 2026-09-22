@@ -95,6 +95,22 @@ describe('workbench market install targets', () => {
   })
 })
 
+describe('market install store migration', () => {
+  it('re-keys installs recorded as owner__repo by their catalog ID', async () => {
+    const root = await tempRoot()
+    await writeFile(join(root, 'market-installs.json'), JSON.stringify({ version: 1, installs: {
+      'o__legacy': { catalogId: 'o/legacy', workbenchId: null, pluginName: 'legacy', version: '0.1.0' },
+      'o__both': { catalogId: 'o/both', pluginName: 'old', version: '0.1.0' },
+      'o/both': { catalogId: 'o/both', pluginName: 'new', version: '0.2.0' }
+    } }))
+    const store = createMarketInstallStore(root)
+    expect(Object.keys(await store.read()).sort()).toEqual(['o/both', 'o/legacy'])
+    expect((await store.read())['o/both'].pluginName).toBe('new')
+    await store.forget('o/legacy')
+    expect(JSON.parse(await readFile(join(root, 'market-installs.json'), 'utf8')).installs).toEqual({ 'o/both': { catalogId: 'o/both', pluginName: 'new', version: '0.2.0' } })
+  })
+})
+
 describe('workbench market install routes', () => {
   const sha = 'a'.repeat(64)
   const index = {

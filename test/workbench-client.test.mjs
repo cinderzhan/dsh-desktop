@@ -1172,6 +1172,25 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.marketInstallFor('helper')).toBe('o/helper')
   })
 
+  it('shows one card when a market-installed provider does not declare its repository', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed(), listed({ id: 'o/other', repository: 'other', url: 'https://github.com/o/other', name: 'Other' })]
+    service.installs = { 'o/helper': { workbenchId: 'helper', version: '1.0.0' }, 'o/other': { workbenchId: null, version: '1.0.0' } }
+    service.register({ id: 'helper', title: '自报标题', version: '9.9.9' }, () => null)
+    service.register({ id: 'other-runtime', title: 'Other' }, () => null)
+    const catalog = service.getSnapshot().catalog.filter(entry => entry.catalogId.startsWith('o/') || ['helper', 'other-runtime'].includes(entry.id))
+    expect(catalog.map(entry => [entry.catalogId, entry.id, entry.installed])).toEqual([['o/helper', 'helper', true], ['o/other', 'other-runtime', true]])
+    expect(catalog[0]).toMatchObject({ title: 'Helper', listedVersion: '1.0.0' })
+  })
+
+  it('does not claim a same-titled provider for a listing that was never installed', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    service.register({ id: 'helper-local', title: 'Helper' }, () => null)
+    const catalog = service.getSnapshot().catalog.filter(entry => entry.catalogId === 'o/helper' || entry.id === 'helper-local')
+    expect(catalog.map(entry => [entry.catalogId, entry.installed])).toEqual([['o/helper', false], ['helper-local', true]])
+  })
+
   it('rolls back an install whose runtime ID shadows a loaded workbench, and refuses entries not in the market', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]

@@ -75,9 +75,17 @@ window.__ModuleLoader__.load({
       marketCatalog() {
         const matched = new Set()
         const providers = [...this.catalog.values()]
+        // Providers rarely declare a repository, so prefer what the install
+        // recorded: its runtime ID, then (for packages without workbench.json)
+        // a provider titled like the listing.
+        const pick = (test) => providers.find(candidate => !matched.has(candidate.id) && test(candidate))
         const remote = this.remoteCatalog.map((item) => {
-          const provider = providers.find(candidate => typeof candidate.repository === 'string'
-            && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
+          const install = this.installs[item.id]
+          const provider = (install?.workbenchId && pick(candidate => candidate.id === install.workbenchId))
+            || pick(candidate => typeof candidate.repository === 'string'
+              && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
+            || (install && !install.workbenchId && pick(candidate => candidate.title === item.name))
+            || undefined
           if (provider) matched.add(provider.id)
           return {
             ...item,

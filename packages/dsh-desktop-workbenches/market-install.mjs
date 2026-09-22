@@ -153,14 +153,27 @@ export async function readInstalledWorkbenchId(profileDir, pluginName) {
   return manifest.id
 }
 
-/** Which workbenches this market installed, keyed by workbench ID. Separate from state.json on purpose. */
+const CATALOG_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/(?!\.\.?$)[A-Za-z0-9_.-]{1,100}$/
+// Early builds keyed installs as `owner__repo`; the record's own catalogId is
+// the Awesome identity every route now looks up.
+function byCatalogId(installs) {
+  const result = {}
+  for (const [key, value] of Object.entries(installs)) {
+    const legacy = !CATALOG_ID.test(key) && typeof value?.catalogId === 'string' && CATALOG_ID.test(value.catalogId)
+    if (legacy && installs[value.catalogId]) continue
+    result[legacy ? value.catalogId : key] = value
+  }
+  return result
+}
+
+/** Which workbenches this market installed, keyed by Awesome repository identity. Separate from state.json on purpose. */
 export function createMarketInstallStore(root) {
   const path = join(root, INSTALLS_FILE)
   let queue = Promise.resolve()
   const read = async () => {
     try {
       const saved = JSON.parse(await readFile(path, 'utf8'))
-      return saved?.version === 1 && saved.installs && typeof saved.installs === 'object' ? saved.installs : {}
+      return saved?.version === 1 && saved.installs && typeof saved.installs === 'object' ? byCatalogId(saved.installs) : {}
     } catch (error) {
       if (error?.code === 'ENOENT') return {}
       throw new MarketInstallError('Stored workbench market installs are invalid.', 500)
