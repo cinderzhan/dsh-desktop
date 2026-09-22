@@ -1098,6 +1098,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('.dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:5px;border-bottom:1px')
   })
 
+  it('gives each workbench its own icon instead of the shared market glyph', () => {
+    expect(fullSource).toContain("if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph'")
+    expect(fullSource).toContain("[/玄学|命理|人生|life/i, 'life']")
+    expect(fullSource).toContain("if (name === 'life') return h('svg'")
+    expect(fullSource).not.toContain("function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }")
+  })
+
   it('only shows installation and like metrics when the catalog provides real values', () => {
     expect(fullSource).not.toContain("compactCount(installs) : '0'")
     expect(fullSource).not.toContain("compactCount(likes) : '0'")
