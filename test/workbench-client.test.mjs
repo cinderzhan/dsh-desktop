@@ -1223,6 +1223,11 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('dshWbNavItems')
   })
 
+  it('keeps an entry path by opening added workbenches from the Workbench page', () => {
+    expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
+    expect(fullSource).not.toContain("dshWbInstalled', disabled: true }, '已安装'")
+  })
+
   it('registers Workbench beside the host global panel entries', () => {
     expect(fullSource).toContain("ctx.slots.inject('sidebar.panellist'")
     expect(fullSource).toContain("id: PANEL, order: 100, label: '工作台'")
@@ -1264,10 +1269,10 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('.dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center;flex-wrap:nowrap}')
   })
 
-  it('bookmarks favorites and shows a quiet 已安装 state for added workbenches', () => {
+  it('bookmarks favorites and opens added workbenches from their cards', () => {
     expect(fullSource).toContain("h(MarketIcon, { name: 'bookmark', size: 17 })")
-    expect(fullSource).toContain("h(Button, { className: 'dshWbBtn dshWbInstalled', disabled: true }, '已安装')")
-    expect(fullSource).toContain('.dshWb .dshWbInstalled:disabled{opacity:1;')
+    expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
+    expect(fullSource).not.toContain('dshWbInstalled')
   })
 
   it('gives each workbench its own icon instead of the shared market glyph', () => {

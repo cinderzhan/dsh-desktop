@@ -702,7 +702,6 @@ window.__ModuleLoader__.load({
       .dshWbCard:hover .dshWbFavorite,.dshWbFavorite:focus-visible,.dshWbFavorite[aria-pressed=true]{opacity:1;transform:none}.dshWbFavorite:hover,.dshWbFavorite[aria-pressed=true]{color:var(--dsw-alias-label-primary)}.dshWbFavorite[aria-pressed=true] svg{fill:currentColor}
       .dshWbTitleLink{color:inherit;text-decoration:none}.dshWbTitleLink:hover{text-decoration:underline;text-underline-offset:3px}.dshWbTitleLink:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px;border-radius:3px}
       .dshWbAvatar{width:18px;height:18px;flex:0 0 auto;border-radius:50%;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform)}
-      .dshWb .dshWbInstalled:disabled{opacity:1;cursor:default;background:var(--dsw-alias-bg-layer-1);border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
       .dshWbMeta{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2);font-variant-numeric:tabular-nums;min-width:0}
       .dshWbMetaItem{display:flex;align-items:center;gap:5px;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;min-width:0}.dshWbMetaItem svg{flex:0 0 auto}.dshWbMetaItem b{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}.dshWbMetaItem small{font-size:10px;line-height:16px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbAuthor b{font-size:12px}.dshWbMetaItem:not(:first-child) small{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
       .dshWbVersion{font-size:10px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbPending{font-weight:600;color:var(--dsw-alias-label-primary)}
@@ -1296,7 +1295,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                   updatable
                     ? h(Button, { title: `更新到 v${entry.listedVersion}`, 'aria-label': `更新${entry.title}到 v${entry.listedVersion}`, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在更新…' : '检测到更新')
                   : state.added.includes(entry.id)
-                    ? h(Button, { className: 'dshWbBtn dshWbInstalled', disabled: true }, '已安装')
+                    ? h(Button, { primary: true, disabled: disabled || !service.catalog.has(entry.id), onClick: () => service.run(service.open(entry.id)) }, '打开工作台')
                     : entry.installed
                       ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.add(entry.id)) }, '添加到我的工作台')
                       : installs[catalogId]
