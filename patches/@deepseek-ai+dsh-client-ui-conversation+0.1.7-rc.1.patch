@@ -147,8 +147,8 @@ index 0856455..589f232 100644
  						scope: "session-maybe"
 +					},
 +					"conversation.hero.modeActions": {
-+						kind: "single",
-+						scope: "session-maybe"
++						kind: "list",
++						scope: "session"
  					}
  				},
  				slots: {
@@ -157,8 +157,8 @@ index 0856455..589f232 100644
  						scope: "session"
  					},
 +					"conversation.input.accessory": {
-+						kind: "single",
-+						scope: "session-maybe"
++						kind: "list",
++						scope: "session"
 +					},
  					"conversation.input.permission": {
  						kind: "single",

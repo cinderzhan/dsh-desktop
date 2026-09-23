@@ -2,6 +2,8 @@
 
 `v0.10.0` 分支将仓库内的 Harness 依赖固定到 `0.1.7-rc.1`，并更新对应的 Cordis 依赖和可重放补丁。旧的 `dsh-agent-presets` 目录预设 API 已由组合条目和 `dsh-agent-preset-registry` 取代。
 
+补丁逐项去留和重设计建议见 [0.1.7-rc.1 补丁审计](harness-0.1.7-rc.1-patch-audit.md)。
+
 ## 用户预设迁移
 
 - Desktop 启动普通 `web` Profile 前，读取 `$DSH_HOME/.agent-presets/<id>/agent.cordis.yml`，将有效的插件列表写入 `profiles/web/cordis.patch.yml`。内置 ID 更新对应条目，其他 ID 插入新的预设条目。

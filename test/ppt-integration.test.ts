@@ -224,6 +224,17 @@ describe('DSH PPT built-in plugin', () => {
     expect(patch).toContain('button:focus-visible')
   })
 
+  it('keeps the PPT slot kind and scope aligned with their published types', async () => {
+    const root = path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-conversation', 'lib')
+    const runtime = await readFile(path.join(root, 'client.js'), 'utf8')
+    const types = await readFile(path.join(root, 'types/client/contract/slots.d.ts'), 'utf8')
+    for (const name of ['conversation.hero.modeActions', 'conversation.input.accessory']) {
+      const escaped = name.replaceAll('.', '\\.')
+      expect(runtime).toMatch(new RegExp(`"${escaped}": \\{\\s*kind: "list",\\s*scope: "session"`))
+      expect(types).toMatch(new RegExp(`'${escaped}': \\{\\s*kind: 'list';\\s*scope: 'session'`))
+    }
+  })
+
   it('renders the selected template before editable prompt text', async () => {
     const client = await readFile(path.join(
       projectRoot,
