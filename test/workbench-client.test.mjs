@@ -1209,19 +1209,20 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
-  it('shows a single display-mode toggle and no fill behind the open market', () => {
+  it('shows a single display-mode toggle for the pinned workbench list', () => {
     expect(fullSource).toContain("const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'")
     expect(fullSource).toContain('onClick: () => changeMode(next) }, h(ModeIcon, { mode: next })')
     expect(fullSource).not.toContain("...['list', 'icons'].map((value) => h('button'")
-    expect(fullSource).not.toContain('.dshWbNavMarket[data-active=true]{background')
+    expect(fullSource).not.toContain('dshWbNavMarket')
   })
 
-  it('marks the market entry as the current page and uses the dedicated market action', () => {
-    expect(fullSource).toContain("'aria-current': marketOpen ? 'page' : undefined")
-    expect(fullSource).toContain('onClick: () => service.showMarket()')
-    expect(fullSource).toContain("h(MarketIcon, { name: 'market', size: 15 })")
+  it('registers Workbench beside the host global panel entries', () => {
+    expect(fullSource).toContain("ctx.slots.inject('sidebar.panellist'")
+    expect(fullSource).toContain("id: PANEL, order: 100, label: '工作台'")
+    expect(fullSource).toContain('function WorkbenchPanelIcon({ service, size = 16, active = false })')
+    expect(fullSource).toContain('React.useEffect(() => service.setMarketOpen(active), [service, active])')
     expect(fullSource).toContain('.dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;')
-    expect(fullSource).not.toContain('.dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:5px;border-bottom:1px')
+    expect(fullSource).not.toContain("title: '工作台市场', 'aria-label': '工作台市场'")
   })
 
   it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {

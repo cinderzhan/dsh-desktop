@@ -411,9 +411,13 @@ window.__ModuleLoader__.load({
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
       }
-      showMarket() {
-        this.marketOpen = true
+      setMarketOpen(open) {
+        if (this.marketOpen === open) return
+        this.marketOpen = open
         this.publish()
+      }
+      showMarket() {
+        this.setMarketOpen(true)
         this.ctx.layout.selectPanel(PANEL)
       }
       openSession(sessionId) {
@@ -636,13 +640,12 @@ window.__ModuleLoader__.load({
       .dshWbSetting{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 2px;border-bottom:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
       .dshWbSetting span{display:flex;flex-direction:column;gap:4px}.dshWbSetting strong{font-size:14px;font-weight:600}.dshWbSetting small{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary)}
       .dshWbSetting input{width:18px;height:18px;flex:none;accent-color:var(--dsw-alias-label-primary);cursor:pointer}
-      .dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:2px}
+      .dshWbNavHeader{display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0;padding-bottom:2px}
       .dshWbNavModes{display:flex;gap:2px;flex-shrink:0}
       .dshWb .dshWbMode{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-primary)}
       .dshWbNavItems{display:flex;flex-direction:column;gap:2px}
       .dshWbNavRow{display:flex;align-items:center;gap:2px;border-radius:7px;min-width:0}.dshWbNavRow[data-active=true]{background:var(--dsw-alias-bg-layer-2)}
       .dshWbNavOpen{border:0;background:none;display:flex;align-items:center;gap:9px;text-align:left;padding:5px 7px;flex:1;min-width:0;border-radius:7px}
-      .dshWbNavMarket{font-weight:600;letter-spacing:-.01em}.dshWbNavMarket .dshWbNavIcon{background:transparent;color:var(--dsw-alias-label-primary)}
       .dshWb .dshWbNavOpen:hover:not(:disabled),.dshWb .dshWbMove:hover:not(:disabled),.dshWb .dshWbMode:hover:not(:disabled),.dshWb .dshWbNavOpen:active:not(:disabled),.dshWb .dshWbMove:active:not(:disabled),.dshWb .dshWbMode:active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
       .dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary)}
       .dshWbNavRow[data-active=true] .dshWbNavIcon{color:var(--dsw-alias-label-primary)}
@@ -787,9 +790,8 @@ window.__ModuleLoader__.load({
       const pinned = state.pinned
       const disabled = !ready || pending > 0 || service.blocked
       return h('nav', { className: 'dshWb dshWbNav', 'data-mode': iconMode ? 'icons' : 'list', 'data-wide': !!wide, 'aria-label': '工作台' },
-        h('div', { className: 'dshWbNavHeader' },
-          h('button', { type: 'button', className: 'dshWbNavOpen dshWbNavMarket', 'data-active': marketOpen, 'aria-current': marketOpen ? 'page' : undefined, title: '工作台市场', 'aria-label': '工作台市场', onClick: () => service.showMarket() }, h('span', { className: 'dshWbNavIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'market', size: 15 })), wide && h('span', { className: 'dshWbNavLabel' }, '工作台市场')),
-          wide && (() => {
+        wide && h('div', { className: 'dshWbNavHeader' },
+          (() => {
             // One button that shows the mode a click switches to.
             const next = mode === 'list' ? 'icons' : 'list'
             const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'
@@ -841,6 +843,10 @@ window.__ModuleLoader__.load({
       if (name === 'chevronUp') return h('svg', common, h('path', { d: 'm7 14 5-5 5 5' }))
       if (name === 'chevronDown') return h('svg', common, h('path', { d: 'm7 10 5 5 5-5' }))
       return h('svg', common, h('path', { d: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z' }))
+    }
+    function WorkbenchPanelIcon({ service, size = 16, active = false }) {
+      React.useEffect(() => service.setMarketOpen(active), [service, active])
+      return h(MarketIcon, { name: 'market', size })
     }
     // A workbench's own short icon (an emoji or character) wins; otherwise its
     // category and title pick a themed glyph, then its first character.
@@ -1392,6 +1398,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         return () => style.remove()
       }, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
+      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 100, label: '工作台', inject: () => ({ service }) }, WorkbenchPanelIcon))
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: PANEL, order: -20, inject: () => ({ service }) }, Sidebar))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
       function WorkbenchEnableSetting() {
