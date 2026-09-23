@@ -1383,6 +1383,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       ctx.slots.inject('settings.general.item', () => ctx.slots.register({ name: 'settings.general.item', id: 'desktop-workbench-enable', order: 34 }, WorkbenchEnableSetting))
       ctx.slots.inject('desktop.workbench.frame', () => ctx.slots.register({ name: 'desktop.workbench.frame', inject: () => ({ service }) }, Frame))
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
+      ctx.effect(() => ctx.uiWorkspace.registerSessionReuseFilter((sessionId) => !service.state.sessionBindings[sessionId]), 'workbenches: blank session reuse')
       ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId, source = 'explicit-session') => {
         if (service.internalSessionOpen === sessionId) return false
         if (source === 'workspace' && service.routeWorkspaceSession(sessionId)) return true

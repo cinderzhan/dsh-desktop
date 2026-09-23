@@ -37,7 +37,7 @@ describe('patch hunk counts', () => {
 
   it('rejects a dsh hunk header that undercounts the merged dependency lines', async () => {
     const patch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
-    const broken = patch.replace('@@ -105,7 +105,16 @@', '@@ -105,7 +105,15 @@')
+    const broken = patch.replace('@@ -99,7 +99,17 @@', '@@ -99,7 +99,16 @@')
     expect(broken).not.toBe(patch)
     expect(() => parsePatchFile(broken)).toThrow(/hunk header integrity check failed/)
   })

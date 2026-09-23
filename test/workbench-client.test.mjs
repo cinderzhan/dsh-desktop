@@ -288,7 +288,7 @@ describe('desktop workbench client navigation', () => {
       },
       slots: { inject: (_name, callback) => callback(), register: vi.fn() },
       sessions: { list: { subscribe: vi.fn() } },
-      uiWorkspace: { registerSessionOpener: vi.fn() }
+      uiWorkspace: { registerSessionOpener: vi.fn(), registerSessionReuseFilter: vi.fn() }
     }
     apply(ctx)
     expect(service).toBeInstanceOf(Workbenches)

@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 21df26a..e145363 100644
+index 30db16b..f5829ba 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,38 @@ window.__ModuleLoader__.load({
@@ -41,7 +41,7 @@ index 21df26a..e145363 100644
  		var ModelsSection_module_css_default = {
  			"addActions": "zGbnIq_addActions",
  			"addBlock": "zGbnIq_addBlock",
-@@ -198,6 +230,68 @@ window.__ModuleLoader__.load({
+@@ -200,6 +232,68 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -110,7 +110,7 @@ index 21df26a..e145363 100644
  		//#region lib/types/client/ModelRow.js
  		/**
  		* Render consistent model identity, capacity, and input-type controls.
-@@ -276,6 +370,87 @@ window.__ModuleLoader__.load({
+@@ -278,6 +372,87 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -198,7 +198,7 @@ index 21df26a..e145363 100644
  		//#region lib/types/client/DeepSeekModelsEditor.js
  		/**
  		* Curated editor for the direct DeepSeek adapter's advisory model catalog.
-@@ -377,6 +552,7 @@ window.__ModuleLoader__.load({
+@@ -379,6 +554,7 @@ window.__ModuleLoader__.load({
  		function DeepSeekModelsEditor(props) {
  			const [editing, setEditing] = (0, react.useState)(() => /* @__PURE__ */ new Map());
  			const [expanded, setExpanded] = (0, react.useState)(() => /* @__PURE__ */ new Set());
@@ -206,7 +206,7 @@ index 21df26a..e145363 100644
  			const update = (index, key, value) => {
  				const next = props.models.map((model, at) => {
  					const copy = { ...model };
-@@ -472,46 +648,89 @@ window.__ModuleLoader__.load({
+@@ -474,46 +650,89 @@ window.__ModuleLoader__.load({
  							children: props.t("resetModels")
  						}) : null]
  					}),
@@ -292,7 +292,7 @@ index 21df26a..e145363 100644
 -						onClick: () => {
 -							props.onChange([...props.models.map((model) => ({ ...model })), { id: "" }]);
 -						},
--						children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), props.t("addModel")]
+-						children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutlineRegular, { size: 14 }), props.t("addModel")]
 +						compact: true,
 +						onChange: (enabled) => {
 +							update(index, "inputModalities", imageInputModalities(enabled));
@@ -329,7 +329,7 @@ index 21df26a..e145363 100644
  					})
  				]
  			});
-@@ -615,6 +834,7 @@ window.__ModuleLoader__.load({
+@@ -620,6 +839,7 @@ window.__ModuleLoader__.load({
  			const [candidateQuery, setCandidateQuery] = (0, react.useState)("");
  			const [expanded, setExpanded] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [editing, setEditing] = (0, react.useState)(/* @__PURE__ */ new Map());
@@ -337,7 +337,7 @@ index 21df26a..e145363 100644
  			/** Buffer key for one capacity field; the row half moves when rows do. */
  			const bufferKey = (index, field) => `${String(index)}:${field}`;
  			const editCapacity = (index, field, text) => {
-@@ -753,65 +973,133 @@ window.__ModuleLoader__.load({
+@@ -758,65 +978,133 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
@@ -437,7 +437,7 @@ index 21df26a..e145363 100644
 -						onClick: () => {
 -							onChange([...models, { id: "" }]);
 -						},
--						children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("addModel")]
+-						children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutlineRegular, { size: 14 }), t("addModel")]
 +						compact: true,
 +						onChange: (enabled) => {
 +							patch(index, { input: imageInputModalities(enabled) });
@@ -523,15 +523,15 @@ index 21df26a..e145363 100644
  					failure !== void 0 ? (0, react_jsx_runtime.jsx)("p", {
  						className: ModelsSection_module_css_default["error"],
  						children: failure
-@@ -1176,6 +1464,7 @@ window.__ModuleLoader__.load({
+@@ -1210,6 +1498,7 @@ window.__ModuleLoader__.load({
  			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
  			const [keyDraft, setKeyDraft] = (0, react.useState)("");
  			const [models, setModels] = (0, react.useState)([]);
 +			const [modelQuery, setModelQuery] = (0, react.useState)("");
  			const [busy, setBusy] = (0, react.useState)(false);
- 			const [failure, setFailure] = (0, react.useState)(void 0);
- 			/**
-@@ -1235,6 +1524,11 @@ window.__ModuleLoader__.load({
+ 			const [listBusy, setListBusy] = (0, react.useState)(false);
+ 			(0, react.useEffect)(() => {
+@@ -1277,6 +1566,11 @@ window.__ModuleLoader__.load({
  					setBusy(false);
  				}
  			};
@@ -543,7 +543,7 @@ index 21df26a..e145363 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["editor"],
  				children: [
-@@ -1355,6 +1649,8 @@ window.__ModuleLoader__.load({
+@@ -1390,6 +1684,8 @@ window.__ModuleLoader__.load({
  					(0, react_jsx_runtime.jsx)(ModelListEditor, {
  						models,
  						onChange: setModels,
@@ -552,7 +552,7 @@ index 21df26a..e145363 100644
  						probe: {
  							settingsNs: NS$1,
  							baseURL: normalizedBaseURL,
-@@ -1374,18 +1670,27 @@ window.__ModuleLoader__.load({
+@@ -1410,18 +1706,27 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: hint
  					}),
@@ -592,16 +592,16 @@ index 21df26a..e145363 100644
  					})
  				]
  			});
-@@ -1471,6 +1776,8 @@ window.__ModuleLoader__.load({
- 			const [keyState, setKeyState] = (0, react.useState)(void 0);
- 			const [busy, setBusy] = (0, react.useState)(false);
+@@ -1516,6 +1821,8 @@ window.__ModuleLoader__.load({
+ 				onBusyChange
+ 			]);
  			const [failure, setFailure] = (0, react.useState)(void 0);
 +			const [modelQuery, setModelQuery] = (0, react.useState)("");
 +			const [customizedOpen, setCustomizedOpen] = (0, react.useState)(false);
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -1591,6 +1898,15 @@ window.__ModuleLoader__.load({
+@@ -1636,6 +1943,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -617,7 +617,7 @@ index 21df26a..e145363 100644
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -1609,6 +1925,8 @@ window.__ModuleLoader__.load({
+@@ -1654,6 +1970,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -626,7 +626,7 @@ index 21df26a..e145363 100644
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -1647,6 +1965,10 @@ window.__ModuleLoader__.load({
+@@ -1692,6 +2010,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -637,7 +637,7 @@ index 21df26a..e145363 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1734,8 +2056,22 @@ window.__ModuleLoader__.load({
+@@ -1780,8 +2102,22 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -661,7 +661,7 @@ index 21df26a..e145363 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1759,19 +2095,15 @@ window.__ModuleLoader__.load({
+@@ -1805,19 +2141,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -690,7 +690,7 @@ index 21df26a..e145363 100644
  					})
  				]
  			});
-@@ -1868,6 +2200,26 @@ window.__ModuleLoader__.load({
+@@ -1923,6 +2255,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -717,117 +717,26 @@ index 21df26a..e145363 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1897,6 +2249,8 @@ window.__ModuleLoader__.load({
+@@ -1959,6 +2311,7 @@ window.__ModuleLoader__.load({
+ 			const [deleting, setDeleting] = (0, react.useState)(false);
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
- 			const [declaring, setDeclaring] = (0, react.useState)(false);
-+			const [providerPickerOpen, setProviderPickerOpen] = (0, react.useState)(false);
-+			const [providerQuery, setProviderQuery] = (0, react.useState)("");
++
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1967,7 +2321,13 @@ window.__ModuleLoader__.load({
- 			const anyUsable = state.rows.some(providerUsable);
- 			const configured = state.rows.filter((row) => row.configured);
- 			const configurable = state.rows.filter((row) => state.namespaces.has(row.entry.settingsNs));
--			const addable = configurable.filter((row) => !row.configured);
-+			const addable = configurable.filter((row) => !row.configured).sort((left, right) => {
-+				const leftRank = SETTINGS_PROVIDER_RANK.get(left.entry.provider) ?? Number.MAX_SAFE_INTEGER;
-+				const rightRank = SETTINGS_PROVIDER_RANK.get(right.entry.provider) ?? Number.MAX_SAFE_INTEGER;
-+				return leftRank - rightRank || left.entry.displayName.localeCompare(right.entry.displayName);
-+			});
-+			const normalizedProviderQuery = providerQuery.trim().toLowerCase();
-+			const visibleAddable = normalizedProviderQuery.length === 0 ? addable : addable.filter((row) => `${row.entry.displayName} ${row.entry.provider}`.toLowerCase().includes(normalizedProviderQuery));
- 			const addTarget = adding ? editing : void 0;
- 			const addNamespace = addTarget === void 0 ? void 0 : state.namespaces.get(addTarget.settingsNs);
- 			const addRow = addTarget === void 0 ? void 0 : state.rows.find((row) => row.entry.provider === addTarget.provider);
-@@ -2116,20 +2476,62 @@ window.__ModuleLoader__.load({
- 									children: [(0, react_jsx_runtime.jsx)("span", {
- 										className: ModelsSection_module_css_default["fieldLabel"],
- 										children: t("provider")
--									}), (0, react_jsx_runtime.jsx)("select", {
--										className: `${ModelsSection_module_css_default["input"]} ${ModelsSection_module_css_default["selectInput"]}`,
--										value: addTarget.provider,
--										"aria-label": t("provider"),
--										onChange: (event) => {
--											const row = addable.find((candidate) => candidate.entry.provider === event.target.value);
--											/* v8 ignore next -- the select only lists addable rows */
--											if (row === void 0) return;
--											setEditing(targetOf(row));
--										},
--										children: addable.map((row) => (0, react_jsx_runtime.jsx)("option", {
--											value: row.entry.provider,
--											children: row.entry.displayName
--										}, row.entry.provider))
-+									}), providerPickerOpen ? (0, react_jsx_runtime.jsxs)("div", {
-+										className: "dshProviderPicker",
-+										children: [(0, react_jsx_runtime.jsx)("input", {
-+											className: "dshProviderSearch",
-+											type: "search",
-+											value: providerQuery,
-+											placeholder: t("providerSearch"),
-+											"aria-label": t("providerSearch"),
-+											autoFocus: true,
-+											onChange: (event) => {
-+												setProviderQuery(event.target.value);
-+											}
-+										}), (0, react_jsx_runtime.jsx)("div", {
-+											className: "dshProviderGrid",
-+											role: "group",
-+											"aria-label": t("provider"),
-+											children: visibleAddable.map((row) => {
-+												const active = row.entry.provider === addTarget.provider;
-+												return (0, react_jsx_runtime.jsxs)("button", {
-+													type: "button",
-+													className: "dshProviderCard",
-+													"aria-pressed": active,
-+													onClick: () => {
-+														setEditing(targetOf(row));
-+														setProviderPickerOpen(false);
-+														setProviderQuery("");
-+													},
-+													children: [(0, react_jsx_runtime.jsx)("span", {
-+														className: "dshProviderName",
-+														children: row.entry.displayName
-+													}), (0, react_jsx_runtime.jsx)("span", {
-+														className: "dshProviderRoute",
-+														children: row.entry.provider
-+													})]
-+												}, row.entry.provider);
-+											})
-+										})]
-+									}) : (0, react_jsx_runtime.jsxs)("div", {
-+										className: "dshProviderSummary",
-+										children: [(0, react_jsx_runtime.jsxs)("span", {
-+											className: "dshProviderSummaryText",
-+											children: [(0, react_jsx_runtime.jsx)("span", {
-+												className: "dshProviderName",
-+												children: addTarget.displayName
-+											}), (0, react_jsx_runtime.jsx)("span", {
-+												className: "dshProviderRoute",
-+												children: addTarget.provider
-+											})]
-+										}), (0, react_jsx_runtime.jsx)("button", {
-+											type: "button",
-+											className: "dshProviderChange",
-+											onClick: () => {
-+												setProviderPickerOpen(true);
-+											},
-+											children: t("changeProvider")
-+										})]
- 									})]
- 								}),
- 								(0, react_jsx_runtime.jsx)(ProviderEditor, {
-@@ -2181,6 +2583,8 @@ window.__ModuleLoader__.load({
- 									setDeclaring(false);
- 									setAdding(true);
- 									setEditing(targetOf(first));
-+									setProviderPickerOpen(true);
-+									setProviderQuery("");
- 								},
- 								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
- 							}), state.namespaces.has("llm-pi-ai") && (0, react_jsx_runtime.jsxs)("button", {
-@@ -2316,35 +2720,50 @@ window.__ModuleLoader__.load({
+@@ -2046,6 +2399,10 @@ window.__ModuleLoader__.load({
+ 					row,
+ 					namespace
+ 				}];
++			}).sort((left, right) => {
++				const leftRank = SETTINGS_PROVIDER_RANK.get(left.row.entry.provider) ?? Number.MAX_SAFE_INTEGER;
++				const rightRank = SETTINGS_PROVIDER_RANK.get(right.row.entry.provider) ?? Number.MAX_SAFE_INTEGER;
++				return leftRank - rightRank || left.row.entry.displayName.localeCompare(right.row.entry.displayName);
+ 			});
+ 			const piAi = state.namespaces.get("llm-pi-ai");
+ 			const protocols = protocolChoices(piAi, schema);
+@@ -2456,9 +2813,24 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -854,8 +763,9 @@ index 21df26a..e145363 100644
  		* @param props - settings-shell owner state and Models feature dependencies.
  		* @returns the onboarding modal or null when onboarding needs no intervention.
  		*/
- 		function DeepSeekOnboardingDialog(props) {
- 			const { complete, controller, useModels, operations, schema, t } = props;
+@@ -2466,7 +2838,16 @@ window.__ModuleLoader__.load({
+ 			const { complete, controller, useModels, operations, schema, t, renderSlot, automatic, explicit = false } = props;
+ 			const [apiKey, setApiKey] = (0, react.useState)(explicit);
  			const state = useModels((snapshot) => snapshot);
 -			const readiness = onboardingReadiness(state);
 +			const [selectedProvider, setSelectedProvider] = (0, react.useState)("deepseek-official");
@@ -869,43 +779,18 @@ index 21df26a..e145363 100644
 +			const selected = choices.find((choice) => choice.provider === selectedProvider) ?? choices[0];
 +			const anyUsable = state.rows.some(providerUsable);
  			(0, react.useEffect)(() => {
- 				if (state.status === "idle") controller.load();
- 			}, [controller, state.status]);
- 			(0, react.useEffect)(() => {
--				if (readiness.kind === "adapter-absent" || readiness.kind === "provider-ready" || readiness.kind === "unavailable") complete();
--			}, [complete, readiness.kind]);
--			switch (readiness.kind) {
--				case "loading":
--				case "adapter-absent":
--				case "provider-ready":
--				case "unavailable": return null;
--				case "credential-missing": break;
--				/* v8 ignore next -- every current readiness variant is handled above */
--				default: return assertNever$1(readiness);
--			}
--			const row = state.rows.find((candidate) => candidate.entry.provider === "deepseek-official" && candidate.entry.settingsNs === "llm-deepseek" && candidate.entry.settingsPath.length === 0);
--			const namespace = state.namespaces.get("llm-deepseek");
--			/* v8 ignore next 2 -- credential-missing is derived only from this exact joined row. */
--			if (row === void 0 || namespace === void 0) return null;
-+				if (anyUsable || state.status === "error" || state.status === "ready" && (!state.writable || choices.length === 0)) complete();
-+			}, [anyUsable, choices.length, complete, state.status, state.writable]);
-+			if (state.status === "idle" || state.status === "loading" || anyUsable || selected === void 0 || !state.writable) return null;
-+			const row = selected.row;
-+			const namespace = state.namespaces.get(row.entry.settingsNs);
-+			if (namespace === void 0) return null;
- 			const finishCredential = (changed) => {
- 				if (!changed) {
- 					complete();
-@@ -2682,6 +3101,8 @@ window.__ModuleLoader__.load({
- 			deleting: "Deleting {provider}…",
- 			add: "Add provider",
+ 				if ((automatic || explicit) && state.status === "idle") controller.load();
+ 			}, [
+@@ -2839,6 +3220,8 @@ window.__ModuleLoader__.load({
+ 			addCatalogExhausted: "Every catalog provider is already configured.",
+ 			addCustomUnavailable: "No API protocol is available to declare.",
  			provider: "Provider",
 +			providerSearch: "Search providers",
 +			changeProvider: "Change",
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2720,6 +3141,14 @@ window.__ModuleLoader__.load({
+@@ -2876,6 +3259,14 @@ window.__ModuleLoader__.load({
  			modelInputTypes: "Input types",
  			modelInputText: "Text",
  			modelInputImage: "Image",
@@ -920,7 +805,7 @@ index 21df26a..e145363 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2766,10 +3195,14 @@ window.__ModuleLoader__.load({
+@@ -2924,10 +3315,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
  			welcomeContinue: "Continue",
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -938,16 +823,7 @@ index 21df26a..e145363 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2789,6 +3222,8 @@ window.__ModuleLoader__.load({
- 			deleting: "正在删除 {provider}…",
- 			add: "添加提供方",
- 			provider: "提供方",
-+			providerSearch: "搜索提供方",
-+			changeProvider: "更换",
- 			close: "关闭",
- 			cancel: "取消",
- 			apply: "保存",
-@@ -2827,6 +3262,14 @@ window.__ModuleLoader__.load({
+@@ -2991,6 +3386,14 @@ window.__ModuleLoader__.load({
  			modelInputTypes: "输入类型",
  			modelInputText: "文本",
  			modelInputImage: "图片",
@@ -962,7 +838,7 @@ index 21df26a..e145363 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2873,10 +3316,14 @@ window.__ModuleLoader__.load({
+@@ -3039,10 +3442,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。",
  			welcomeContinue: "继续",
  			welcomeError: "暂时无法保存确认状态，请重试。",
@@ -980,7 +856,7 @@ index 21df26a..e145363 100644
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
-@@ -2980,18 +3427,7 @@ window.__ModuleLoader__.load({
+@@ -4044,22 +4451,7 @@ window.__ModuleLoader__.load({
  					}
  				}
  			}, ModelsSection));
@@ -993,6 +869,10 @@ index 21df26a..e145363 100644
 -			ctx.slots.inject("settings.onboarding", () => ctx.slots.register({
 -				name: "settings.onboarding",
 -				id: "deepseek-official",
+-				children: { "settings.models.sign-in": {
+-					kind: "single",
+-					scope: "root"
+-				} },
 -				order: 0,
 -				inject: deepSeekOnboardingInjected
 -			}, DeepSeekOnboardingDialog));

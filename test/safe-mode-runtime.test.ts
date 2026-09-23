@@ -72,7 +72,7 @@ registerHooks({ resolve(specifier, context, next) {
     const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
     const html = await (await fetch(url, { headers: { Cookie: cookie } })).text()
     const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+)"/gu)].map((match) => match[1])
-    const bootstrap = scriptUrls.find((src) => src?.includes('/plugins/??@deepseek-ai/dsh-client-modules/client.js'))
+    const bootstrap = scriptUrls.find((src) => src?.includes('plugins/??@deepseek-ai/dsh-client-modules/client.js'))
     expect(bootstrap, 'Recovery HTML must preload the client module system').toBeDefined()
     if (!bootstrap) throw new Error('Missing recovery bootstrap')
     const response = await fetch(new URL(bootstrap.replaceAll('&amp;', '&'), url), { headers: { Cookie: cookie } })

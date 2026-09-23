@@ -10,7 +10,7 @@ import { commitImage, writerPlan } from './lib/commit.js'
 import { previewImage } from './lib/preview.js'
 
 export const name = 'dsh-image-generation'
-export const inject = ['settings', 'credentials', 'connection', 'tools', 'skills', 'systemPrompt', 'sandboxPolicy', 'sandbox', 'subprocess', 'sessionController']
+export const inject = ['credentials', 'connection', 'tools', 'skills', 'systemPrompt', 'sandboxPolicy', 'sandbox', 'subprocess', 'sessionController']
 export const Config = z.object({})
 export const IMAGE_PROMPT_SECTION = 'tool:image-generation'
 export const UNCONFIGURED_IMAGE_PROMPT = 'Do not call image_generate. Direct the user to Settings > Plugins > Image generation. Never ask for an API key in conversation.'
@@ -62,10 +62,8 @@ export function imageTool(ctx, settings) {
 }
 
 export async function apply(ctx) {
-  // The card is discovered through the standard settings namespace ledger.
   // Endpoint/model/key are committed together by the credential provider, so a
   // failed save cannot pair an old key with a newly persisted endpoint.
-  ctx.settings.register('image-generation', Config, { applies: 'live' })
   const settings = createSettings(ctx)
   const jsonResponse = async (run) => {
     try {

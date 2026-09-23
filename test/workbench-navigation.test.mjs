@@ -9,7 +9,7 @@ const Service = { tracker: Symbol('service-tracker') }
 const source = await readFile(new URL('../node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js', import.meta.url), 'utf8')
 const workbenchSource = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
 const classStart = source.indexOf('class extends', source.indexOf('var UiWorkspaceService ='))
-const classEnd = source.indexOf('\n\t\t/** Stable tie-breaking', classStart)
+const classEnd = source.indexOf('\n\t\t};', classStart) + '\n\t\t};'.length
 const recentStart = source.indexOf('function recentWorkspace(', classEnd)
 const recentEnd = source.indexOf('\n\t\t//#endregion', recentStart)
 if ([classStart, classEnd, recentStart, recentEnd].some(index => index < 0)) throw new Error('Workspace service extraction failed; check the installed Harness navigation module.')
@@ -44,6 +44,8 @@ function fixture() {
   const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
   service.sessionStarter = null
   service.sessionOpener = null
+  service.sessionReuseFilter = null
+  service.view = { markSessionRead: vi.fn() }
   service.connecting = new Map()
   service.lifetime = new AbortController()
   let selection = {}
@@ -55,10 +57,10 @@ function fixture() {
   service.workspaces = { list: { getSnapshot: () => workspaceState, subscribe } }
   service.sessions = {
     list: { getSnapshot: () => sessionState, subscribe },
-    create: vi.fn(async ({ workspaceId }) => {
+    create: vi.fn(async ({ workspaceId, sessionId }) => {
       const target = workspaceState.items.find(item => item.workspaceId === workspaceId)
       if (!target) throw new Error(`Unknown workspace: ${workspaceId}`)
-      const id = 'new-session'
+      const id = sessionId ?? 'new-session'
       if (!sessionState.byId[id]) sessionState.ids.push(id)
       sessionState.byId[id] = { id, sessionId: id, blank: true, cwd: target.path, displayTitle: 'New Session' }
       if (!target.sessionIds.includes(id)) target.sessionIds.push(id)
@@ -310,7 +312,7 @@ describe('native Workspace navigation with workbench routing', () => {
     await uiWorkspace.openWorkspace('project')
     await controller.queue
 
-    expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
+    expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: removedSession })
     expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith(removedSession, { source: 'mainView' })
     expect(mainViewOf(sessionState)).toBe(removedSession)
     expect(controller.state.active).toBeNull()
@@ -335,7 +337,7 @@ describe('native Workspace navigation with workbench routing', () => {
     await uiWorkspace.openWorkspace('project')
     await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith(ordinary, { source: 'mainView' }))
 
-    expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
+    expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: ordinary })
     expect(mainViewOf(sessionState)).toBe(ordinary)
     expect(controller.state.active).toBeNull()
     expect(controller.state.sessionBindings).toEqual({ [bound]: 'huaxue' })
