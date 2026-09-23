@@ -11,6 +11,17 @@ export const name = 'dsh-desktop-workbenches'
 export const inject = ['connection']
 export const Config = Schema.object({ root: Schema.string().required() })
 
+export function catalogReadOptions(request) {
+  const params = new URL(request.url).searchParams
+  for (const key of params.keys()) {
+    if (key !== 'force') throw new CatalogError('Unsupported workbench catalog query.', 400)
+  }
+  const force = params.getAll('force')
+  if (force.length === 0) return { force: false }
+  if (force.length !== 1 || force[0] !== '1') throw new CatalogError('Invalid workbench catalog refresh request.', 400)
+  return { force: true }
+}
+
 export function authorizedStateMigrations(catalog) {
   const allowed = new Map()
   for (const entry of catalog.workbenches) {
@@ -78,9 +89,9 @@ export function apply(ctx, config) {
     path: '/api/desktop-workbenches/catalog',
     methods: ['GET'],
     requestBody: 'buffered',
-    async fetch() {
+    async fetch(request) {
       try {
-        const result = await readCatalog()
+        const result = await readCatalog(catalogReadOptions(request))
         return Response.json(result, { headers: { 'cache-control': 'no-store' } })
       } catch (error) {
         return Response.json({ error: error instanceof CatalogError ? error.message : 'Could not read the workbench catalog.' }, {

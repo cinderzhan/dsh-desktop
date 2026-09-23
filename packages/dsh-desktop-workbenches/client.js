@@ -28,6 +28,9 @@ window.__ModuleLoader__.load({
     const ACCEPTANCE_READING = `先阅读并遵循工作台市场验收规范：${ACCEPTANCE_DOC_URL} 。它包含上传 GitHub、安装来源、上架资料、收录 PR 和验收清单。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const WORKBENCH_DOCK_PREF = 'dsh-workbench-dock-visible'
+    const MARKET_OPEN_SESSION = 'dsh-desktop-workbenches.market-open.v1'
+    const storedMarketOpen = () => { try { return window.sessionStorage?.getItem(MARKET_OPEN_SESSION) === 'true' } catch { return false } }
+    const storeMarketOpen = (open) => { try { if (open) window.sessionStorage?.setItem(MARKET_OPEN_SESSION, 'true'); else window.sessionStorage?.removeItem(MARKET_OPEN_SESSION) } catch {} }
     const workbenchPreference = {
       listeners: new Set(),
       enabled: (() => { try { return window.localStorage.getItem(WORKBENCH_PREF) !== 'false' } catch { return true } })(),
@@ -55,7 +58,8 @@ window.__ModuleLoader__.load({
         this.ready = false
         this.error = ''
         this.blocked = false
-        this.marketOpen = false
+        this.restoreMarketOnLoad = storedMarketOpen()
+        this.marketOpen = this.restoreMarketOnLoad
         this.pending = 0
         this.disposed = false
         this.listeners = new Set()
@@ -66,6 +70,8 @@ window.__ModuleLoader__.load({
         this.marketCategories = []
         this.catalogError = ''
         this.catalogStale = false
+        this.catalogRefreshing = false
+        this.catalogRefresh = null
         // Workbenches installed from the market, keyed by Awesome repository
         // identity. A new package only runs after Harness restarts, so
         // restartNeeded stays set until then.
@@ -137,7 +143,7 @@ window.__ModuleLoader__.load({
         if (identities.length !== 1) throw new Error(identities.length ? `Client package ${source} matches multiple workbenches.` : `Client package ${source} is not attributed to a market repository.`)
         return identities[0]
       }
-      rebuildProviders() {
+      rebuildProviders({ preserveActive = false } = {}) {
         const previous = this.catalog
         const catalog = new Map()
         for (const [source, provider] of this.providers) {
@@ -148,7 +154,7 @@ window.__ModuleLoader__.load({
         }
         this.catalog = catalog
         for (const [id] of previous) {
-          if (!catalog.has(id) && this.state.active === id) this.state = { ...this.state, active: null }
+          if (!preserveActive && !catalog.has(id) && this.state.active === id) this.state = { ...this.state, active: null }
         }
       }
       reconcileMarketInstalls() {
@@ -196,7 +202,7 @@ window.__ModuleLoader__.load({
       }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
-          catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen,
+          catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, pending: this.pending, marketOpen: this.marketOpen,
           catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, restartNeeded: this.restartNeeded }
         for (const listener of this.listeners) listener()
       }
@@ -208,8 +214,8 @@ window.__ModuleLoader__.load({
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         return data
       }
-      async readCatalog() {
-        const response = await this.request(CATALOG_API, { credentials: 'same-origin', cache: 'no-store' })
+      async readCatalog(force = false) {
+        const response = await this.request(force ? `${CATALOG_API}?force=1` : CATALOG_API, { credentials: 'same-origin', cache: 'no-store' })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         const categories = new Map(data.catalog.categories.map(category => [category.id, category.name.zh]))
@@ -218,6 +224,34 @@ window.__ModuleLoader__.load({
           categories: data.catalog.categories.map(({ id, name }) => ({ id, name: name.zh })),
           stale: data.stale === true
         }
+      }
+      refreshCatalog() {
+        if (this.catalogRefresh) return this.catalogRefresh
+        this.catalogRefreshing = true
+        const refresh = (async () => {
+          try {
+            const catalog = await this.readCatalog(true)
+            if (this.disposed) return
+            this.remoteCatalog = catalog.entries
+            this.marketCategories = catalog.categories
+            this.catalogError = ''
+            this.catalogStale = catalog.stale
+            // A catalog refresh updates discovery metadata only. It must not
+            // navigate, rewrite session ownership, or change the active workbench.
+            this.rebuildProviders({ preserveActive: true })
+          } catch (error) {
+            if (!this.disposed) this.catalogError = error instanceof Error ? error.message : String(error)
+          } finally {
+            if (!this.disposed) {
+              this.catalogRefreshing = false
+              this.catalogRefresh = null
+              this.publish()
+            }
+          }
+        })()
+        this.catalogRefresh = refresh
+        this.publish()
+        return refresh
       }
       async readInstalls() {
         const response = await this.request(MARKET_INSTALLS_API, { credentials: 'same-origin', cache: 'no-store' })
@@ -303,7 +337,13 @@ window.__ModuleLoader__.load({
           this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
           const active = this.state.active
-          if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
+          const restoreMarket = this.restoreMarketOnLoad || this.marketOpen
+          this.restoreMarketOnLoad = false
+          if (restoreMarket) {
+            this.setMarketOpen(true)
+            this.ctx.layout.selectPanel(PANEL)
+          }
+          else if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
           else this.selectionChanged()
           for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
         } catch (error) { this.report(error) }
@@ -387,7 +427,7 @@ window.__ModuleLoader__.load({
       async open(id, sessionId) {
         if (!this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
         if (sessionId && this.state.sessionBindings[sessionId] !== id) throw new Error('会话不属于当前工作台。')
-        this.marketOpen = false
+        this.setMarketOpen(false)
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
         const defaultWorkspace = this.defaultWorkspace()
@@ -407,7 +447,7 @@ window.__ModuleLoader__.load({
       }
       async home(id = this.state.active) {
         if (!id || !this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
-        this.marketOpen = false
+        this.setMarketOpen(false)
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
         await this.commit((state) => { state.active = id; if (!state.pinned.includes(id)) state.pinned.push(id) })
@@ -420,6 +460,8 @@ window.__ModuleLoader__.load({
         } finally { this.suppressSelection = false }
       }
       setMarketOpen(open) {
+        if (!open && this.restoreMarketOnLoad && !this.ready) return
+        storeMarketOpen(open)
         if (this.marketOpen === open) return
         this.marketOpen = open
         this.publish()
@@ -427,6 +469,7 @@ window.__ModuleLoader__.load({
       showMarket() {
         this.setMarketOpen(true)
         this.ctx.layout.selectPanel(PANEL)
+        this.run(this.refreshCatalog())
       }
       openSession(sessionId) {
         this.internalSessionOpen = sessionId
@@ -761,7 +804,7 @@ window.__ModuleLoader__.load({
           : '请从菜单 Harness → 重启 Harness。')
       if (error) return h('div', { className: 'dshWbNotice', role: 'alert' }, error, ' ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重新加载'))
       if (!ready) return h('div', { className: 'dshWbNotice', role: 'status' }, '正在读取本地工作台…')
-      if (catalogError) return h('div', { className: 'dshWbNotice', role: 'status' }, '在线市场暂时无法读取，仍可使用已安装的工作台。 ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重试'))
+      if (catalogError) return h('div', { className: 'dshWbNotice', role: 'status' }, '在线市场暂时无法读取，仍可使用已安装的工作台。 ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.refreshCatalog()) }, '重试'))
       if (catalogStale) return h('div', { className: 'dshWbNotice', role: 'status' }, '在线市场暂时无法更新，正在显示上一次成功读取的目录。')
       return null
     }
@@ -1152,7 +1195,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('a', { href: result.url, target: '_blank', rel: 'noopener noreferrer' }, '在 GitHub 查看'))))
     }
     function Market({ service }) {
-      const { state, catalog, categories: marketCategories = [], ready, pending, installs, installing } = useWorkbench(service)
+      const { state, catalog, categories: marketCategories = [], ready, pending, installs, installing, catalogRefreshing } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const dockVisible = React.useSyncExternalStore(workbenchDockPreference.subscribe.bind(workbenchDockPreference), workbenchDockPreference.getSnapshot.bind(workbenchDockPreference))
       const [tab, setTab] = React.useState('market')
@@ -1209,6 +1252,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('h1', null, tab === 'submit' ? '制作属于你的工作台' : '切换工作台，进入不同工作方式'),
             h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。可通过左侧快捷栏在原生会话与不同工作台之间切换。')),
           h('div', { className: 'dshWbMarketHeaderActions' },
+            tab !== 'submit' && h(Button, { disabled: catalogRefreshing, onClick: () => service.run(service.refreshCatalog()) }, catalogRefreshing ? '正在刷新…' : '刷新目录'),
             h('button', { type: 'button', className: 'dshWbDockSetting', role: 'switch', 'aria-checked': dockVisible, onClick: () => workbenchDockPreference.set(!dockVisible) },
               h('span', null, '显示工作台快捷栏'), h('span', { className: 'dshWbDockSwitch', 'aria-hidden': true })),
             h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台'))),

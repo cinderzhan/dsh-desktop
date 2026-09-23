@@ -13,29 +13,37 @@ const document = { querySelector(selector) {
   if (selector === '[data-sidebar-collapsed]') return sidebarCollapsed ? {} : null
   return null
 } }
+const sessionValues = new Map()
+const sessionStorage = {
+  getItem: key => sessionValues.has(key) ? sessionValues.get(key) : null,
+  setItem: (key, value) => sessionValues.set(key, String(value)),
+  removeItem: key => sessionValues.delete(key),
+  clear: () => sessionValues.clear()
+}
+const clientWindow = { sessionStorage, __ModuleLoader__: { load({ factory }) {
+  const client = factory((name) => {
+    if (name === 'react') return { createElement() {}, Component: class {} }
+    if (name === '@deepseek-ai/cordis') return { Service }
+    throw new Error(`Unexpected module ${name}`)
+  })
+  apply = client.apply
+  Workbenches = client.Workbenches
+  Market = client.Market
+  submissionAgentPrompt = client.submissionAgentPrompt
+  developmentWorkbenchAgentPrompt = client.developmentWorkbenchAgentPrompt
+  submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
+  copySubmissionPrompt = client.copySubmissionPrompt
+} } }
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
 let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
-  window: { __ModuleLoader__: { load({ factory }) {
-    const client = factory((name) => {
-      if (name === 'react') return { createElement() {}, Component: class {} }
-      if (name === '@deepseek-ai/cordis') return { Service }
-      throw new Error(`Unexpected module ${name}`)
-    })
-    apply = client.apply
-    Workbenches = client.Workbenches
-    Market = client.Market
-    submissionAgentPrompt = client.submissionAgentPrompt
-    developmentWorkbenchAgentPrompt = client.developmentWorkbenchAgentPrompt
-    submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
-    copySubmissionPrompt = client.copySubmissionPrompt
-  } } },
+  window: clientWindow,
   document,
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
 
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false })
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false; sessionStorage.clear() })
 
 function deferred() {
   let resolve
@@ -104,7 +112,7 @@ async function fixture(initial = emptyState()) {
     }
   }
   const request = vi.fn(async (url, options = {}) => {
-    if (url === '/api/desktop-workbenches/catalog') return Response.json({
+    if (url === '/api/desktop-workbenches/catalog' || url === '/api/desktop-workbenches/catalog?force=1') return Response.json({
       stale: false,
       catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [
         { id: 'writer', owner: 'test', repository: 'writer', url: 'https://github.com/test/writer', name: 'Writer', category: 'other', description: { zh: 'Writer' }, screenshots: [], version: '1.0.0', distribution: { name: 'writer' } },
@@ -166,16 +174,63 @@ describe('desktop workbench client navigation', () => {
   })
 
   it('tracks the market as the current sidebar destination and clears it when a workbench opens', async () => {
-    const { service, ctx } = await fixture()
+    const { service, ctx, request } = await fixture()
     service.showMarket()
     expect(service.getSnapshot().marketOpen).toBe(true)
     expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith('desktop-workbenches')
+    expect(request).toHaveBeenCalledWith('/api/desktop-workbenches/catalog?force=1', expect.objectContaining({ cache: 'no-store' }))
+    await service.catalogRefresh
 
     await service.add('writer')
     await service.open('writer')
     expect(service.getSnapshot().marketOpen).toBe(false)
     expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
     service.dispose()
+  })
+
+  it('refreshes the catalog without changing navigation or persisted workbench state', async () => {
+    const { service, request } = await fixture(boundState())
+    service.setMarketOpen(true)
+    const before = structuredClone(service.state)
+    request.mockImplementationOnce(async (url) => {
+      expect(url).toBe('/api/desktop-workbenches/catalog?force=1')
+      return Response.json({ stale: false, catalog: {
+        schemaVersion: 2, kind: 'catalog', categories: [{ id: 'productivity', name: { zh: '效率' } }],
+        workbenches: [{ id: 'owner/new', owner: 'owner', repository: 'new', url: 'https://github.com/owner/new', name: 'New', category: 'productivity', description: { zh: 'New' }, screenshots: [] }]
+      } })
+    })
+
+    await service.refreshCatalog()
+
+    expect(service.state).toEqual(before)
+    expect(service.getSnapshot()).toMatchObject({ marketOpen: true, catalogRefreshing: false, catalogError: '' })
+    expect(service.getSnapshot().catalog.some(entry => entry.catalogId === 'owner/new')).toBe(true)
+  })
+
+  it('restores the market after a renderer reload and clears the marker after leaving it', async () => {
+    const first = await fixture(boundState())
+    first.service.showMarket()
+    await first.service.catalogRefresh
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBe('true')
+
+    const reloaded = new Workbenches(first.ctx, first.request)
+    // The sidebar icon may briefly mount inactive before the async service load
+    // restores the selected panel after Cmd-R.
+    reloaded.setMarketOpen(false)
+    first.ctx.fiber.name = 'writer'
+    reloaded.register({ title: 'Writer' }, () => null)
+    first.ctx.fiber.name = 'research'
+    reloaded.register({ title: 'Research' }, () => null)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(true)
+    expect(first.ctx.layout.selectPanel).toHaveBeenLastCalledWith('desktop-workbenches')
+
+    await reloaded.open('writer')
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    const afterLeaving = new Workbenches(first.ctx, first.request)
+    expect(afterLeaving.getSnapshot().marketOpen).toBe(false)
+    reloaded.dispose()
+    afterLeaving.dispose()
   })
 
   it('merges Awesome metadata with loaded providers without treating remote entries as installed', async () => {
@@ -1240,6 +1295,14 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("role: 'switch', 'aria-checked': dockVisible")
     expect(fullSource).toContain("h('span', null, '显示工作台快捷栏')")
     expect(fullSource).toContain('workbenchDockPreference.set(!dockVisible)')
+  })
+
+  it('offers an independent catalog refresh without resetting local market controls', () => {
+    const source = Market.toString()
+    expect(source).toContain("const [search, setSearch] = React.useState('')")
+    expect(source).toContain("const [category, setCategory] = React.useState('全部')")
+    expect(source).toContain('service.run(service.refreshCatalog())')
+    expect(source).toContain("catalogRefreshing ? '正在刷新…' : '刷新目录'")
   })
 
   it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {

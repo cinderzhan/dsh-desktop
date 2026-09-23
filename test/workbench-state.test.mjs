@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createStateStore, emptyState, MAX_STATE_BYTES } from '../packages/dsh-desktop-workbenches/state.mjs'
-import { apply, authorizedStateMigrations } from '../packages/dsh-desktop-workbenches/index.js'
+import { apply, authorizedStateMigrations, catalogReadOptions } from '../packages/dsh-desktop-workbenches/index.js'
 
 const roots = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -18,6 +18,14 @@ const populated = () => ({ ...emptyState(), added: [WRITER, RESEARCH], pinned: [
   favorites: [WRITER], sessionBindings: { 'session-1': WRITER }, recentSessions: { [WRITER]: 'session-1' }, notes: { [WRITER]: 'An unsaved business draft' } })
 
 describe('desktop workbench state', () => {
+  it('accepts only the explicit force=1 catalog refresh query', () => {
+    expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog'))).toEqual({ force: false })
+    expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog?force=1'))).toEqual({ force: true })
+    for (const query of ['force=true', 'force=0', 'force=1&force=1', 'refresh=1']) {
+      expect(() => catalogReadOptions(new Request(`http://localhost/api/desktop-workbenches/catalog?${query}`))).toThrow()
+    }
+  })
+
   it('provides detached ownership snapshots from the same persisted state, failing closed on corruption', async () => {
     const { root, store } = await fixture()
     let ownership
@@ -173,6 +181,7 @@ describe('desktop workbench state', () => {
     expect(writeRoute.requestBody).toBe('buffered')
     expect(migrateRoute.methods).toEqual(['POST'])
     expect(migrateRoute.requestBody).toBe('buffered')
+    expect((await catalogRoute.fetch(new Request('http://localhost' + catalogRoute.path + '?force=true'))).status).toBe(400)
     expect(await (await readRoute.fetch(new Request('http://localhost' + readRoute.path))).json()).toEqual({ revision: 0, state: emptyState() })
     const post = (body) => writeRoute.fetch(new Request('http://localhost' + writeRoute.path, { method: 'POST', body }))
     expect((await post('{invalid')).status).toBe(400)
