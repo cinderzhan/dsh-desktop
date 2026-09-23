@@ -145,15 +145,15 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
-  it('collapses an expanded sidebar once when a workbench enters the foreground', async () => {
+  it('keeps the sidebar state unchanged when a workbench enters the foreground', async () => {
     const { service, ctx } = await fixture()
     sidebarWide = true
     registerProvider(service, ctx, 'writer', { title: 'Writer' })
     await service.add('writer')
     await service.open('writer')
-    expect(ctx.layout.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(ctx.layout.toggleSidebar).not.toHaveBeenCalled()
     await service.open('writer')
-    expect(ctx.layout.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(ctx.layout.toggleSidebar).not.toHaveBeenCalled()
   })
 
   it('migrates legacy market identities to repository identities and preserves owned data', async () => {
@@ -275,7 +275,7 @@ describe('desktop workbench client navigation', () => {
     ctx.fiber.name = 'local-package'
     service.register({ title: 'Local workbench', repository: 'https://github.com/Owner/Local-Workbench.git' }, () => null)
     expect(service.getSnapshot().catalog).toContainEqual(expect.objectContaining({
-      id: 'owner/local-workbench', catalogId: 'owner/local-workbench', sourcePackage: 'local-package', installed: true
+      id: 'owner/local-workbench', catalogId: 'owner/local-workbench', sourcePackage: 'local-package', installed: true, listed: false, local: true
     }))
     service.dispose()
   })
@@ -343,7 +343,7 @@ describe('desktop workbench client navigation', () => {
       },
       slots: { inject: (_name, callback) => callback(), register: vi.fn() },
       sessions: { list: { subscribe: vi.fn() } },
-      uiWorkspace: { registerSessionOpener: vi.fn(), registerSessionReuseFilter: vi.fn() }
+      uiWorkspace: { registerSessionOpener: vi.fn(), registerSessionReuseFilter: vi.fn(), registerSessionFilter: vi.fn() }
     }
     apply(ctx)
     expect(service).toBeInstanceOf(Workbenches)
@@ -938,6 +938,31 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.pinned).toEqual(['writer'])
   })
 
+  it('moves a pinned workbench to the end and scopes sessions to the active mode', async () => {
+    const { service, saved } = await fixture({ ...boundState(), pinned: ['writer', 'research'] })
+    await service.reorder('writer', null)
+    expect(saved().state.pinned).toEqual(['research', 'writer'])
+    expect(service.sessionVisible('old')).toBe(true)
+    expect(service.sessionVisible('writer-1')).toBe(false)
+    await service.open('writer')
+    expect(service.sessionVisible('old')).toBe(false)
+    expect(service.sessionVisible('writer-1')).toBe(true)
+    expect(service.sessionVisible('research-1')).toBe(false)
+  })
+
+  it('uses the Workbench setting as the master switch for navigation and session filtering', async () => {
+    const { service, ctx } = await fixture(boundState())
+    await service.open('writer')
+    service.setEnabled(false)
+    await service.queue
+    expect(service.state.active).toBeNull()
+    expect(service.sessionVisible('old')).toBe(true)
+    expect(service.sessionVisible('writer-1')).toBe(true)
+    expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
+    await expect(service.open('writer')).rejects.toThrow('工作台功能已关闭')
+    service.setEnabled(true)
+  })
+
   it('persists favorites independently from installation and lets an unavailable favorite be removed', async () => {
     const { service, saved } = await fixture()
     await service.toggleFavorite('writer')
@@ -1297,8 +1322,8 @@ describe('workbench business layout contract', () => {
 describe('workbench market screenshot and metadata display', () => {
   const fullSource = code
   it('explains the workbench concept and the sidebar shortcut model', () => {
-    expect(fullSource).toContain('切换工作台，进入不同工作方式')
-    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。可通过左侧快捷栏在原生会话与不同工作台之间切换。')
+    expect(fullSource).toContain("tab === 'submit' ? '制作属于你的工作台' : '工作台'")
+    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。可通过顶部快捷栏在原生会话与不同工作台之间切换。')
   })
 
   it('does not embed provider-specific market screenshots in Desktop', async () => {
@@ -1318,11 +1343,22 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
-  it('renders native and pinned workbench icons in a compact row above New Session', () => {
+  it('renders one current mode dropdown with persistent Workbench management', () => {
     expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
-    expect(fullSource).toContain("'aria-label': '原生会话'")
-    expect(fullSource).toContain('onClick: () => startSession()')
+    expect(fullSource).toContain("'aria-haspopup': 'menu', 'aria-expanded': open")
+    expect(fullSource).toContain("role: 'menu', 'aria-label': '选择会话模式'")
+    expect(fullSource).toContain("role: 'menuitemradio'")
+    expect(fullSource).toContain('service.openNative(startSession)')
+    expect(fullSource).toContain("name: 'home'")
+    expect(fullSource).not.toContain('draggable: !disabled')
+    expect(fullSource).toContain('dshWbSidebarTooltip')
+    expect(fullSource).toContain("active?.title || '原生会话'")
+    expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
+    expect(fullSource).toContain('onClick: () => service.showMarket()')
+    expect(fullSource).toContain('.dshWbModeSelect{display:flex;align-items:center;gap:8px;min-width:0;flex:1;')
+    expect(fullSource).toContain('.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:42px;')
+    expect(fullSource).toContain('background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)')
     expect(fullSource).toContain("ctx.slots.inject('sidebar.quickSwitcher'")
     expect(fullSource).not.toContain('function WorkbenchDock(')
     expect(fullSource).not.toContain('dshWbDockWrap')
@@ -1335,19 +1371,24 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain("dshWbInstalled', disabled: true }, '已安装'")
   })
 
-  it('registers Workbench beside the host global panel entries', () => {
-    expect(fullSource).toContain("ctx.slots.inject('sidebar.panellist'")
-    expect(fullSource).toContain("id: PANEL, order: 100, label: '工作台'")
-    expect(fullSource).toContain('function WorkbenchPanelIcon({ service, size = 16, active = false })')
-    expect(fullSource).toContain('React.useEffect(() => service.setMarketOpen(active), [service, active])')
-    expect(fullSource).not.toContain("title: '工作台市场', 'aria-label': '工作台市场'")
+  it('uses the top switcher as the only Workbench navigation entry', () => {
+    expect(fullSource).not.toContain("ctx.slots.inject('sidebar.panellist'")
+    expect(fullSource).not.toContain('function WorkbenchPanelIcon(')
+    expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
   })
 
-  it('lets the Workbench page persistently show or hide the sidebar shortcut row', () => {
-    expect(fullSource).toContain("const WORKBENCH_DOCK_PREF = 'dsh-workbench-dock-visible'")
-    expect(fullSource).toContain("role: 'switch', 'aria-checked': dockVisible")
-    expect(fullSource).toContain("h('span', null, '显示工作台快捷栏')")
-    expect(fullSource).toContain('workbenchDockPreference.set(!dockVisible)')
+  it('does not fail the whole Workbench plugin when an older host lacks session filtering', () => {
+    expect(fullSource).toContain("typeof ctx.uiWorkspace.registerSessionFilter === 'function'")
+    expect(fullSource).toContain("typeof ctx.uiWorkspace.registerSessionStarter === 'function'")
+  })
+
+  it('keeps the shortcut row on whenever the Workbench feature is enabled', () => {
+    expect(fullSource).not.toContain('WORKBENCH_DOCK_PREF')
+    expect(fullSource).not.toContain('workbenchDockPreference')
+    expect(fullSource).not.toContain('显示工作台快捷栏')
+    expect(fullSource).toContain('if (!enabled || !wide) return null')
+    expect(fullSource).toContain('onChange: (event) => service.setEnabled(event.target.checked)')
+    expect(fullSource).toContain('if (!workbenchEnabled) return conversation')
   })
 
   it('offers an independent catalog refresh without resetting local market controls', () => {
@@ -1355,7 +1396,9 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).toContain("const [search, setSearch] = React.useState('')")
     expect(source).toContain("const [category, setCategory] = React.useState('全部')")
     expect(source).toContain('service.run(service.refreshCatalog())')
-    expect(source).toContain("catalogRefreshing ? '正在刷新…' : '刷新目录'")
+    expect(source).toContain("'aria-label': catalogRefreshing ? '正在刷新目录' : '刷新目录'")
+    expect(source).toContain("h(MarketIcon, { name: 'refresh', size: 17 })")
+    expect(fullSource).toContain('.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}')
   })
 
   it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {
@@ -1527,6 +1570,23 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.marketInstallFor('o/helper')).toBe('o/helper')
   })
 
+  it('keeps a failed workbench in the market with recovery actions', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    ctx.modules = { entries: { state: { getSnapshot: () => ({
+      failures: [{ id: 'helper', message: 'Error: incompatible client API' }]
+    }) } } }
+    service.publish()
+
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({
+      installed: false,
+      loadFailure: 'Error: incompatible client API'
+    })
+    expect(Market.toString()).toContain("'加载失败'")
+    expect(Market.toString()).toContain('entry.loadFailure')
+  })
+
   it('rejects malformed install records and entries not in the market', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
@@ -1583,12 +1643,14 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('已有会话、项目文件和工作台笔记都会保留')
   })
 
-  it('implements roving keyboard navigation for the three collection tabs', () => {
+  it('implements roving keyboard navigation for all four collection tabs', () => {
     const source = Market.toString()
     expect(source).toContain("event.key === 'ArrowRight'")
     expect(source).toContain("event.key === 'ArrowLeft'")
     expect(source).toContain("event.key === 'Home'")
     expect(source).toContain("event.key === 'End'")
     expect(source).toContain("tabIndex: tab === 'favorites' ? 0 : -1")
+    expect(source).toContain("tabIndex: tab === 'local' ? 0 : -1")
+    expect(source).toContain('本地工作台')
   })
 })

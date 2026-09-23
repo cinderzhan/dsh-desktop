@@ -46,6 +46,15 @@ function fixture() {
   service.sessionOpener = null
   service.sessionReuseFilter = null
   service.view = { markSessionRead: vi.fn() }
+  service.sessionFilter = null
+  service.sessionFilterUnsubscribe = null
+  let visibilityRevision = 0
+  const visibilityListeners = new Set()
+  service.sessionVisibility = {
+    getSnapshot: () => visibilityRevision,
+    set: value => { visibilityRevision = value; for (const listener of visibilityListeners) listener() },
+    subscribe: listener => { visibilityListeners.add(listener); return () => visibilityListeners.delete(listener) }
+  }
   service.connecting = new Map()
   service.lifetime = new AbortController()
   let selection = {}
@@ -145,6 +154,31 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
 }
 
 describe('native Workspace navigation with workbench routing', () => {
+  it('removes workspace folders that have no sessions in the active scope', () => {
+    expect(source).toContain('sessionIds: workspace.sessionIds.filter(isSessionVisible) })).filter((workspace) => workspace.sessionIds.length > 0)')
+    expect(source).toContain('if (g.sessions.length === 0) continue;')
+  })
+
+  it('registers one reactive sidebar session filter and restores all sessions on release', () => {
+    const { service } = fixture()
+    const listeners = new Set()
+    let active = 'writer'
+    const release = service.registerSessionFilter((sessionId) => sessionId.startsWith(active), (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    })
+    expect(service.isSessionVisible('writer-1')).toBe(true)
+    expect(service.isSessionVisible('research-1')).toBe(false)
+    expect(() => service.registerSessionFilter(() => true, () => () => {})).toThrow('already registered')
+    active = 'research'
+    for (const listener of listeners) listener()
+    expect(service.sessionVisibility.getSnapshot()).toBe(2)
+    expect(service.isSessionVisible('research-1')).toBe(true)
+    release()
+    expect(service.isSessionVisible('writer-1')).toBe(true)
+    expect(listeners.size).toBe(0)
+  })
+
   it('opens the initially connected workspace when no later navigation intervenes', async () => {
     const { service, listeners } = fixture()
     const cleanup = service.watchNavigation()
@@ -202,7 +236,49 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' })
   })
 
-  it.each(['writer', 'research-notebook', 'media-workbench'])('leaves %s when native New Session creates an ordinary session', async (workbenchId) => {
+  it('keeps native mode when switching to a workspace whose blank session belongs to a workbench', async () => {
+    const { service: uiWorkspace, sessionState, workspaceState } = fixture()
+    const bound = 'workbench-blank'
+    sessionState.ids.push(bound)
+    sessionState.byId[bound] = { id: bound, sessionId: bound, blank: true, cwd: '/project' }
+    workspaceState.items[0].sessionIds.push(bound)
+    const { controller, dispose } = attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState)
+    controller.state.active = null
+    controller.state.sessionBindings[bound] = 'media-workbench'
+
+    await uiWorkspace.openWorkspace('project')
+    await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
+
+    expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
+    expect(mainViewOf(sessionState)).toBe('new-session')
+    expect(controller.state.active).toBeNull()
+    expect(controller.state.sessionBindings['new-session']).toBeUndefined()
+    expect(uiWorkspace.sessions.retain).not.toHaveBeenCalledWith(bound, { source: 'mainView' })
+    dispose()
+  })
+
+  it('reuses an ordinary blank and ignores a workbench blank when native mode switches workspaces', async () => {
+    const { service: uiWorkspace, sessionState, workspaceState } = fixture()
+    const bound = 'workbench-blank'
+    const ordinary = 'ordinary-blank'
+    sessionState.ids.push(bound, ordinary)
+    sessionState.byId[bound] = { id: bound, sessionId: bound, blank: true, cwd: '/project' }
+    sessionState.byId[ordinary] = { id: ordinary, sessionId: ordinary, blank: true, cwd: '/project' }
+    workspaceState.items[0].sessionIds.push(bound, ordinary)
+    const { controller, dispose } = attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState)
+    controller.state.active = null
+    controller.state.sessionBindings[bound] = 'media-workbench'
+
+    await uiWorkspace.openWorkspace('project')
+
+    expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
+    expect(mainViewOf(sessionState)).toBe(ordinary)
+    expect(controller.state.active).toBeNull()
+    expect(uiWorkspace.sessions.retain).not.toHaveBeenCalledWith(bound, { source: 'mainView' })
+    dispose()
+  })
+
+  it.each(['writer', 'research-notebook', 'media-workbench'])('binds New Session to the active %s workbench', async (workbenchId) => {
     const { service: uiWorkspace, sessionState, workspaceState } = fixture()
     workspaceState.items.push({ workspaceId: 'target-project', path: '/target', createdAt: '2026-01-02T00:00:00Z', sessionIds: [] })
     sessionState.ids.push('old-recent')
@@ -223,16 +299,19 @@ describe('native Workspace navigation with workbench routing', () => {
       notes: {}
     }
     controller.ready = true
+    uiWorkspace.registerSessionStarter((workspaceId) => {
+      controller.run(controller.newSession(workspaceId))
+      return true
+    })
     uiWorkspace.startSession('target-project')
     await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
-    controller.selectionChanged()
     await controller.queue
 
     expect(uiWorkspace.sessions.create).toHaveBeenCalledTimes(1)
     expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'target-project' })
-    expect(controller.state.sessionBindings['new-session']).toBeUndefined()
-    expect(controller.state.recentSessions[workbenchId]).toBe('old-recent')
-    expect(controller.state.active).toBeNull()
+    expect(controller.state.sessionBindings['new-session']).toBe(workbenchId)
+    expect(controller.state.recentSessions[workbenchId]).toBe('new-session')
+    expect(controller.state.active).toBe(workbenchId)
     expect(uiWorkspace.sessions.retain).not.toHaveBeenCalledWith('old-recent', { source: 'mainView' })
   })
 
@@ -319,7 +398,7 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(controller.state.sessionBindings[removedSession]).toBe('research-notebook')
     expect(controller.state.recentSessions).toEqual({})
     expect(request).toHaveBeenCalledOnce()
-    expect(workbenchSource).not.toContain('registerSessionStarter(')
+    expect(workbenchSource).toContain('registerSessionStarter(')
   })
 
   it('creates a new media-workbench session without adopting an ordinary blank on workspace switch', async () => {
