@@ -711,6 +711,12 @@ describe('desktop workbench client navigation', () => {
       }
       root = createRoot(dom.window.document.getElementById('root'))
       await React.act(async () => root.render(React.createElement(Frame, { service, conversation: React.createElement(Native) })))
+      const workbenchDock = dom.window.document.querySelector('[data-dsh-workbench-dock]')
+      expect(workbenchDock).not.toBeNull()
+      expect(workbenchDock.querySelector('.dshWbDockCurrentLabel')?.textContent).toBe('Writer')
+      await React.act(async () => workbenchDock.querySelector('.dshWbDockTrigger').click())
+      expect(dom.window.document.querySelector('#dsh-workbench-dock-menu')).not.toBeNull()
+      expect(dom.window.document.querySelector('.dshWbDockAll')?.textContent).toBe('全部工作台')
       const input = dom.window.document.querySelector('[contenteditable]')
       expect(input).not.toBeNull()
       await React.act(async () => { ctx.uiWorkspace.openSession('old'); await service.queue })
@@ -1187,9 +1193,9 @@ describe('workbench business layout contract', () => {
 
 describe('workbench market screenshot and metadata display', () => {
   const fullSource = code
-  it('explains the workbench concept and the persistent sidebar switching model', () => {
+  it('explains the workbench concept and the top Dock switching model', () => {
     expect(fullSource).toContain('切换工作台，进入不同工作方式')
-    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。选择适合当前任务的工作台，并随时从左侧切换。')
+    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。进入工作台后，可通过顶部 Dock 快速切换。')
   })
 
   it('does not embed provider-specific market screenshots in Desktop', async () => {
@@ -1209,11 +1215,12 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
-  it('shows a single display-mode toggle for the pinned workbench list', () => {
-    expect(fullSource).toContain("const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'")
-    expect(fullSource).toContain('onClick: () => changeMode(next) }, h(ModeIcon, { mode: next })')
-    expect(fullSource).not.toContain("...['list', 'icons'].map((value) => h('button'")
-    expect(fullSource).not.toContain('dshWbNavMarket')
+  it('moves pinned workbench switching out of the sidebar and into the Workbench Dock', () => {
+    expect(fullSource).toContain('function WorkbenchDock({ service, entry })')
+    expect(fullSource).toContain("'data-dsh-workbench-dock': ''")
+    expect(fullSource).toContain("'全部工作台'" )
+    expect(fullSource).not.toContain("ctx.slots.inject('sidebar.footer.action'")
+    expect(fullSource).not.toContain('dshWbNavItems')
   })
 
   it('registers Workbench beside the host global panel entries', () => {
@@ -1221,8 +1228,14 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("id: PANEL, order: 100, label: '工作台'")
     expect(fullSource).toContain('function WorkbenchPanelIcon({ service, size = 16, active = false })')
     expect(fullSource).toContain('React.useEffect(() => service.setMarketOpen(active), [service, active])')
-    expect(fullSource).toContain('.dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;')
     expect(fullSource).not.toContain("title: '工作台市场', 'aria-label': '工作台市场'")
+  })
+
+  it('lets the Workbench page persistently show or hide the Dock', () => {
+    expect(fullSource).toContain("const WORKBENCH_DOCK_PREF = 'dsh-workbench-dock-visible'")
+    expect(fullSource).toContain("role: 'switch', 'aria-checked': dockVisible")
+    expect(fullSource).toContain("h('span', null, '显示工作台 Dock')")
+    expect(fullSource).toContain('workbenchDockPreference.set(!dockVisible)')
   })
 
   it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {
