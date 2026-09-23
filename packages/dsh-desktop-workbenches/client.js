@@ -82,6 +82,8 @@ window.__ModuleLoader__.load({
         this.noteTimers = new Map()
         this.queue = Promise.resolve()
         this.sessionRequests = new Map()
+        this.pendingSessionOwners = new Set()
+        this.selectionDeferred = false
         this.navigation = 0
         this.suppressSelection = false
         this.internalSessionOpen = null
@@ -541,35 +543,69 @@ window.__ModuleLoader__.load({
         const current = this.currentSession()
         return this.workspaceFor(current) || this.ctx.workspaces.list.getSnapshot().items[0]
       }
-      routeWorkspaceSession(sessionId) {
+      routeWorkspaceSession(sessionId, context) {
         const active = this.state.active
-        const workspace = this.workspaceFor(sessionId)
+        const workspace = context?.workspaceId
+          ? this.ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === context.workspaceId)
+          : this.workspaceFor(sessionId)
         if (!this.ready || this.blocked || this.disposed || !active || !workspace || !this.state.added.includes(active) || !this.catalog.has(active)) return false
-        this.run(this.openOrdinaryWorkspaceSession(workspace.workspaceId, active))
+        // A native workspace switch names whichever blank session the host
+        // would normally open. While a workbench is active we intentionally do
+        // not adopt that ordinary or differently-owned session: create a fresh
+        // session in the chosen workspace and bind it before showing it.
+        this.run(this.openWorkbenchWorkspaceSession(workspace.workspaceId, active, context?.created ? sessionId : null))
         return true
       }
-      async openOrdinaryWorkspaceSession(workspaceId, active) {
+      async openWorkbenchWorkspaceSession(workspaceId, active, createdSessionId) {
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
         const workspaces = this.ctx.workspaces.list.getSnapshot()
         const workspace = workspaces.items.find((item) => item.workspaceId === workspaceId)
         if (!workspace) throw new Error('工作区当前不可用。')
-        const sessions = this.ctx.sessions.list.getSnapshot()
-        const archived = new Set(workspaces.archivedSessionIds || [])
-        let sessionId = sessions.ids.find((id) => {
-          const summary = sessions.byId[id]
-          return summary && summary.blank && workspace.sessionIds.includes(id) && !archived.has(id) && !this.state.sessionBindings[id]
-        })
-        if (!sessionId) sessionId = await this.ctx.sessions.create({ workspaceId })
-        if (this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== active) return sessionId
-        await this.commit((state) => { state.active = null })
-        if (this.disposed || signal.aborted || ticket !== this.navigation) return sessionId
+        const result = createdSessionId
+          ? { sessionId: createdSessionId, bound: await this.bindOwnedSession(active, createdSessionId, ticket, signal) }
+          : await this.createOwnedSession(active, workspaceId, ticket, signal)
+        const { sessionId, bound } = result
+        if (!bound || this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== active) return sessionId
         this.suppressSelection = true
-        try {
-          this.showSession(sessionId)
-          this.ctx.layout.selectPanel(null)
-        } finally { this.suppressSelection = false }
+        try { this.showSession(sessionId); this.ctx.layout.selectPanel(null) }
+        finally { this.suppressSelection = false }
         return sessionId
+      }
+      ownedSessionCurrent(owner, ticket, signal) {
+        return !this.disposed && !signal.aborted && ticket === this.navigation && this.state.active === owner
+          && this.state.added.includes(owner) && this.catalog.has(owner)
+      }
+      async bindOwnedSession(owner, sessionId, ticket, signal) {
+        if (!this.ownedSessionCurrent(owner, ticket, signal)) return false
+        let bound = false
+        await this.commit((state) => {
+          if (state.active !== owner || !state.added.includes(owner) || !this.catalog.has(owner)) return
+          if (state.sessionBindings[sessionId] && state.sessionBindings[sessionId] !== owner) throw new Error('不能改变已有会话的工作台归属。')
+          state.sessionBindings[sessionId] = owner
+          state.recentSessions[owner] = sessionId
+          bound = true
+        })
+        return bound
+      }
+      async createOwnedSession(owner, workspaceId, ticket, signal) {
+        const pending = { owner, workspaceId, sessionId: null }
+        this.pendingSessionOwners.add(pending)
+        let sessionId
+        let bound = false
+        try {
+          sessionId = await this.ctx.sessions.create({ workspaceId })
+          pending.sessionId = sessionId
+          bound = await this.bindOwnedSession(owner, sessionId, ticket, signal)
+          return { sessionId, bound }
+        } finally {
+          this.pendingSessionOwners.delete(pending)
+          if (this.pendingSessionOwners.size === 0) {
+            const deferred = this.selectionDeferred
+            this.selectionDeferred = false
+            if (deferred || pending.sessionId === this.currentSession()) this.selectionChanged()
+          }
+        }
       }
       // Providers keep their own project/profile flows; Desktop owns session identity.
       ensureSession({ folder, sessionId: savedSessionId } = {}) {
@@ -584,6 +620,7 @@ window.__ModuleLoader__.load({
           await this.ctx.sessions.refresh()
           if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) throw new Error('工作台已移除或不可用。')
           let sessionId = savedSessionId && this.ctx.sessions.list.getSnapshot().byId[savedSessionId] ? savedSessionId : null
+          let created = false
           if (sessionId) {
             const owner = this.state.sessionBindings[sessionId]
             if (owner && owner !== id) throw new Error('此会话已属于另一个工作台，不能重新绑定。')
@@ -591,10 +628,13 @@ window.__ModuleLoader__.load({
             if (typeof folder !== 'string' || !folder.trim()) throw new Error('创建会话需要业务项目文件夹。')
             const workspace = await this.ctx.workspaces.create({ path: folder })
             if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) throw new Error('工作台已移除或不可用。')
-            sessionId = await this.ctx.sessions.create({ workspaceId: workspace.workspaceId })
+            const result = await this.createOwnedSession(id, workspace.workspaceId, ticket, signal)
+            sessionId = result.sessionId
+            if (!result.bound) return sessionId
+            created = true
           }
           if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) throw new Error('工作台已移除或不可用。')
-          await this.commit((state) => {
+          if (!created) await this.commit((state) => {
             if (state.sessionBindings[sessionId] && state.sessionBindings[sessionId] !== id) throw new Error('不能改变已有会话的工作台归属。')
             state.sessionBindings[sessionId] = id
             state.recentSessions[id] = sessionId
@@ -632,14 +672,8 @@ window.__ModuleLoader__.load({
         if (!workspace) return this.newWorkspaceSession()
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
-        const sessionId = await this.ctx.sessions.create({ workspaceId: workspace })
-        if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) return sessionId
-        await this.commit((state) => {
-          if (state.sessionBindings[sessionId] && state.sessionBindings[sessionId] !== id) throw new Error('不能改变已有会话的工作台归属。')
-          state.sessionBindings[sessionId] = id
-          state.recentSessions[id] = sessionId
-        })
-        if (this.disposed || signal.aborted || ticket !== this.navigation) return sessionId
+        const { sessionId, bound } = await this.createOwnedSession(id, workspace, ticket, signal)
+        if (!bound || this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== id) return sessionId
         this.suppressSelection = true
         try { this.showSession(sessionId); this.ctx.layout.selectPanel(null) }
         finally { this.suppressSelection = false }
@@ -647,6 +681,7 @@ window.__ModuleLoader__.load({
       }
       selectionChanged() {
         if (!this.ready || this.suppressSelection || this.disposed) return
+        if (this.pendingSessionOwners.size > 0) { this.selectionDeferred = true; return }
         const current = this.currentSession()
         if (current === this.lastSession) return
         this.lastSession = current
@@ -1428,9 +1463,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       ctx.slots.inject('desktop.workbench.frame', () => ctx.slots.register({ name: 'desktop.workbench.frame', inject: () => ({ service }) }, Frame))
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
       ctx.effect(() => ctx.uiWorkspace.registerSessionReuseFilter((sessionId) => !service.state.sessionBindings[sessionId]), 'workbenches: blank session reuse')
-      ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId, source = 'explicit-session') => {
+      ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId, source = 'explicit-session', context) => {
         if (service.internalSessionOpen === sessionId) return false
-        if (source === 'workspace' && service.routeWorkspaceSession(sessionId)) return true
+        if (source === 'workspace' && service.routeWorkspaceSession(sessionId, context)) return true
         const id = service.state.sessionBindings[sessionId]
         if (!service.ready || !id || !service.state.added.includes(id) || !service.catalog.has(id)) return false
         service.run(service.open(id, sessionId))

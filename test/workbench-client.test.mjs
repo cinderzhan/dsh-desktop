@@ -677,7 +677,7 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.sessionBindings[id]).toBe('writer')
   })
 
-  it('deduplicates provider creation and retains original ownership without stealing focus after a switch', async () => {
+  it('deduplicates provider creation and leaves a cancelled session unbound after a switch', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
     ctx.fiber.name = 'writer'
@@ -690,7 +690,7 @@ describe('desktop workbench client navigation', () => {
     refresh.resolve()
     const id = await first
     expect(ctx.sessions.create).toHaveBeenCalledTimes(1)
-    expect(service.state.sessionBindings[id]).toBe('writer')
+    expect(service.state.sessionBindings[id]).toBeUndefined()
     expect(service.state.active).toBe('research')
     expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('research-1')
   })
@@ -1044,7 +1044,7 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.recentSessions.writer).toBe(second)
   })
 
-  it('does not let slow session creation steal focus after switching workbenches', async () => {
+  it('does not bind or focus a slow session after switching workbenches', async () => {
     const { service, ctx, saved, list } = await fixture(boundState())
     await service.open('writer')
     const creation = deferred()
@@ -1057,9 +1057,62 @@ describe('desktop workbench client navigation', () => {
     await pendingCreation
     expect(currentOf(list)).toBe('research-1')
     expect(saved().state.active).toBe('research')
-    expect(saved().state.sessionBindings['slow-created']).toBe('writer')
+    expect(saved().state.sessionBindings['slow-created']).toBeUndefined()
     expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('slow-created')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
+  })
+
+  it('suppresses selection events until a created session has its owner binding', async () => {
+    const { service, ctx, list, saved } = await fixture(boundState())
+    await service.open('writer')
+    ctx.sessions.create.mockImplementationOnce(async ({ workspaceId }) => {
+      const id = 'created-during-selection'
+      list.ids.push(id)
+      list.byId[id] = { sessionId: id, displayTitle: id }
+      const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+      workspace.sessionIds.push(id)
+      selectIn(list, id)
+      service.selectionChanged()
+      return id
+    })
+
+    await service.newSession('project-1')
+    await service.queue
+
+    expect(saved().state.active).toBe('writer')
+    expect(saved().state.sessionBindings['created-during-selection']).toBe('writer')
+    expect(saved().state.recentSessions.writer).toBe('created-during-selection')
+    expect(service.pendingSessionOwners.size).toBe(0)
+    expect(service.selectionDeferred).toBe(false)
+  })
+
+  it('leaves a created session unbound when its owner is removed before creation resolves', async () => {
+    const { service, ctx, list, saved } = await fixture(boundState())
+    await service.open('writer')
+    const creation = deferred()
+    ctx.sessions.create.mockImplementationOnce(() => creation.promise)
+    const pendingCreation = service.newSession('project-1')
+
+    await service.remove('writer')
+    list.ids.push('created-after-remove')
+    list.byId['created-after-remove'] = { sessionId: 'created-after-remove', displayTitle: 'Created after remove' }
+    creation.resolve('created-after-remove')
+    await pendingCreation
+
+    expect(saved().state.active).toBeNull()
+    expect(saved().state.added).not.toContain('writer')
+    expect(saved().state.sessionBindings['created-after-remove']).toBeUndefined()
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('created-after-remove')
+  })
+
+  it('restores a created session owner and recent pointer after service reload', async () => {
+    const { service, saved } = await fixture(boundState())
+    await service.open('writer')
+    const sessionId = await service.newSession('project-1')
+    await service.load()
+    expect(service.state.sessionBindings[sessionId]).toBe('writer')
+    expect(service.state.recentSessions.writer).toBe(sessionId)
+    expect(saved().state.sessionBindings[sessionId]).toBe('writer')
   })
 
   it('leaves the active workbench when native navigation opens or clears an ordinary session', async () => {
