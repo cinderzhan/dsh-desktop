@@ -118,11 +118,14 @@ window.__ModuleLoader__.load({
         if (!match) throw new Error('Workbench repository must be a GitHub URL.')
         return `${match[1]}/${match[2]}`.toLowerCase()
       }
-      identityForSource(source, repository) {
+      identityForSource(source, repository, legacyId) {
         const installed = Object.entries(this.installs).filter(([, install]) => install?.pluginName === source).map(([id]) => id)
         const listed = this.remoteCatalog.filter(entry => entry.distribution?.name === source).map(entry => entry.id)
+        const legacy = typeof legacyId === 'string'
+          ? this.remoteCatalog.filter(entry => entry.workbenchId === legacyId || entry.legacyWorkbenchIds?.includes(legacyId)).map(entry => entry.id)
+          : []
         const declared = this.repositoryIdentity(repository)
-        const identities = [...new Set([...installed, ...listed, ...(declared ? [declared] : [])])]
+        const identities = [...new Set([...installed, ...listed, ...legacy, ...(declared ? [declared] : [])])]
         if (identities.length !== 1) throw new Error(identities.length ? `Client package ${source} matches multiple workbenches.` : `Client package ${source} is not attributed to a market repository.`)
         return identities[0]
       }
@@ -131,7 +134,7 @@ window.__ModuleLoader__.load({
         const catalog = new Map()
         for (const [source, provider] of this.providers) {
           let id
-          try { id = this.identityForSource(source, provider.repository) } catch { continue }
+          try { id = this.identityForSource(source, provider.repository, provider.id) } catch { continue }
           if (catalog.has(id)) throw new Error(`Duplicate workbench provider: ${id}`)
           catalog.set(id, { ...provider, id, sourcePackage: source })
         }
@@ -326,7 +329,10 @@ window.__ModuleLoader__.load({
         return task
       }
       register(descriptor, Component) {
-        if (!descriptor || Object.hasOwn(descriptor, 'id') || !descriptor.title || typeof Component !== 'function') throw new Error('Invalid workbench registration')
+        // Older workbench packages declared a local id. Keep accepting those
+        // packages during the repository-identity migration, but never use the
+        // legacy value: identityForSource resolves the canonical catalog repo.
+        if (!descriptor || !descriptor.title || typeof Component !== 'function') throw new Error('Invalid workbench registration')
         this.repositoryIdentity(descriptor.repository)
         const source = this.sourcePackage()
         if (this.providers.has(source)) throw new Error(`Duplicate workbench provider: ${source}`)
@@ -495,6 +501,8 @@ window.__ModuleLoader__.load({
         })
         if (!sessionId) sessionId = await this.ctx.sessions.create({ workspaceId })
         if (this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== active) return sessionId
+        await this.commit((state) => { state.active = null })
+        if (this.disposed || signal.aborted || ticket !== this.navigation) return sessionId
         this.suppressSelection = true
         try {
           this.showSession(sessionId)
@@ -584,15 +592,16 @@ window.__ModuleLoader__.load({
         ++this.navigation
         const owner = current && this.state.sessionBindings[current]
         // Native workspace/session navigation invalidates pending workbench
-        // navigation. Only a currently available owner may replace the active
-        // business panel; ordinary sessions and sessions left behind by removed
-        // providers stay native without changing the current workbench.
+        // navigation. A bound session activates its available owner; every
+        // ordinary or unavailable-owner session leaves workbench mode.
         const active = owner && this.state.added.includes(owner) && this.catalog.has(owner) ? owner : null
-        if (!active) return
+        if (!active && this.state.active === null) return
         this.run(this.commit((state) => {
           state.active = active
-          state.recentSessions[active] = current
-          if (!state.pinned.includes(active)) state.pinned.push(active)
+          if (active) {
+            state.recentSessions[active] = current
+            if (!state.pinned.includes(active)) state.pinned.push(active)
+          }
         }))
       }
       dispose() {
@@ -1330,8 +1339,14 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       })
       if (!workbenchEnabled) return h('div', { className: 'dshWb dshWbFrame' }, h('div', { className: 'dshWbDisabledHint' }, h('h2', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const entry = state.active && catalog.find((item) => item.id === state.active)
-      const id = entry?.id
-      const customFrame = entry?.customFrame === true
+      // Catalog-only entries can remain pinned after their runtime package is
+      // removed or while an install is waiting for restart. Never pass their
+      // missing Component to React: one unavailable workbench must not blank
+      // the native conversation or every other installed workbench.
+      const loaded = catalog.filter((item) => state.added.includes(item.id) && typeof item.Component === 'function')
+      const runtimeEntry = typeof entry?.Component === 'function' ? entry : null
+      const id = runtimeEntry?.id
+      const customFrame = runtimeEntry?.customFrame === true
       const conversationMount = h(ConversationMount, { container: conversationContainer })
       const currentSession = service.currentSession()
       const hasCurrentSession = !!(entry && currentSession != null && state.sessionBindings[currentSession] === entry.id)
@@ -1339,7 +1354,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),
         require('react-dom').createPortal(conversation, conversationContainer),
-        ...catalog.filter((item) => item.customFrame === true && state.added.includes(item.id)).map((item) => h('div', { key: item.id, hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, null, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? conversationMount : null })))),
+        ...loaded.filter((item) => item.customFrame === true).map((item) => h('div', { key: item.id, hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, null, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? conversationMount : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },
           h('div', { className: 'dshWbConversation' },
             entry && !hasCurrentSession && h('section', { className: 'dshWbInit' }, h('h2', null, `开始使用${entry.title}`), h('p', { className: 'dshWbMuted' }, '可以直接新建工作区并开始对话，也可以使用已有工作区。新会话会自动关联这个工作台。'),
@@ -1350,7 +1365,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             // One fixed position for the native conversation: changing workbench
             // content or moving to a custom dock does not remount its input tree.
             h('div', { style: { display: entry && !hasCurrentSession ? 'none' : 'contents' } }, !customFrame && conversationMount)),
-          ...catalog.filter((item) => !item.customFrame && state.added.includes(item.id)).map((item) => h('aside', { key: item.id, className: 'dshWbBusiness', 'data-side': item.layout?.businessSide, 'data-embedded': item.embedded === true, hidden: id !== item.id, 'aria-label': item.panelTitle }, h(PanelBoundary, null, h(item.Component, { service, entry: item }))))))
+          ...loaded.filter((item) => !item.customFrame).map((item) => h('aside', { key: item.id, className: 'dshWbBusiness', 'data-side': item.layout?.businessSide, 'data-embedded': item.embedded === true, hidden: id !== item.id, 'aria-label': item.panelTitle }, h(PanelBoundary, null, h(item.Component, { service, entry: item }))))))
     }
     function apply(ctx) {
       const service = new Workbenches(ctx)

@@ -296,7 +296,7 @@ describe('desktop workbench client navigation', () => {
     await service.open('writer')
     ctx.uiWorkspace.openSession('old')
     await service.queue
-    expect(service.state.active).toBe('writer')
+    expect(service.state.active).toBeNull()
     expect(saved().state.notes).toEqual(initial.notes)
     expect(saved().state.sessionBindings).toEqual(initial.sessionBindings)
     expect(saved().state.recentSessions).toEqual(initial.recentSessions)
@@ -525,6 +525,49 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.sessions.create).not.toHaveBeenCalled()
   })
 
+  it('keeps the native conversation usable when a pinned catalog entry has no loaded runtime', async () => {
+    let Frame
+    const react = {
+      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      Component: class {},
+      useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
+      useCallback: callback => callback,
+      useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
+    }
+    vm.runInNewContext(code, { document: { createElement: () => ({ style: {} }) }, window: { __ModuleLoader__: { load({ factory }) {
+      Frame = factory((name) => name === 'react-dom' ? { createPortal: (node) => ({ children: [node] }) } : name === '@deepseek-ai/cordis' ? { Service } : react).Frame
+    } } } })
+    const initial = emptyState()
+    initial.added = ['missing/workbench']
+    initial.pinned = ['missing/workbench']
+    initial.active = 'missing/workbench'
+    const { service } = await fixture(initial)
+    service.remoteCatalog = [{
+      id: 'missing/workbench', owner: 'missing', url: 'https://github.com/missing/workbench', name: 'Missing',
+      categoryName: '其他', description: { zh: '' }, screenshots: [], version: '1.0.0', customFrame: true,
+      distribution: { type: 'npm', name: 'missing-workbench' }
+    }]
+    service.publish()
+    const conversation = { native: true }
+    const tree = Frame({ service, conversation })
+    const nodes = []
+    const walk = node => {
+      if (!node || typeof node !== 'object') return
+      nodes.push(node)
+      node.children?.flat(Infinity).forEach(walk)
+    }
+    walk(tree)
+    expect(nodes.some(node => node.props?.key === 'missing/workbench')).toBe(false)
+    expect(nodes.filter(node => node === conversation)).toHaveLength(1)
+  })
+
+  it('loads a legacy provider id under its canonical repository identity', async () => {
+    const { service, ctx } = await fixture()
+    registerProvider(service, ctx, 'legacy', { id: 'old-local-id', title: 'Legacy' })
+    expect([...service.catalog.keys()]).toContain('legacy')
+    expect(service.catalog.get('legacy').id).toBe('legacy')
+  })
+
   it('creates and binds a provider business folder session without a manual picker', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
@@ -651,9 +694,9 @@ describe('desktop workbench client navigation', () => {
       const input = dom.window.document.querySelector('[contenteditable]')
       expect(input).not.toBeNull()
       await React.act(async () => { ctx.uiWorkspace.openSession('old'); await service.queue })
-      expect(service.state.active).toBe('writer')
+      expect(service.state.active).toBeNull()
       expect(service.state.sessionBindings.old).toBeUndefined()
-      expect(dom.window.document.querySelector('.dshWbBusiness').hidden).toBe(false)
+      expect(dom.window.document.querySelector('.dshWbBusiness').hidden).toBe(true)
       expect(dom.window.document.querySelector('.dshWbConversation [contenteditable]')).toBe(input)
       expect(dom.window.document.querySelector('.dshWbInit')).toBeNull()
       await React.act(async () => { await service.open('dock') })
@@ -882,7 +925,7 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
   })
 
-  it('sidebar session selection wakes its workbench, but preserves the current panel for a removed owner', async () => {
+  it('sidebar session selection wakes its workbench, but leaves workbench mode for a removed owner', async () => {
     const { service, ctx, saved } = await fixture(boundState())
     ctx.uiWorkspace.openSession('writer-2')
     await service.queue
@@ -893,7 +936,7 @@ describe('desktop workbench client navigation', () => {
     await service.queue
     ctx.uiWorkspace.openSession('writer-1')
     await service.queue
-    expect(saved().state.active).toBe('research')
+    expect(saved().state.active).toBeNull()
     expect(saved().state.added).toEqual(['research'])
     expect(saved().state.pinned).not.toContain('writer')
     expect(saved().state.sessionBindings['writer-1']).toBe('writer')
@@ -943,7 +986,7 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
   })
 
-  it('keeps the active business panel when native navigation opens or clears an ordinary session', async () => {
+  it('leaves the active workbench when native navigation opens or clears an ordinary session', async () => {
     const { service, ctx, request, saved, list } = await fixture(boundState())
     await service.open('writer')
     const bindings = structuredClone(saved().state.sessionBindings)
@@ -954,19 +997,19 @@ describe('desktop workbench client navigation', () => {
     ctx.uiWorkspace.openSession('old')
     await service.queue
     expect(service.navigation).toBe(navigation + 1)
-    expect(saved().state.active).toBe('writer')
+    expect(saved().state.active).toBeNull()
     expect(saved().state.sessionBindings).toEqual(bindings)
     expect(saved().state.recentSessions).toEqual(recent)
-    expect(request).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledOnce()
 
     selectIn(list, null)
     service.selectionChanged()
     await service.queue
     expect(service.navigation).toBe(navigation + 2)
-    expect(saved().state.active).toBe('writer')
+    expect(saved().state.active).toBeNull()
     expect(saved().state.sessionBindings).toEqual(bindings)
     expect(saved().state.recentSessions).toEqual(recent)
-    expect(request).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledTimes(1)
   })
 
   it('lets ordinary native navigation invalidate a pending workbench session open without adopting it', async () => {
@@ -983,7 +1026,7 @@ describe('desktop workbench client navigation', () => {
     await pendingCreation
 
     expect(currentOf(list)).toBe('old')
-    expect(saved().state.active).toBe('writer')
+    expect(saved().state.active).toBeNull()
     expect(saved().state.sessionBindings.old).toBeUndefined()
     expect(saved().state.sessionBindings['native-superseded']).toBe('writer')
     expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('native-superseded')
