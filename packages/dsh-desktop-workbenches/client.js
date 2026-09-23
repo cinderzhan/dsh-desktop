@@ -365,6 +365,10 @@ window.__ModuleLoader__.load({
         const source = this.sourcePackage()
         return this.state.sessionBindings[sessionId] === this.identityForSource(source, this.providers.get(source)?.repository)
       }
+      collapseSidebar() {
+        const root = globalThis.document?.querySelector?.('[data-dsh-sidebar-root]')
+        if (root?.getAttribute('data-dsh-sidebar-wide') === 'true' && !globalThis.document.querySelector('[data-sidebar-collapsed]')) this.ctx.layout.toggleSidebar?.()
+      }
       add(id) {
         if (!this.catalog.has(id)) return Promise.reject(new Error('工作台当前不可用。'))
         return this.commit((state) => {
@@ -381,6 +385,7 @@ window.__ModuleLoader__.load({
         const defaultWorkspace = this.defaultWorkspace()
         await this.commit((state) => { state.active = id; if (!state.pinned.includes(id)) state.pinned.push(id) })
         if (this.disposed || signal.aborted || ticket !== this.navigation) return
+        this.collapseSidebar()
         const target = sessionId || this.state.recentSessions[id]
         const listed = this.ctx.sessions.list.getSnapshot().byId
         this.suppressSelection = true
@@ -399,6 +404,7 @@ window.__ModuleLoader__.load({
         const signal = this.ctx.layout.beginNavigation()
         await this.commit((state) => { state.active = id; if (!state.pinned.includes(id)) state.pinned.push(id) })
         if (this.disposed || signal.aborted || ticket !== this.navigation) return
+        this.collapseSidebar()
         this.suppressSelection = true
         try {
           this.lastSession = null
@@ -640,6 +646,7 @@ window.__ModuleLoader__.load({
       .dshWb .dshWbNavOpen:hover:not(:disabled),.dshWb .dshWbMove:hover:not(:disabled),.dshWb .dshWbMode:hover:not(:disabled),.dshWb .dshWbNavOpen:active:not(:disabled),.dshWb .dshWbMove:active:not(:disabled),.dshWb .dshWbMode:active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
       .dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary)}
       .dshWbNavRow[data-active=true] .dshWbNavIcon{color:var(--dsw-alias-label-primary)}
+      .dshWbSessionIcon{width:16px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-tertiary)}
       .dshWbNavLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .dshWb .dshWbMove{display:grid;place-items:center;width:22px;height:22px;border:0;background:transparent;padding:0;border-radius:4px;color:var(--dsw-alias-label-secondary)}
       .dshWbNav[data-mode=icons] .dshWbNavItems{flex-direction:row;flex-wrap:wrap;gap:5px;padding:2px 4px}
@@ -846,6 +853,13 @@ window.__ModuleLoader__.load({
       const initial = [...(entry?.title || '').trim()][0]
       if (initial) return h('span', { className: 'dshWbGlyph dshWbMonogram', style: { width: size, height: size, fontSize: Math.round(size * 0.68) } }, initial)
       return h(MarketIcon, { name: 'market', size })
+    }
+    function SessionWorkbenchIcon({ service, sessionId, size = 14 }) {
+      const { state, catalog } = useWorkbench(service)
+      const owner = state.sessionBindings[sessionId]
+      const entry = owner && catalog.find((item) => item.id === owner)
+      if (!entry) return null
+      return h('span', { className: 'dshWb dshWbSessionIcon', role: 'img', title: entry.title, 'aria-label': `属于${entry.title}` }, h(WorkbenchIcon, { entry, size }))
     }
     function MetaItem({ icon, label, value }) {
       return h('span', { className: 'dshWbMetaItem', title: label }, h(MarketIcon, { name: icon }), h('b', null, value), h('small', null, label))
@@ -1379,6 +1393,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       }, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: PANEL, order: -20, inject: () => ({ service }) }, Sidebar))
+      ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
       function WorkbenchEnableSetting() {
         const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
         return h('label', { className: 'dshWbSetting' }, h('span', null, h('strong', null, '启用工作台功能'), h('small', null, '开启后可使用工作台市场和已安装的工作台；关闭后所有工作台不加载，不影响已保存的会话和数据。')),

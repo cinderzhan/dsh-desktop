@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index ba092b4..c0328c5 100644
+index ba092b4..c06ec28 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -90,7 +90,7 @@ window.__ModuleLoader__.load({
@@ -7,7 +7,7 @@ index ba092b4..c0328c5 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}[data-dsh-sidebar-brand-identity]{gap:4px}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:28px}[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:32px 22px 6px}" : "");
++			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}[data-dsh-sidebar-brand-identity]{gap:4px}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:28px}[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:32px 10px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {

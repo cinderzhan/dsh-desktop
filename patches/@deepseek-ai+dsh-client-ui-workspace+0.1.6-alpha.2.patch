@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 38a4474..ab8a7a8 100644
+index 38a4474..1f0f1c9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -30,6 +30,8 @@ window.__ModuleLoader__.load({
@@ -280,7 +280,24 @@ index 38a4474..ab8a7a8 100644
  								if (id !== "rename" && id !== "delete") return;
  								if (id === "rename") actions.rename();
  								else actions.delete();
-@@ -1089,13 +1217,16 @@ window.__ModuleLoader__.load({
+@@ -1039,7 +1167,7 @@ window.__ModuleLoader__.load({
+ 		* @param props.t - Workspace-browser translation seat.
+ 		* @returns the result button.
+ 		*/
+-		function SearchResultItem({ result, currentId, onOpen, t }) {
++		function SearchResultItem({ result, currentId, onOpen, renderSlot, t }) {
+ 			const selected = result.id === currentId;
+ 			const statuses = sessionStatuses(result, t);
+ 			const primaryStatus = statuses[0];
+@@ -1058,6 +1186,7 @@ window.__ModuleLoader__.load({
+ 							className: Rows_module_css_default.slot,
+ 							children: (primaryStatus.state !== "done" || result.completed) && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
+ 						}),
++						renderSlot("sidebar.session.leading", { sessionId: result.id, size: 14 }),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: Rows_module_css_default.searchResultTitle,
+ 							children: result.title
+@@ -1089,13 +1218,16 @@ window.__ModuleLoader__.load({
  		* @param props.onRename - open the session rename dialog (id + current title).
  		* @param props.onFork - fork a session at its last completed turn.
  		* @param props.onArchive - archive a session by id.
@@ -294,11 +311,11 @@ index 38a4474..ab8a7a8 100644
  		* @returns the session row.
  		*/
 -		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, t }) {
-+		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, unread = false, onUnreadChange = () => {}, onReveal, drag, flat = false, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, unread = false, onUnreadChange = () => {}, onReveal, drag, flat = false, renderSlot, t }) {
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -1121,16 +1252,34 @@ window.__ModuleLoader__.load({
+@@ -1121,16 +1253,34 @@ window.__ModuleLoader__.load({
  					label: t("menu.fork"),
  					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
  				},
@@ -334,7 +351,7 @@ index 38a4474..ab8a7a8 100644
  					role: "treeitem",
  					"aria-selected": selected,
  					onClick: () => {
-@@ -1142,6 +1291,11 @@ window.__ModuleLoader__.load({
+@@ -1142,6 +1292,11 @@ window.__ModuleLoader__.load({
  					onPointerLeave: () => {
  						revealClippedTitle(titleRef.current, false);
  					},
@@ -346,7 +363,7 @@ index 38a4474..ab8a7a8 100644
  					draggable,
  					onDragStart: drag === void 0 || row.blank ? void 0 : (e) => {
  						e.dataTransfer.effectAllowed = "move";
-@@ -1161,13 +1315,16 @@ window.__ModuleLoader__.load({
+@@ -1161,13 +1316,17 @@ window.__ModuleLoader__.load({
  						drag.drop(rowHalf(e));
  					},
  					children: [
@@ -359,6 +376,7 @@ index 38a4474..ab8a7a8 100644
 +								children: t("status.unread")
 +							})] }) : null
  						}),
++						renderSlot("sidebar.session.leading", { sessionId: node.id, size: 14 }),
  						(0, react_jsx_runtime.jsx)("span", {
  							ref: titleRef,
 -							className: Rows_module_css_default.title,
@@ -366,7 +384,7 @@ index 38a4474..ab8a7a8 100644
  							children: title
  						}),
  						row.hasActiveSchedule && (0, react_jsx_runtime.jsx)(ActiveScheduleIndicator, { t }),
-@@ -1187,7 +1344,10 @@ window.__ModuleLoader__.load({
+@@ -1187,7 +1346,10 @@ window.__ModuleLoader__.load({
  									setMenuOpen(false);
  									if (id === "rename") onRename(node.id, row.title);
  									if (id === "fork") onFork(node.id);
@@ -377,25 +395,33 @@ index 38a4474..ab8a7a8 100644
  								},
  								portal: true,
  								closeOnPointerLeave: true,
-@@ -1585,7 +1745,7 @@ window.__ModuleLoader__.load({
+@@ -1585,7 +1747,7 @@ window.__ModuleLoader__.load({
  			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 -		function SessionTree({ list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds, archivedSessionIds, workspaceReady, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed }) {
-+		function SessionTree({ list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds, archivedSessionIds, unreadSessionIds, onUnreadChange, workspaceReady, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed }) {
++		function SessionTree({ list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds, archivedSessionIds, unreadSessionIds, onUnreadChange, workspaceReady, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, renderSlot, t, revealSessionId, onSessionRevealed }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
-@@ -1912,7 +2072,7 @@ window.__ModuleLoader__.load({
+@@ -1876,6 +2038,7 @@ window.__ModuleLoader__.load({
+ 									onSessionRevealed(node.id);
+ 								} : void 0,
+ 								drag: dragProps,
++								renderSlot,
+ 								t
+ 							}, node.id);
+ 						}),
+@@ -1912,7 +2075,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
 -		function FlatList({ list, sessionIds, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive, usePanelInfo, setSessionOrder, revealSessionId, onSessionRevealed, t }) {
-+		function FlatList({ list, sessionIds, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete, unreadSessionIds, onUnreadChange, usePanelInfo, setSessionOrder, revealSessionId, onSessionRevealed, t }) {
++		function FlatList({ list, sessionIds, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete, unreadSessionIds, onUnreadChange, usePanelInfo, setSessionOrder, revealSessionId, onSessionRevealed, renderSlot, t }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, statuses), [
-@@ -1962,6 +2122,9 @@ window.__ModuleLoader__.load({
+@@ -1962,9 +2125,13 @@ window.__ModuleLoader__.load({
  							onRename: onSessionRename,
  							onFork: forkSession,
  							onArchive: onSessionArchive,
@@ -405,7 +431,28 @@ index 38a4474..ab8a7a8 100644
  							onReveal: node.id === revealSessionId ? () => {
  								onSessionRevealed(node.id);
  							} : void 0,
-@@ -2070,7 +2233,7 @@ window.__ModuleLoader__.load({
++							renderSlot,
+ 							flat: true,
+ 							drag: {
+ 								start: () => {
+@@ -2005,7 +2172,7 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** Flat search body: local metadata matches plus the current Host result page. */
+-		function SearchResults({ useSessions, useSessionStatus, open, workspaces, archivedSessionIds, query, remote, resultLimit, usePanelInfo, t }) {
++		function SearchResults({ useSessions, useSessionStatus, open, workspaces, archivedSessionIds, query, remote, resultLimit, usePanelInfo, renderSlot, t }) {
+ 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
+ 			const list = useSessions((s) => s);
+ 			const statuses = useSessionStatus((s) => s);
+@@ -2040,6 +2207,7 @@ window.__ModuleLoader__.load({
+ 								result,
+ 								currentId,
+ 								onOpen: open,
++								renderSlot,
+ 								t
+ 							}, result.id))
+ 						}),
+@@ -2070,7 +2238,7 @@ window.__ModuleLoader__.load({
  		* @param props - composed slot props (shell owner share + store + injected actions).
  		* @returns the region element tree.
  		*/
@@ -414,7 +461,7 @@ index 38a4474..ab8a7a8 100644
  			const home = useHostInfo((info) => info.home);
  			const list = useSessions((state) => state);
  			const workspaces = useWorkspaces((state) => state.items);
-@@ -2083,6 +2246,15 @@ window.__ModuleLoader__.load({
+@@ -2083,6 +2251,15 @@ window.__ModuleLoader__.load({
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
  			const workspaceReady = workspacePhase === "ready" && workspaceStreamState !== "loading";
@@ -430,7 +477,7 @@ index 38a4474..ab8a7a8 100644
  			const mainSessionId = Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
  			const currentBlank = mainSessionId !== void 0 && list.byId[mainSessionId]?.blank === true ? mainSessionId : void 0;
  			const ungroupedMemberIds = (0, react.useMemo)(() => {
-@@ -2342,7 +2514,35 @@ window.__ModuleLoader__.load({
+@@ -2342,7 +2519,35 @@ window.__ModuleLoader__.load({
  				setSessionRenameDraft(currentTitle);
  				setSessionRenameError(null);
  			};
@@ -466,7 +513,15 @@ index 38a4474..ab8a7a8 100644
  				archiveSession(sessionId).catch((reason) => {
  					console.warn("session archive rejected:", reason);
  				});
-@@ -2531,6 +2731,9 @@ window.__ModuleLoader__.load({
+@@ -2521,6 +2726,7 @@ window.__ModuleLoader__.load({
+ 							query: normalizedQuery,
+ 							remote: remoteSearch,
+ 							resultLimit: searchResultLimit,
++							renderSlot,
+ 							t
+ 						}) : groupBy === "flat" ? (0, react_jsx_runtime.jsx)(FlatList, {
+ 							usePanelInfo,
+@@ -2531,9 +2737,13 @@ window.__ModuleLoader__.load({
  							forkSession,
  							onSessionRename,
  							onSessionArchive,
@@ -476,7 +531,11 @@ index 38a4474..ab8a7a8 100644
  							setSessionOrder: saveSessionOrder,
  							revealSessionId,
  							onSessionRevealed: acknowledgeSessionReveal,
-@@ -2541,6 +2744,7 @@ window.__ModuleLoader__.load({
++							renderSlot,
+ 							t
+ 						}) : (0, react_jsx_runtime.jsx)(SessionTree, {
+ 							usePanelInfo,
+@@ -2541,6 +2751,7 @@ window.__ModuleLoader__.load({
  							useSessionStatus,
  							onSessionRename,
  							onSessionArchive,
@@ -484,7 +543,7 @@ index 38a4474..ab8a7a8 100644
  							forkSession,
  							workspaces: orderedWorkspaces,
  							ungroupedSessionIds: orderedUngroupedSessionIds,
-@@ -2550,8 +2754,10 @@ window.__ModuleLoader__.load({
+@@ -2550,12 +2761,15 @@ window.__ModuleLoader__.load({
  							setGroupExpanded: actions.setGroupExpanded,
  							setSessionOrder: saveSessionOrder,
  							archivedSessionIds,
@@ -496,7 +555,12 @@ index 38a4474..ab8a7a8 100644
  							insertWorkspaceBefore,
  							revealSessionId,
  							onSessionRevealed: acknowledgeSessionReveal,
-@@ -2676,6 +2882,34 @@ window.__ModuleLoader__.load({
+ 							home,
++							renderSlot,
+ 							t,
+ 							onRenameRequest: (workspaceId, currentTitle) => {
+ 								setRenameTarget({
+@@ -2676,6 +2890,34 @@ window.__ModuleLoader__.load({
  							children: sessionRenameError
  						})]
  					}),
@@ -531,7 +595,7 @@ index 38a4474..ab8a7a8 100644
  					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
  						open: deleteTarget !== null,
  						onClose: closeDelete,
-@@ -2742,6 +2976,7 @@ window.__ModuleLoader__.load({
+@@ -2742,6 +2984,7 @@ window.__ModuleLoader__.load({
  			"search.noMatches": "无匹配会话",
  			"search.hasMore": "仅显示前 {n} 条结果，请缩小搜索范围。",
  			"menu.addWorkspace": "添加工作区…",
@@ -539,7 +603,7 @@ index 38a4474..ab8a7a8 100644
  			"picker.loading": "正在加载工作区…",
  			"conflict.named": "已存在名为“{name}”的工作区。",
  			"folderError.title": "无法打开文件夹",
-@@ -2754,7 +2989,12 @@ window.__ModuleLoader__.load({
+@@ -2754,7 +2997,12 @@ window.__ModuleLoader__.load({
  			"delete.workspace": "删除工作区",
  			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
  			"delete.pending": "正在删除工作区…",
@@ -552,7 +616,7 @@ index 38a4474..ab8a7a8 100644
  			"menu.archiveSession": "归档会话",
  			"sessions.count.one": "{n} 个会话",
  			"sessions.count.other": "{n} 个会话",
-@@ -2769,6 +3009,7 @@ window.__ModuleLoader__.load({
+@@ -2769,6 +3017,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "计划待审",
  			"status.waitingAnswer": "等待回答",
  			"status.completed": "已完成",
@@ -560,7 +624,7 @@ index 38a4474..ab8a7a8 100644
  			"schedule.active": "有活动定时任务",
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
-@@ -2809,6 +3050,7 @@ window.__ModuleLoader__.load({
+@@ -2809,6 +3058,7 @@ window.__ModuleLoader__.load({
  			"search.noMatches": "No matching sessions",
  			"search.hasMore": "Showing the first {n} results. Narrow your search.",
  			"menu.addWorkspace": "Add workspace…",
@@ -568,7 +632,7 @@ index 38a4474..ab8a7a8 100644
  			"picker.loading": "Loading workspaces…",
  			"conflict.named": "A workspace named “{name}” already exists.",
  			"folderError.title": "Couldn’t open folder",
-@@ -2821,7 +3063,12 @@ window.__ModuleLoader__.load({
+@@ -2821,7 +3071,12 @@ window.__ModuleLoader__.load({
  			"delete.workspace": "Delete workspace",
  			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
  			"delete.pending": "Deleting workspace…",
@@ -581,7 +645,7 @@ index 38a4474..ab8a7a8 100644
  			"menu.archiveSession": "Archive session",
  			"sessions.count.one": "{n} session",
  			"sessions.count.other": "{n} sessions",
-@@ -2836,6 +3083,7 @@ window.__ModuleLoader__.load({
+@@ -2836,6 +3091,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "Plan awaiting review",
  			"status.waitingAnswer": "Waiting for answer",
  			"status.completed": "Completed",
@@ -589,7 +653,7 @@ index 38a4474..ab8a7a8 100644
  			"schedule.active": "Has active scheduled task",
  			"hover.created": "Created {time}",
  			"hover.copied": "Copied",
-@@ -2916,6 +3164,9 @@ window.__ModuleLoader__.load({
+@@ -2916,6 +3172,9 @@ window.__ModuleLoader__.load({
  				forkSession: (sessionId) => {
  					uiWorkspace.forkSession(sessionId).catch(() => {});
  				},
@@ -599,6 +663,27 @@ index 38a4474..ab8a7a8 100644
  				renameWorkspace: async (workspaceId, title) => {
  					await workspaces.rename(workspaceId, title);
  				},
+@@ -2940,10 +3199,16 @@ window.__ModuleLoader__.load({
+ 			});
+ 			ctx.slots.inject("sidebar.workspaces", () => ctx.slots.register({
+ 				name: "sidebar.workspaces",
+-				children: { "sidebar.workspaces.directoryFlow": {
+-					kind: "single",
+-					scope: "root"
+-				} },
++				children: {
++					"sidebar.workspaces.directoryFlow": {
++						kind: "single",
++						scope: "root"
++					},
++					"sidebar.session.leading": {
++						kind: "single",
++						scope: "root"
++					}
++				},
+ 				store: createWorkspaceViewStore(),
+ 				inject: browserInjected,
+ 				locale: NS
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
 index 1f9523d..5ff9084 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
