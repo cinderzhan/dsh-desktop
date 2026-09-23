@@ -6,6 +6,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyState } from '../packages/dsh-desktop-workbenches/state.mjs'
 
 const Service = { tracker: Symbol('service-tracker') }
+let sidebarWide = false
+let sidebarCollapsed = false
+const document = { querySelector(selector) {
+  if (selector === '[data-dsh-sidebar-root]') return sidebarWide ? { getAttribute: name => name === 'data-dsh-sidebar-wide' ? 'true' : null } : null
+  if (selector === '[data-sidebar-collapsed]') return sidebarCollapsed ? {} : null
+  return null
+} }
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
 let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
@@ -24,10 +31,11 @@ vm.runInNewContext(code, {
     submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
     copySubmissionPrompt = client.copySubmissionPrompt
   } } },
+  document,
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
 
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false })
 
 function deferred() {
   let resolve
@@ -79,6 +87,7 @@ async function fixture(initial = emptyState()) {
     },
     layout: {
       selectPanel: vi.fn(),
+      toggleSidebar: vi.fn(() => { sidebarCollapsed = !sidebarCollapsed }),
       beginNavigation: vi.fn(() => { navigation.abort(); navigation = new AbortController(); return navigation.signal })
     },
     uiWorkspace: {
@@ -128,6 +137,17 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
+  it('collapses an expanded sidebar once when a workbench enters the foreground', async () => {
+    const { service, ctx } = await fixture()
+    sidebarWide = true
+    registerProvider(service, ctx, 'writer', { title: 'Writer' })
+    await service.add('writer')
+    await service.open('writer')
+    expect(ctx.layout.toggleSidebar).toHaveBeenCalledTimes(1)
+    await service.open('writer')
+    expect(ctx.layout.toggleSidebar).toHaveBeenCalledTimes(1)
+  })
+
   it('migrates legacy market identities to repository identities and preserves owned data', async () => {
     const legacy = { ...emptyState(), added: ['ming-life'], pinned: ['ming-life'], favorites: ['ming-life'], active: 'ming-life',
       sessionBindings: { old: 'ming-life' }, recentSessions: { 'ming-life': 'old' }, notes: { 'ming-life': 'Keep me' } }
@@ -1241,6 +1261,12 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("[/玄学|命理|人生|life/i, 'life']")
     expect(fullSource).toContain("if (name === 'life') return h('svg'")
     expect(fullSource).not.toContain("function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }")
+  })
+
+  it('marks bound sessions with the owning workbench icon through the native sidebar slot', () => {
+    expect(fullSource).toContain("ctx.slots.inject('sidebar.session.leading'")
+    expect(fullSource).toContain('state.sessionBindings[sessionId]')
+    expect(fullSource).toContain("'aria-label': `属于${entry.title}`")
   })
 
   it('includes version display in EntryMeta when available', () => {
