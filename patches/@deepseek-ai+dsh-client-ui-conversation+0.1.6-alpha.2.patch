@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index a3a1cf7..b71297b 100644
+index a3a1cf7..2f825ff 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -14741,12 +14741,13 @@ window.__ModuleLoader__.load({
@@ -82,11 +82,28 @@ index a3a1cf7..b71297b 100644
  		* trigger instead of a parallel tree.
  		*/
 -		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
-+		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone }) {
++		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone, openUploadedFile }) {
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -16331,20 +16341,29 @@ window.__ModuleLoader__.load({
+@@ -16311,10 +16321,6 @@ window.__ModuleLoader__.load({
+ 								className: InputBar_module_css_default.overlayAnchor,
+ 								children: renderSlot("conversation.input.overlay", {})
+ 							}),
+-							accessory !== void 0 && (0, react_jsx_runtime.jsx)("div", {
+-								className: InputBar_module_css_default.accessory,
+-								children: accessory
+-							}),
+ 							renderSlot("conversation.input.attachments", {
+ 								attachments,
+ 								canAcceptDrop,
+@@ -16326,25 +16332,35 @@ window.__ModuleLoader__.load({
+ 								onRetryFile: (id) => {
+ 									retryFileUpload?.(id);
+ 								},
++								onOpenUploadedFile: openUploadedFile,
+ 								dropLimits: imageLimits === void 0 ? void 0 : {
+ 									count: imageLimits.maxImagesPerMessage,
  									size: imageSizeText(imageLimits.maxImageBytes)
  								}
  							}),
@@ -130,7 +147,7 @@ index a3a1cf7..b71297b 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								className: InputBar_module_css_default.row,
-@@ -16865,6 +16884,10 @@ window.__ModuleLoader__.load({
+@@ -16865,6 +16881,10 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "session-maybe"
@@ -141,7 +158,7 @@ index a3a1cf7..b71297b 100644
  					}
  				},
  				slots: {
-@@ -16957,6 +16980,10 @@ window.__ModuleLoader__.load({
+@@ -16957,6 +16977,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -152,7 +169,27 @@ index a3a1cf7..b71297b 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -17053,10 +17080,10 @@ window.__ModuleLoader__.load({
+@@ -16989,6 +17013,7 @@ window.__ModuleLoader__.load({
+ 						removeAttachment: void 0,
+ 						resolveDraftAttachments: void 0,
+ 						retryFileUpload: void 0,
++						openUploadedFile: void 0,
+ 						toggleCommandMenu: void 0,
+ 						stop: void 0,
+ 						hooks: {
+@@ -17022,6 +17047,11 @@ window.__ModuleLoader__.load({
+ 						retryFileUpload: (id) => {
+ 							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
+ 						},
++						openUploadedFile: async (attachmentId) => {
++							const opener = ctx.get("openUploadedAttachment");
++							if (opener === void 0) throw new Error("ui-conversation: openUploadedAttachment is unavailable");
++							await opener.open(sessionId, attachmentId);
++						},
+ 						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
+ 							shell.dismissPopup();
+ 							const snapshot = shell.snapshot;
+@@ -17053,10 +17083,10 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",
@@ -168,7 +205,7 @@ index a3a1cf7..b71297b 100644
  				yield registerConversationRoot();
  				yield registerConversationContent();
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index e65c211..4559a3e 100644
+index e65c211..3dfd3e8 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -114,6 +114,12 @@ export type UseConversation = SnapshotSelectorHook<ConversationSnapshot>;
@@ -184,11 +221,55 @@ index e65c211..4559a3e 100644
          /** Conversation shell beneath its root-scoped main-panel entry. */
          'main.conversation': {
              kind: 'single';
-@@ -422,6 +428,7 @@ export interface ComposerBarOwnerProps {
+@@ -203,6 +209,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             scope: 'session-maybe';
+             owner: HeroAgentPresetOwnerProps;
+         };
++        /** Product-mode controls beside the blank-session agent preset. */
++        'conversation.hero.modeActions': {
++            kind: 'list';
++            scope: 'session';
++            owner: InputZone;
++        };
+         /** Full-width entries above the composer card. */
+         'conversation.input.dock': {
+             kind: 'list';
+@@ -214,10 +226,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             kind: 'list';
+             scope: 'session';
+         };
++        /** Compact template and reference material rendered before the editable prompt. */
++        'conversation.input.accessory': {
++            kind: 'list';
++            scope: 'session';
++            owner: InputZone;
++        };
+         /** Ambient entries below the composer card. */
+         'conversation.composer.dock': {
+             kind: 'list';
+             scope: 'session';
++            owner: InputZone;
+         };
+         /** Compact controls at the left of the composer tool row. */
+         'conversation.input.left': {
+@@ -420,8 +439,10 @@ export interface ComposerBarOwnerProps {
+     /** Open the Workspace picker from the inert composer surface. */
+     onRequestWorkspace?: () => void;
      placeholder?: string;
-     /** Optional content rendered above the composer surface. */
+-    /** Optional content rendered above the composer surface. */
++    /** Optional compact content rendered before the editable prompt. */
      accessory?: ReactNode;
++    /** Point-in-time Session and input state supplied to Composer extension slots. */
 +    extensionZone?: InputZone;
  }
  /** Package-private operations injected into the resident composer bar. */
  export interface ComposerBarInjected {
+@@ -452,7 +473,7 @@ export interface InputControlOwnerProps {
+     locked: boolean;
+ }
+ /** Full props of the resident composer bar. */
+-export type ComposerBarProps = PropsRuntime<'conversation.composer.bar'> & PropsRenderSlots<'conversation.input.attachments' | 'conversation.input.overlay' | 'conversation.input.permission' | 'conversation.input.left' | 'conversation.input.plan' | 'conversation.input.right' | 'conversation.input.model' | 'conversation.composer.dock'> & InjectFace<ComposerBarInjected> & PropsLocale<'conversation'>;
++export type ComposerBarProps = PropsRuntime<'conversation.composer.bar'> & PropsRenderSlots<'conversation.input.attachments' | 'conversation.input.overlay' | 'conversation.input.accessory' | 'conversation.input.permission' | 'conversation.input.left' | 'conversation.input.plan' | 'conversation.input.right' | 'conversation.input.model' | 'conversation.composer.dock'> & InjectFace<ComposerBarInjected> & PropsLocale<'conversation'>;
+ /** Owner values used to elect a composer takeover. */
+ export interface ComposerChainProps {
+     /** Current Session identity used by temporary business-owned entries. */

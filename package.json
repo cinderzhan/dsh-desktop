@@ -268,9 +268,9 @@
     "@deepseek-ai/schemastery": "3.18.2",
     "dsh-desktop-client-ui": "file:packages/dsh-desktop-client-ui",
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
-    "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
+    "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
     "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
     "electron-updater": "^6.8.9",
@@ -286,7 +286,8 @@
     "@deepseek-ai/dsh-mcp-resources": "0.1.6-alpha.2",
     "@deepseek-ai/dsh-plugin-manager": "0.1.6-alpha.2",
     "@deepseek-ai/dsh-ptc-runtime": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-workflow-ptc": "0.1.6-alpha.2"
+    "@deepseek-ai/dsh-workflow-ptc": "0.1.6-alpha.2",
+    "dsh-image-generation": "file:packages/dsh-image-generation"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
@@ -362,6 +363,10 @@
         "to": "harness-node-entry.mjs"
       },
       {
+        "from": "build/host-module-fallback.mjs",
+        "to": "host-module-fallback.mjs"
+      },
+      {
         "from": "build/windows-hidden-console.mjs",
         "to": "windows-hidden-console.mjs"
       },
@@ -405,6 +410,7 @@
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
       },
+
       {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"
