@@ -43,6 +43,7 @@ Markdown 原文（供 Agent 读取）：https://dshdesktop.com/workbench/docs/ma
 
 - v1 只支持**仓库根目录放一个工作台**，暂不支持 monorepo 子目录。
 - `package.json` 是安装契约：完整 SemVer 版本、指回本仓库的 `repository`、`dsh.bundle.patch`、包含 `dsh-desktop-workbenches` 的 `dsh.client.inject`，以及真实存在的 `exports["./client"]`。工作台不声明自定义 id；市场以该 GitHub 仓库的 `owner/repository` 作为唯一身份。
+- 工作台只能通过宿主提供的工作台接口创建或恢复绑定会话；原生新建或打开普通会话后必须允许宿主退出工作台，不得用覆盖层、独立路由或自行恢复状态把用户拉回工作台。
 
 ## 4. 包与安装来源
 

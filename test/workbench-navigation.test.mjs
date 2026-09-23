@@ -200,7 +200,7 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' })
   })
 
-  it.each(['writer', 'research-notebook', 'media-workbench'])('keeps native New Session ordinary even while %s is open', async (workbenchId) => {
+  it.each(['writer', 'research-notebook', 'media-workbench'])('leaves %s when native New Session creates an ordinary session', async (workbenchId) => {
     const { service: uiWorkspace, sessionState, workspaceState } = fixture()
     workspaceState.items.push({ workspaceId: 'target-project', path: '/target', createdAt: '2026-01-02T00:00:00Z', sessionIds: [] })
     sessionState.ids.push('old-recent')
@@ -223,12 +223,14 @@ describe('native Workspace navigation with workbench routing', () => {
     controller.ready = true
     uiWorkspace.startSession('target-project')
     await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
+    controller.selectionChanged()
+    await controller.queue
 
     expect(uiWorkspace.sessions.create).toHaveBeenCalledTimes(1)
     expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'target-project' })
     expect(controller.state.sessionBindings['new-session']).toBeUndefined()
     expect(controller.state.recentSessions[workbenchId]).toBe('old-recent')
-    expect(controller.state.active).toBe(workbenchId)
+    expect(controller.state.active).toBeNull()
     expect(uiWorkspace.sessions.retain).not.toHaveBeenCalledWith('old-recent', { source: 'mainView' })
   })
 
@@ -257,7 +259,7 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(service.ctx.layout.selectPanel).toHaveBeenCalledWith(null)
   })
 
-  it('keeps the active workbench when connectWorkspace reuses a blank session owned by a removed provider', async () => {
+  it('leaves the active workbench when workspace navigation opens a session owned by a removed provider', async () => {
     const { service: uiWorkspace, sessionState, workspaceState } = fixture()
     const removedSession = 'research-notebook-blank'
     sessionState.ids.push(removedSession)
@@ -311,14 +313,14 @@ describe('native Workspace navigation with workbench routing', () => {
     expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
     expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith(removedSession, { source: 'mainView' })
     expect(mainViewOf(sessionState)).toBe(removedSession)
-    expect(controller.state.active).toBe('writer')
+    expect(controller.state.active).toBeNull()
     expect(controller.state.sessionBindings[removedSession]).toBe('research-notebook')
     expect(controller.state.recentSessions).toEqual({})
-    expect(request).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledOnce()
     expect(workbenchSource).not.toContain('registerSessionStarter(')
   })
 
-  it('keeps media-workbench active and prefers an unbound blank session when workspace navigation first finds a huaxue session', async () => {
+  it('leaves media-workbench and prefers an unbound blank session when workspace navigation first finds a huaxue session', async () => {
     const { service: uiWorkspace, sessionState, workspaceState } = fixture()
     const bound = 'huaxue-blank'
     const ordinary = 'ordinary-blank'
@@ -335,7 +337,7 @@ describe('native Workspace navigation with workbench routing', () => {
 
     expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
     expect(mainViewOf(sessionState)).toBe(ordinary)
-    expect(controller.state.active).toBe('media-workbench')
+    expect(controller.state.active).toBeNull()
     expect(controller.state.sessionBindings).toEqual({ [bound]: 'huaxue' })
     expect(controller.state.recentSessions).toEqual({ huaxue: bound })
     dispose()
@@ -356,7 +358,7 @@ describe('native Workspace navigation with workbench routing', () => {
 
     expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
     expect(mainViewOf(sessionState)).toBe('new-session')
-    expect(controller.state.active).toBe('media-workbench')
+    expect(controller.state.active).toBeNull()
     expect(controller.state.sessionBindings['new-session']).toBeUndefined()
     expect(controller.state.recentSessions).toEqual({ huaxue: bound })
     dispose()
