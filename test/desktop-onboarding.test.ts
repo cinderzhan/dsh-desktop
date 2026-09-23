@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { patchPath, projectRoot } from './patch-path'
+// @ts-expect-error Local host plugins are authored as ESM JavaScript.
+import { apply as applyHost } from '../packages/dsh-desktop-onboarding/index.js'
 
 interface Registration {
   config: {
@@ -110,6 +113,7 @@ function loadPlugin() {
     factory: (require: (id: string) => unknown) => {
       apply: (ctx: CtxHarness) => void
       inject: string[]
+      onboardingDecision: (value: unknown) => 'show' | 'complete'
     }
   } | undefined
   const appended: Array<{ id?: string; textContent?: string }> = []
@@ -252,6 +256,19 @@ describe('DSH Desktop onboarding wizard', () => {
     expect(en.configureModel).toBeTruthy()
     expect(en.later).toBeTruthy()
   })
+
+  it('shows only an eligible install with no acknowledgement', () => {
+    const { plugin } = loadPlugin()
+    expect(plugin.onboardingDecision({ eligible: true })).toBe('show')
+    expect(plugin.onboardingDecision({ eligible: false })).toBe('complete')
+    expect(plugin.onboardingDecision({})).toBe('complete')
+  })
+
+  it('treats every non-empty wizard version as acknowledgement', () => {
+    const { plugin } = loadPlugin()
+    expect(plugin.onboardingDecision({ eligible: true, wizardVersion: 'old-version' })).toBe('complete')
+    expect(plugin.onboardingDecision({ eligible: true, wizardVersion: '  ' })).toBe('complete')
+  })
 })
 
 describe('DSH Desktop onboarding composition', () => {
@@ -287,5 +304,56 @@ describe('DSH Desktop onboarding composition', () => {
   it('is reachable from the @deepseek-ai/dsh dependency closure', async () => {
     const dshPatch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
     expect(dshPatch).toContain('+    "dsh-desktop-onboarding": "0.1.0",')
+  })
+})
+
+describe('DSH Desktop onboarding host eligibility', () => {
+  it('publishes eligible only for a valid new-install marker', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-onboarding-host-'))
+    const previous = process.env.DSH_HOME
+    try {
+      process.env.DSH_HOME = root
+      await writeFile(path.join(root, '.desktop-install-state.json'), JSON.stringify({
+        schemaVersion: 1,
+        classification: 'new',
+        firstSeenVersion: '1.0.0',
+        classifiedAt: '2026-09-23T00:00:00.000Z'
+      }))
+      const register = vi.fn()
+      applyHost({
+        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
+      })
+      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: true } })
+
+      await writeFile(path.join(root, '.desktop-install-state.json'), '{broken')
+      register.mockClear()
+      applyHost({
+        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
+      })
+      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+
+      await writeFile(path.join(root, '.desktop-install-state.json'), JSON.stringify({
+        schemaVersion: 1,
+        classification: 'existing',
+        firstSeenVersion: '1.0.0',
+        classifiedAt: '2026-09-23T00:00:00.000Z'
+      }))
+      register.mockClear()
+      applyHost({
+        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
+      })
+      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+
+      await rm(path.join(root, '.desktop-install-state.json'))
+      register.mockClear()
+      applyHost({
+        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
+      })
+      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

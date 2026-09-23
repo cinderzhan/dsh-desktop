@@ -3,25 +3,42 @@
  *
  * Registers the durable `desktop-onboarding` settings namespace that the
  * browser half uses to remember the user has already seen (and acknowledged)
- * the notice. The schema only carries the wizard version a release marks this
- * copy of the copy with, so re-releases can re-prompt by bumping the constant
- * the client compares against.
+ * the notice. Eligibility is derived from the immutable desktop install
+ * classification; releases never re-prompt existing users.
  *
  * The browser half (`./client.js`) does all the visible work — this file only
  * exists to claim the namespace before the settings mirror reads it.
  */
 import z from '@deepseek-ai/schemastery'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const DESKTOP_ONBOARDING_NAMESPACE = 'desktop-onboarding'
 const DesktopOnboardingSchema = z.object({
-  wizardVersion: z.string()
+  wizardVersion: z.string(),
+  eligible: z.boolean()
 })
+
+function isFirstInstallEligible() {
+  const dshHome = process.env.DSH_HOME
+  if (!dshHome) return false
+  try {
+    const marker = JSON.parse(readFileSync(join(dshHome, '.desktop-install-state.json'), 'utf8'))
+    return marker?.schemaVersion === 1 &&
+      marker?.classification === 'new' &&
+      typeof marker?.firstSeenVersion === 'string' && marker.firstSeenVersion.length > 0 &&
+      typeof marker?.classifiedAt === 'string' && Number.isFinite(Date.parse(marker.classifiedAt))
+  } catch {
+    return false
+  }
+}
 
 export function apply(ctx) {
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.register(
       DESKTOP_ONBOARDING_NAMESPACE,
-      DesktopOnboardingSchema
+      DesktopOnboardingSchema,
+      { base: { eligible: isFirstInstallEligible() } }
     )
   })
 }

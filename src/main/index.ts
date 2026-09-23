@@ -89,6 +89,7 @@ import {
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import { WindowStateManager } from './state/window-state'
+import { classifyDesktopInstall } from './state/desktop-install-state'
 import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
@@ -3672,6 +3673,11 @@ if (isDaemonLaunch(process.env, process.platform)) {
     console.warn('[desktop] Another instance is already running; focusing existing window and exiting.')
     app.quit()
   } else {
+    classifyDesktopInstall({
+      userDataPath: app.getPath('userData'),
+      appVersion: app.getVersion(),
+      developmentBuild
+    })
     // Start the login-shell capture now so it overlaps Electron's own startup
     // and the splash instead of blocking the main process right before the
     // Harness spawn. Only the instance that will actually launch pays for it.
