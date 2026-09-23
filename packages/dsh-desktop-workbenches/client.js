@@ -27,12 +27,20 @@ window.__ModuleLoader__.load({
     const DEVELOPMENT_GUIDE_READING = `${GUIDE_READING}当前任务只做本地开发和安装，不需要处理市场投稿或发布。`
     const ACCEPTANCE_READING = `先阅读并遵循工作台市场验收规范：${ACCEPTANCE_DOC_URL} 。它包含上传 GitHub、安装来源、上架资料、收录 PR 和验收清单。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
+    const WORKBENCH_DOCK_PREF = 'dsh-workbench-dock-visible'
     const workbenchPreference = {
       listeners: new Set(),
       enabled: (() => { try { return window.localStorage.getItem(WORKBENCH_PREF) !== 'false' } catch { return true } })(),
       subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener) },
       getSnapshot() { return this.enabled },
       set(value) { this.enabled = !!value; try { window.localStorage.setItem(WORKBENCH_PREF, String(this.enabled)) } catch {} ; for (const listener of this.listeners) listener() }
+    }
+    const workbenchDockPreference = {
+      listeners: new Set(),
+      visible: (() => { try { return window.localStorage.getItem(WORKBENCH_DOCK_PREF) !== 'false' } catch { return true } })(),
+      subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener) },
+      getSnapshot() { return this.visible },
+      set(value) { this.visible = !!value; try { window.localStorage.setItem(WORKBENCH_DOCK_PREF, String(this.visible)) } catch {} ; for (const listener of this.listeners) listener() }
     }
     const EMPTY = () => ({ version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} })
     // This controller owns navigation and local state only. It never terminates
@@ -411,9 +419,13 @@ window.__ModuleLoader__.load({
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
       }
-      showMarket() {
-        this.marketOpen = true
+      setMarketOpen(open) {
+        if (this.marketOpen === open) return
+        this.marketOpen = open
         this.publish()
+      }
+      showMarket() {
+        this.setMarketOpen(true)
         this.ctx.layout.selectPanel(PANEL)
       }
       openSession(sessionId) {
@@ -632,31 +644,17 @@ window.__ModuleLoader__.load({
       .dshWb .dshWbPrimary:disabled{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
       .dshWbMuted{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.65}
       .dshWbActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-      .dshWbNav{display:flex;flex-direction:column;gap:3px;padding:4px 0;max-height:32vh;overflow:auto;width:100%;min-width:0}
       .dshWbSetting{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 2px;border-bottom:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
       .dshWbSetting span{display:flex;flex-direction:column;gap:4px}.dshWbSetting strong{font-size:14px;font-weight:600}.dshWbSetting small{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary)}
       .dshWbSetting input{width:18px;height:18px;flex:none;accent-color:var(--dsw-alias-label-primary);cursor:pointer}
-      .dshWbNavHeader{display:flex;align-items:center;gap:4px;min-width:0;padding-bottom:2px}
-      .dshWbNavModes{display:flex;gap:2px;flex-shrink:0}
-      .dshWb .dshWbMode{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-primary)}
-      .dshWbNavItems{display:flex;flex-direction:column;gap:2px}
-      .dshWbNavRow{display:flex;align-items:center;gap:2px;border-radius:7px;min-width:0}.dshWbNavRow[data-active=true]{background:var(--dsw-alias-bg-layer-2)}
-      .dshWbNavOpen{border:0;background:none;display:flex;align-items:center;gap:9px;text-align:left;padding:5px 7px;flex:1;min-width:0;border-radius:7px}
-      .dshWbNavMarket{font-weight:600;letter-spacing:-.01em}.dshWbNavMarket .dshWbNavIcon{background:transparent;color:var(--dsw-alias-label-primary)}
-      .dshWb .dshWbNavOpen:hover:not(:disabled),.dshWb .dshWbMove:hover:not(:disabled),.dshWb .dshWbMode:hover:not(:disabled),.dshWb .dshWbNavOpen:active:not(:disabled),.dshWb .dshWbMove:active:not(:disabled),.dshWb .dshWbMode:active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
-      .dshWbNavIcon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary)}
-      .dshWbNavRow[data-active=true] .dshWbNavIcon{color:var(--dsw-alias-label-primary)}
       .dshWbSessionIcon{width:16px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-tertiary)}
-      .dshWbNavLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .dshWb .dshWbMove{display:grid;place-items:center;width:22px;height:22px;border:0;background:transparent;padding:0;border-radius:4px;color:var(--dsw-alias-label-secondary)}
-      .dshWbNav[data-mode=icons] .dshWbNavItems{flex-direction:row;flex-wrap:wrap;gap:5px;padding:2px 4px}
-      .dshWbNav[data-mode=icons] .dshWbNavRow{width:36px;height:36px}
-      .dshWbNav[data-mode=icons] .dshWbNavRow .dshWbNavOpen{justify-content:center;padding:5px;width:36px;height:36px}
-      .dshWbNav[data-wide=false] .dshWbNavOpen{justify-content:center}
       .dshWbMarket{container-type:inline-size;container-name:workbench-market;overflow:auto;height:100%;width:100%;min-width:0;padding:30px 32px 52px;max-width:1440px;margin:0 auto;scrollbar-color:var(--dsw-alias-border-l2) transparent;scrollbar-width:thin}
       .dshWbMarket::selection,.dshWbMarket *::selection{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)}
       .dshWbMarketHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
       .dshWbMarketHeaderText{max-width:70ch}.dshWbMarket h1{font-size:28px;line-height:36px;letter-spacing:-.025em;font-weight:650;margin:0 0 7px;text-wrap:balance}.dshWbMarketHeader p{margin:0}
+      .dshWbMarketHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+      .dshWbDockSetting{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);white-space:nowrap}
+      .dshWbDockSetting:hover{background:var(--dsw-alias-bg-layer-2)}.dshWbDockSwitch{position:relative;width:26px;height:16px;border-radius:999px;background:var(--dsw-alias-border-l2);flex:none}.dshWbDockSwitch::after{content:'';position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);transition:transform .16s}.dshWbDockSetting[aria-checked=true] .dshWbDockSwitch{background:var(--dsw-alias-label-primary)}.dshWbDockSetting[aria-checked=true] .dshWbDockSwitch::after{transform:translateX(10px)}
       .dshWbCreate{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;flex:none}
       .dshWbToolbar{display:flex;flex-direction:column;gap:14px;margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--dsw-alias-border-l2)}
       .dshWbTabs{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -731,7 +729,11 @@ window.__ModuleLoader__.load({
       .dshWbGuideDocument{max-width:780px;margin:0 auto}.dshWbGuideDocument h1{font-size:28px;line-height:38px;margin:0 0 24px}.dshWbGuideDocument h2{font-size:20px;line-height:29px;margin:36px 0 13px;padding-top:24px;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbGuideDocument h3{font-size:16px;line-height:24px;margin:26px 0 10px}.dshWbGuideDocument h4{font-size:14px;line-height:22px;margin:22px 0 8px}.dshWbGuideDocument p,.dshWbGuideDocument li{font-size:13px;line-height:22px}.dshWbGuideDocument p{margin:9px 0}.dshWbGuideDocument ul,.dshWbGuideDocument ol{margin:10px 0;padding-left:22px}.dshWbGuideDocument pre{overflow:auto;margin:14px 0;padding:14px 16px;border-radius:8px;background:#18181b;color:#f4f4f5;font:12px/19px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}.dshWbGuideDocument hr{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:32px 0}.dshWbGuideStatus{display:grid;place-items:center;min-height:220px;text-align:center;color:var(--dsw-alias-label-secondary)}.dshWbGuideStatus .dshWbActions{margin-top:14px;justify-content:center}
       @keyframes dshWbFade{from{opacity:0}to{opacity:1}}@keyframes dshWbRise{from{opacity:.75;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
       .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
-      .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column}
+      .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column;position:relative}
+      .dshWbDockWrap{position:absolute;z-index:14;top:8px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;max-width:calc(100% - 48px)}
+      .dshWbNotice+.dshWbDockWrap{top:52px}.dshWbDockTrigger{height:36px;min-width:180px;max-width:280px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 4px 14px rgba(0,0,0,.08);display:flex;align-items:center;gap:8px}
+      .dshWbDockTrigger:hover,.dshWbDockTrigger[aria-expanded=true]{background:var(--dsw-alias-bg-layer-1)}.dshWbDockCurrentIcon{display:grid;place-items:center;width:20px;height:20px;flex:none;color:var(--dsw-alias-label-primary)}.dshWbDockCurrentLabel{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-weight:550}.dshWbDockChevron{display:grid;place-items:center;flex:none;color:var(--dsw-alias-label-secondary);transition:transform .16s}.dshWbDockTrigger[aria-expanded=true] .dshWbDockChevron{transform:rotate(180deg)}
+      .dshWbDockMenu{display:flex;align-items:stretch;gap:4px;max-width:min(680px,calc(100vw - 64px));margin-top:6px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 34px rgba(0,0,0,.14)}.dshWbDockItems{display:flex;align-items:center;gap:3px;min-width:0;overflow-x:auto;scrollbar-width:none}.dshWbDockItems::-webkit-scrollbar{display:none}.dshWbDockItem{display:flex;align-items:center;gap:7px;max-width:156px;height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;white-space:nowrap}.dshWbDockItem:hover,.dshWbDockItem[aria-current=page]{background:var(--dsw-alias-bg-layer-2)}.dshWbDockItemIcon{display:grid;place-items:center;width:18px;height:18px;flex:none}.dshWbDockItemLabel{overflow:hidden;text-overflow:ellipsis}.dshWbDockAll{height:34px;padding:0 10px;border:0;border-left:1px solid var(--dsw-alias-border-l2);border-radius:0 7px 7px 0;background:transparent;white-space:nowrap;color:var(--dsw-alias-label-secondary)}.dshWbDockAll:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
@@ -741,11 +743,11 @@ window.__ModuleLoader__.load({
       .dshWbNotice{padding:10px 14px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
       .dshWb [hidden]{display:none!important}
       @media(hover:none){.dshWbFavorite{opacity:1;transform:none}}
-      @media(prefers-reduced-motion:reduce){.dshWbCard,.dshWbFavorite,.dshWbModal,.dshWbModalBackdrop{animation:none;transition:none}}
+      @media(prefers-reduced-motion:reduce){.dshWbCard,.dshWbFavorite,.dshWbModal,.dshWbModalBackdrop,.dshWbDockSwitch::after,.dshWbDockChevron{animation:none;transition:none}}
       @container workbench-market (max-width:980px){.dshWbGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
       @container workbench-market (max-width:620px){.dshWbGrid{grid-template-columns:1fr}}
       @media(max-width:900px){.dshWbMarket{padding:24px}.dshWbBusiness{min-width:180px}}
-      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbCreate{width:100%;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
+      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbDockWrap{max-width:calc(100% - 24px)}.dshWbDockMenu{max-width:calc(100vw - 32px)}.dshWbDockItemLabel{display:none}.dshWbDockItem{width:34px;padding:0;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
     `
     function useWorkbench(service) { return React.useSyncExternalStore(service.subscribe, service.getSnapshot) }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
@@ -766,47 +768,6 @@ window.__ModuleLoader__.load({
       if (catalogError) return h('div', { className: 'dshWbNotice', role: 'status' }, '在线市场暂时无法读取，仍可使用已安装的工作台。 ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, '重试'))
       if (catalogStale) return h('div', { className: 'dshWbNotice', role: 'status' }, '在线市场暂时无法更新，正在显示上一次成功读取的目录。')
       return null
-    }
-    function ModeIcon({ mode }) {
-      return h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.25, 'aria-hidden': true },
-        mode === 'list' ? h('path', { d: 'M2 4h1m3 0h8M2 8h1m3 0h8M2 12h1m3 0h8', strokeLinecap: 'round' })
-          : [2, 9].flatMap((x) => [2, 9].map((y) => h('rect', { key: `${x}-${y}`, x, y, width: 5, height: 5, rx: 1 }))))
-    }
-    function Sidebar({ service, wide }) {
-      const { state, catalog, ready, pending, marketOpen } = useWorkbench(service)
-      const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-      const [mode, setMode] = React.useState(() => {
-        try { return window.localStorage.getItem('dsh-workbench-sidebar-mode') === 'icons' ? 'icons' : 'list' } catch { return 'list' }
-      })
-      if (!workbenchEnabled) return null
-      const changeMode = (next) => {
-        setMode(next)
-        try { window.localStorage.setItem('dsh-workbench-sidebar-mode', next) } catch { /* Preferences remain usable when storage is unavailable. */ }
-      }
-      const iconMode = wide && mode === 'icons'
-      const pinned = state.pinned
-      const disabled = !ready || pending > 0 || service.blocked
-      return h('nav', { className: 'dshWb dshWbNav', 'data-mode': iconMode ? 'icons' : 'list', 'data-wide': !!wide, 'aria-label': '工作台' },
-        h('div', { className: 'dshWbNavHeader' },
-          h('button', { type: 'button', className: 'dshWbNavOpen dshWbNavMarket', 'data-active': marketOpen, 'aria-current': marketOpen ? 'page' : undefined, title: '工作台市场', 'aria-label': '工作台市场', onClick: () => service.showMarket() }, h('span', { className: 'dshWbNavIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'market', size: 15 })), wide && h('span', { className: 'dshWbNavLabel' }, '工作台市场')),
-          wide && (() => {
-            // One button that shows the mode a click switches to.
-            const next = mode === 'list' ? 'icons' : 'list'
-            const label = next === 'list' ? '切换为列表模式' : '切换为图标模式'
-            return h('div', { className: 'dshWbNavModes' },
-              h('button', { type: 'button', className: 'dshWbMode', 'aria-label': label, title: label, onClick: () => changeMode(next) }, h(ModeIcon, { mode: next })))
-          })()),
-        h('div', { className: 'dshWbNavItems' }, pinned.map((id, index) => {
-          const entry = catalog.find((item) => item.id === id)
-          const title = entry?.title || `${id}（不可用）`
-          return h('div', { key: id, className: 'dshWbNavRow', 'data-active': !marketOpen && state.active === id,
-            draggable: !disabled, onDragStart: (event) => event.dataTransfer.setData('application/x-dsh-workbench', id),
-            onDragOver: (event) => { if (event.dataTransfer.types.includes('application/x-dsh-workbench')) event.preventDefault() },
-            onDrop: (event) => { event.preventDefault(); if (!disabled) service.run(service.reorder(event.dataTransfer.getData('application/x-dsh-workbench'), id)) }
-          }, h('button', { type: 'button', className: 'dshWbNavOpen', disabled: disabled || !entry, title: `${title}（${state.active === id ? '点击关闭工作台' : '点击打开工作台'}）`, 'aria-label': title, 'aria-pressed': state.active === id, onClick: () => service.run(service.toggle(id)) }, h('span', { className: 'dshWbNavIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 15 })), wide && !iconMode && h('span', { className: 'dshWbNavLabel' }, entry?.title || id)),
-          wide && !iconMode && h('button', { type: 'button', className: 'dshWbMove', title: '向上移动', 'aria-label': `${title}向上移动`, disabled: disabled || index === 0, onClick: () => service.run(service.reorder(id, pinned[index - 1])) }, h(MarketIcon, { name: 'chevronUp', size: 13 })),
-          wide && !iconMode && h('button', { type: 'button', className: 'dshWbMove', title: '向下移动', 'aria-label': `${title}向下移动`, disabled: disabled || index === pinned.length - 1, onClick: () => service.run(service.reorder(pinned[index + 1], id)) }, h(MarketIcon, { name: 'chevronDown', size: 13 })))
-        })))
     }
     function screenshotFor(entry) {
       return typeof entry?.screenshot === 'string' && entry.screenshot ? entry.screenshot
@@ -842,6 +803,10 @@ window.__ModuleLoader__.load({
       if (name === 'chevronDown') return h('svg', common, h('path', { d: 'm7 10 5 5 5-5' }))
       return h('svg', common, h('path', { d: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z' }))
     }
+    function WorkbenchPanelIcon({ service, size = 16, active = false }) {
+      React.useEffect(() => service.setMarketOpen(active), [service, active])
+      return h(MarketIcon, { name: 'market', size })
+    }
     // A workbench's own short icon (an emoji or character) wins; otherwise its
     // category and title pick a themed glyph, then its first character.
     const TOPIC_ICONS = [[/内容|运营|媒体|content|media/i, 'content'], [/选址|地图|地理|location|map/i, 'location'], [/玄学|命理|人生|life/i, 'life'], [/花|植物|flower/i, 'flower']]
@@ -860,6 +825,37 @@ window.__ModuleLoader__.load({
       const entry = owner && catalog.find((item) => item.id === owner)
       if (!entry) return null
       return h('span', { className: 'dshWb dshWbSessionIcon', role: 'img', title: entry.title, 'aria-label': `属于${entry.title}` }, h(WorkbenchIcon, { entry, size }))
+    }
+    function WorkbenchDock({ service, entry }) {
+      const { state, catalog, ready, pending } = useWorkbench(service)
+      const visible = React.useSyncExternalStore(workbenchDockPreference.subscribe.bind(workbenchDockPreference), workbenchDockPreference.getSnapshot.bind(workbenchDockPreference))
+      const [open, setOpen] = React.useState(false)
+      const root = React.useRef(null)
+      React.useEffect(() => { setOpen(false) }, [entry?.id])
+      React.useEffect(() => {
+        if (!open) return undefined
+        const closeOutside = (event) => { if (root.current && !root.current.contains(event.target)) setOpen(false) }
+        const closeEscape = (event) => { if (event.key === 'Escape') setOpen(false) }
+        document.addEventListener('pointerdown', closeOutside)
+        document.addEventListener('keydown', closeEscape)
+        return () => {
+          document.removeEventListener('pointerdown', closeOutside)
+          document.removeEventListener('keydown', closeEscape)
+        }
+      }, [open])
+      if (!visible || !entry) return null
+      const disabled = !ready || pending > 0 || service.blocked
+      const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && state.added.includes(item.id) && service.catalog.has(item.id))
+      return h('div', { ref: root, className: 'dshWb dshWbDockWrap', 'data-dsh-workbench-dock': '', 'data-open': open || undefined },
+        h('button', { type: 'button', className: 'dshWbDockTrigger', 'aria-label': `切换工作台，当前为${entry.title}`, 'aria-expanded': open, 'aria-controls': 'dsh-workbench-dock-menu', onClick: () => setOpen((value) => !value) },
+          h('span', { className: 'dshWbDockCurrentIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })),
+          h('span', { className: 'dshWbDockCurrentLabel' }, entry.title),
+          h('span', { className: 'dshWbDockChevron', 'aria-hidden': true }, h(MarketIcon, { name: 'chevronDown', size: 14 }))),
+        open && h('nav', { id: 'dsh-workbench-dock-menu', className: 'dshWbDockMenu', 'aria-label': '切换工作台' },
+          h('div', { className: 'dshWbDockItems' }, pinned.map((item) => h('button', { key: item.id, type: 'button', className: 'dshWbDockItem', disabled, 'aria-current': item.id === entry.id ? 'page' : undefined, title: item.title, onClick: () => { setOpen(false); if (item.id !== entry.id) service.run(service.open(item.id)) } },
+            h('span', { className: 'dshWbDockItemIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry: item, size: 15 })),
+            h('span', { className: 'dshWbDockItemLabel' }, item.title)))),
+          h('button', { type: 'button', className: 'dshWbDockAll', onClick: () => { setOpen(false); service.showMarket() } }, '全部工作台')))
     }
     function MetaItem({ icon, label, value }) {
       return h('span', { className: 'dshWbMetaItem', title: label }, h(MarketIcon, { name: icon }), h('b', null, value), h('small', null, label))
@@ -1180,6 +1176,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
     function Market({ service }) {
       const { state, catalog, categories: marketCategories = [], ready, pending, installs, installing } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
+      const dockVisible = React.useSyncExternalStore(workbenchDockPreference.subscribe.bind(workbenchDockPreference), workbenchDockPreference.getSnapshot.bind(workbenchDockPreference))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
       const [category, setCategory] = React.useState('全部')
@@ -1232,8 +1229,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h('header', { className: 'dshWbMarketHeader' },
           h('div', { className: 'dshWbMarketHeaderText' },
             h('h1', null, tab === 'submit' ? '制作属于你的工作台' : '切换工作台，进入不同工作方式'),
-            h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。选择适合当前任务的工作台，并随时从左侧切换。')),
-          h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台')),
+            h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。进入工作台后，可通过顶部 Dock 快速切换。')),
+          h('div', { className: 'dshWbMarketHeaderActions' },
+            h('button', { type: 'button', className: 'dshWbDockSetting', role: 'switch', 'aria-checked': dockVisible, onClick: () => workbenchDockPreference.set(!dockVisible) },
+              h('span', null, '显示工作台 Dock'), h('span', { className: 'dshWbDockSwitch', 'aria-hidden': true })),
+            h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台'))),
         h(Notice, { service }),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': '工作台集合' },
@@ -1367,6 +1367,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const disabled = !ready || pending > 0 || service.blocked
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),
+        runtimeEntry && h(WorkbenchDock, { service, entry: runtimeEntry }),
         require('react-dom').createPortal(conversation, conversationContainer),
         ...loaded.filter((item) => item.customFrame === true).map((item) => h('div', { key: item.id, hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, null, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? conversationMount : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },
@@ -1392,7 +1393,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         return () => style.remove()
       }, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
-      ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: PANEL, order: -20, inject: () => ({ service }) }, Sidebar))
+      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 100, label: '工作台', inject: () => ({ service }) }, WorkbenchPanelIcon))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
       function WorkbenchEnableSetting() {
         const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
