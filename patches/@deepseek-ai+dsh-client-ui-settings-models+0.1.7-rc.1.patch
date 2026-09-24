@@ -452,7 +452,7 @@ index 30db16b..f5829ba 100644
 +									onClick: () => {
 +										toggleExpanded(index);
 +									},
-+									children: (0, react_jsx_runtime.jsx)(IconChevron, { open: expanded.has(index) })
++									children: expanded.has(index) ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutline14, {})
 +								}),
 +								(0, react_jsx_runtime.jsx)("button", {
 +									type: "button",
@@ -470,7 +470,7 @@ index 30db16b..f5829ba 100644
 +										});
 +										setEditing((current) => reindexOnRemove(current, index));
 +									},
-+									children: (0, react_jsx_runtime.jsx)(IconTrash, {})
++									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, { size: 14 })
 +								})
 +							]
 +						}), expanded.has(index) ? (0, react_jsx_runtime.jsxs)("div", {
