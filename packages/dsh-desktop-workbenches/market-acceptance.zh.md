@@ -1,6 +1,6 @@
 # 工作台市场验收规范
 
-版本：2026-09-21 · 以官网版本为准，DSH Desktop 内附同一份文档供离线阅读。
+版本：2026-09-24 · 以官网版本为准，DSH Desktop 内附同一份文档供离线阅读。
 
 官方地址：https://dshdesktop.com/workbench/docs/market-acceptance/
 
