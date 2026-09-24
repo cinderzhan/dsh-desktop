@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { patchPath, projectRoot } from './patch-path'
 // @ts-expect-error Local host plugins are authored as ESM JavaScript.
-import { apply as applyHost } from '../packages/dsh-desktop-onboarding/index.js'
+import { Config as HostConfig, apply as applyHost } from '../packages/dsh-desktop-onboarding/index.js'
 
 interface Registration {
   config: {
@@ -308,6 +308,25 @@ describe('DSH Desktop onboarding composition', () => {
 })
 
 describe('DSH Desktop onboarding host eligibility', () => {
+  function createHostHarness() {
+    const configure = vi.fn(() => () => undefined)
+    const fiber = { uid: 1 }
+    return {
+      configure,
+      fiber,
+      ctx: {
+        fiber,
+        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({
+          effect: (effect: () => unknown) => effect(),
+          // Reproduce the Cordis proxy symptom from the packaged Harness: the
+          // legacy name is present but is not callable. The 0.1.7 integration
+          // must not read it at all.
+          settings: { register: { shadowed: true }, configure }
+        })
+      }
+    }
+  }
+
   it('publishes eligible only for a valid new-install marker', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-onboarding-host-'))
     const previous = process.env.DSH_HOME
@@ -319,18 +338,16 @@ describe('DSH Desktop onboarding host eligibility', () => {
         firstSeenVersion: '1.0.0',
         classifiedAt: '2026-09-23T00:00:00.000Z'
       }))
-      const register = vi.fn()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: true } })
+      const first = createHostHarness()
+      const firstConfig = { eligible: false }
+      applyHost(first.ctx, firstConfig)
+      expect(firstConfig.eligible).toBe(true)
+      expect(first.configure).toHaveBeenCalledWith({ auto: false }, first.fiber)
 
       await writeFile(path.join(root, '.desktop-install-state.json'), '{broken')
-      register.mockClear()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+      const brokenConfig = { eligible: true }
+      applyHost(createHostHarness().ctx, brokenConfig)
+      expect(brokenConfig.eligible).toBe(false)
 
       await writeFile(path.join(root, '.desktop-install-state.json'), JSON.stringify({
         schemaVersion: 1,
@@ -338,22 +355,29 @@ describe('DSH Desktop onboarding host eligibility', () => {
         firstSeenVersion: '1.0.0',
         classifiedAt: '2026-09-23T00:00:00.000Z'
       }))
-      register.mockClear()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+      const existingConfig = { eligible: true }
+      applyHost(createHostHarness().ctx, existingConfig)
+      expect(existingConfig.eligible).toBe(false)
 
       await rm(path.join(root, '.desktop-install-state.json'))
-      register.mockClear()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+      const missingConfig = { eligible: true }
+      applyHost(createHostHarness().ctx, missingConfig)
+      expect(missingConfig.eligible).toBe(false)
     } finally {
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  it('publishes both onboarding fields through the Harness 0.1.7 Config schema', () => {
+    const json = HostConfig.toJSON() as {
+      uid: number
+      refs: Record<string, { dict?: Record<string, number>; meta?: Record<string, unknown> }>
+    }
+    const root = json.refs[String(json.uid)]
+    expect(Object.keys(root?.dict ?? {}).sort()).toEqual(['eligible', 'wizardVersion'])
+    expect(json.refs[String(root?.dict?.eligible)]?.meta?.volatile).toBe(true)
+    expect(json.refs[String(root?.dict?.wizardVersion)]?.meta?.volatile).toBe(true)
   })
 })
