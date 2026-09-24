@@ -17,6 +17,12 @@ function catalog() {
   }
 }
 
+function deferred() {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+
 describe('Awesome workbench published catalog', () => {
   it('uses the DSH Desktop market domain', () => {
     expect(DEFAULT_CATALOG_URL).toBe('https://market.dshdesktop.com/index.json')
@@ -60,6 +66,52 @@ describe('Awesome workbench published catalog', () => {
     await expect(read()).resolves.toMatchObject({ stale: false })
     time = 16 * 60 * 1000
     await expect(read()).resolves.toMatchObject({ stale: true })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps normal reads within the TTL cached while force refresh bypasses it', async () => {
+    let time = 0
+    const first = catalog()
+    const second = catalog()
+    second.workbenches[0].name = '刷新后的项目助手'
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json(first))
+      .mockResolvedValueOnce(Response.json(second))
+    const read = createCatalogReader({ fetch, now: () => time })
+
+    await expect(read()).resolves.toMatchObject({ stale: false, catalog: { workbenches: [{ name: '项目助手' }] } })
+    time = 10 * 60 * 1000
+    await expect(read()).resolves.toMatchObject({ catalog: { workbenches: [{ name: '项目助手' }] } })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await expect(read({ force: true })).resolves.toMatchObject({ stale: false, catalog: { workbenches: [{ name: '刷新后的项目助手' }] } })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('shares one pending request across concurrent force refreshes', async () => {
+    const response = deferred()
+    const fetch = vi.fn(() => response.promise)
+    const read = createCatalogReader({ fetch })
+
+    const first = read({ force: true })
+    const second = read({ force: true })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    response.resolve(Response.json(catalog()))
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ stale: false }),
+      expect.objectContaining({ stale: false })
+    ])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('serves the last good catalog as stale when a forced refresh fails inside the TTL', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json(catalog()))
+      .mockRejectedValueOnce(new Error('offline'))
+    const read = createCatalogReader({ fetch })
+
+    const good = await read()
+    const fallback = await read({ force: true })
+    expect(fallback).toMatchObject({ stale: true, catalog: good.catalog })
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 })

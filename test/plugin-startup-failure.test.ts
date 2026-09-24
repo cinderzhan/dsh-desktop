@@ -28,7 +28,11 @@ async function removeTempDir(dir: string): Promise<void> {
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => removeTempDir(root))) })
 
-async function fixture(sources: string[]) {
+async function fixture(
+  sources: string[],
+  entryIds = sources.map((_, index) => `leaf-${index}`),
+  workbench = false
+) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-startup-failure-'))
   roots.push(home)
   const profile = join(home, 'profiles', 'web')
@@ -38,14 +42,17 @@ async function fixture(sources: string[]) {
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'package.json'), JSON.stringify({
       name: names[index], version: '1.2.3', type: 'module', main: './index.js',
-      dsh: { bundle: { patch: 'cordis.patch.yml' } }
+      dsh: {
+        bundle: { patch: 'cordis.patch.yml' },
+        ...(workbench ? { client: { inject: ['dsh-desktop-workbenches'] } } : {})
+      }
     }))
     await writeFile(join(dir, 'index.js'), source)
     // The leaf is a file URL, not a package name. Legacy package-name matching
     // cannot establish this owner; provenance must survive nested groups.
     await writeFile(join(dir, 'cordis.patch.yml'), JSON.stringify([{ insert: [{
       id: `group-${index}`, name: 'cordis:group', group: true,
-      config: [{ id: `leaf-${index}`, name: pathToFileURL(join(dir, 'index.js')).href }]
+      config: [{ id: entryIds[index], name: pathToFileURL(join(dir, 'index.js')).href }]
     }] }]))
   }
   await writeFile(join(profile, 'package.json'), JSON.stringify({
@@ -80,14 +87,30 @@ function run(entry: string) {
 }
 
 describe('structured startup failures through the real bundled loader', () => {
+  it('keeps the application running when an optional workbench plugin fails', async () => {
+    const { entry, names } = await fixture([
+      'export default function() { throw new Error("incompatible workbench API"); }'
+    ], undefined, true)
+    const result = spawnSync(TEST_NODE_EXECUTABLE, [resolve('build/harness-node-entry.mjs'), entry], {
+      encoding: 'utf8', timeout: 5_000
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stderr).toContain('warning: 1 entry did not activate')
+    expect(result.stderr).toContain(names[0]!)
+    expect(result.stderr).toContain('incompatible workbench API')
+    expect(result.stderr).not.toContain(PLUGIN_FAILURE_PREFIX)
+  })
+
   it('attributes a nested missing-method failure to its root bundle and reuses recovery selection', async () => {
     const { home, entry, names } = await fixture([
       'export default function(ctx) { ctx.subagents.registerContinuableSetup(); }'
-    ])
+    ], ['agent-loop'])
     const { failures, stderr } = run(entry)
     expect(failures).toHaveLength(1)
     expect(failures[0]).toMatchObject({
-      stage: 'apply', entryId: 'leaf-0',
+      stage: 'apply', entryId: 'agent-loop',
       owner: { packageName: names[0], version: '1.2.3' },
       message: expect.stringContaining('registerContinuableSetup is not a function')
     })
@@ -101,14 +124,17 @@ describe('structured startup failures through the real bundled loader', () => {
     const { entry, names } = await fixture([
       'export default async function() { await Promise.resolve(); throw new Error("async failure"); }',
       'export default function() { throw "plain rejection"; }'
-    ])
+    ], ['agent-loop', 'webserver'])
     const { failures } = run(entry)
     expect(failures.map((failure) => failure.owner?.packageName).sort()).toEqual(names)
     expect(failures.map((failure) => failure.message)).toEqual(expect.arrayContaining(['async failure', 'plain rejection']))
   })
 
   it('captures module import failures with the same owner contract', async () => {
-    const { entry, names } = await fixture(['import "missing-fixture-dependency"; export default () => {};'])
+    const { entry, names } = await fixture(
+      ['import "missing-fixture-dependency"; export default () => {};'],
+      ['agent-loop']
+    )
     expect(run(entry).failures[0]).toMatchObject({ stage: 'import', owner: { packageName: names[0] } })
   })
 
@@ -116,26 +142,29 @@ describe('structured startup failures through the real bundled loader', () => {
     const { home, entry, names } = await fixture(['export default function() { throw new Error("nested include failure"); }'])
     const dir = join(home, 'profiles', 'web', 'node_modules', names[0]!)
     await writeFile(join(dir, 'children.yml'), JSON.stringify([
-      { id: 'included-leaf', name: pathToFileURL(join(dir, 'index.js')).href }
+      { id: 'agent-loop', name: pathToFileURL(join(dir, 'index.js')).href }
     ]))
     await writeFile(join(dir, 'cordis.patch.yml'), JSON.stringify([{ insert: [{
       id: 'plugin-include', name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'children.yml')).href }
     }] }]))
     expect(run(entry).failures[0]).toMatchObject({
-      entryId: 'included-leaf', owner: { packageName: names[0], version: '1.2.3' }
+      entryId: 'agent-loop', owner: { packageName: names[0], version: '1.2.3' }
     })
   })
 
   it('reports the same provenance through the production DSH CLI entry', async () => {
-    const { home, names } = await fixture(['export default function() { throw new TypeError("startup API mismatch"); }'])
+    const { home, names } = await fixture(
+      ['export default function() { throw new TypeError("startup API mismatch"); }'],
+      ['agent-loop']
+    )
     const result = spawnSync(TEST_NODE_EXECUTABLE, [
       resolve('build/harness-node-entry.mjs'), resolve('node_modules/@deepseek-ai/dsh/lib/bin.js'),
       '--profile', 'web'
     ], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, DSH_HOME: home } })
     expect(result.status, result.stderr).toBe(1)
-    const line = result.stderr.split('\n').find((line) => line.startsWith(PLUGIN_FAILURE_PREFIX))
-    expect(line, result.stderr).toBeDefined()
-    expect(parsePluginStartupFailures(line!)?.[0]?.owner?.packageName).toBe(names[0])
+    expect(result.stderr).toContain('agent-loop (required)')
+    expect(result.stderr).toContain(names[0]!)
+    expect(result.stderr).toContain('startup API mismatch')
   }, 20_000)
 
   it('captures bundle preparation failures before a loader entry exists', async () => {
@@ -147,7 +176,7 @@ describe('structured startup failures through the real bundled loader', () => {
   it('reports missing-service activation with the owning bundle', async () => {
     const { entry, names } = await fixture([
       'export const inject = ["unavailableFixtureService"]; export function apply() {}'
-    ])
+    ], ['agent-loop'])
     expect(run(entry).failures[0]).toMatchObject({
       stage: 'activate', owner: { packageName: names[0] },
       message: expect.stringContaining('unavailableFixtureService')
@@ -157,7 +186,7 @@ describe('structured startup failures through the real bundled loader', () => {
   it('preserves the initialization error when scope cleanup also throws', async () => {
     const { entry } = await fixture([
       'export default function(ctx) { ctx.fiber.dispose = async () => { throw new Error("cleanup failure"); }; throw Object.freeze(new Error("original initialization failure")); }'
-    ])
+    ], ['agent-loop'])
     const { failures, stderr } = run(entry)
     expect(failures).toHaveLength(1)
     expect(stderr).toContain('original initialization failure')
@@ -194,7 +223,7 @@ describe('structured startup failures through the real bundled loader', () => {
   it('retains structured identity outside the log ring and clears it on a fresh launch', async () => {
     const { home, entry, names } = await fixture([
       'export default function(ctx) { ctx.subagents.registerContinuableSetup(); }'
-    ])
+    ], ['agent-loop'])
     const runtime = new HarnessRuntime({
       dshEntryPath: entry,
       nodeEntryPath: resolve('build/harness-node-entry.mjs'),

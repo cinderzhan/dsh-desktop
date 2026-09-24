@@ -84,8 +84,8 @@ export function createCatalogReader({ fetch: fetchCatalog = globalThis.fetch, ur
     } finally { clearTimeout(timeout) }
   }
 
-  return async function readCatalog() {
-    if (cached && now() - fetchedAt < CACHE_MAX_AGE_MS) return { catalog: structuredClone(cached), stale: false }
+  return async function readCatalog({ force = false } = {}) {
+    if (!force && cached && now() - fetchedAt < CACHE_MAX_AGE_MS) return { catalog: structuredClone(cached), stale: false }
     if (!pending) pending = fetchFresh().finally(() => { pending = undefined })
     try { return await pending } catch (error) {
       if (cached) return { catalog: structuredClone(cached), stale: true }

@@ -13,29 +13,37 @@ const document = { querySelector(selector) {
   if (selector === '[data-sidebar-collapsed]') return sidebarCollapsed ? {} : null
   return null
 } }
+const sessionValues = new Map()
+const sessionStorage = {
+  getItem: key => sessionValues.has(key) ? sessionValues.get(key) : null,
+  setItem: (key, value) => sessionValues.set(key, String(value)),
+  removeItem: key => sessionValues.delete(key),
+  clear: () => sessionValues.clear()
+}
+const clientWindow = { sessionStorage, __ModuleLoader__: { load({ factory }) {
+  const client = factory((name) => {
+    if (name === 'react') return { createElement() {}, Component: class {} }
+    if (name === '@deepseek-ai/cordis') return { Service }
+    throw new Error(`Unexpected module ${name}`)
+  })
+  apply = client.apply
+  Workbenches = client.Workbenches
+  Market = client.Market
+  submissionAgentPrompt = client.submissionAgentPrompt
+  developmentWorkbenchAgentPrompt = client.developmentWorkbenchAgentPrompt
+  submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
+  copySubmissionPrompt = client.copySubmissionPrompt
+} } }
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
 let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
-  window: { __ModuleLoader__: { load({ factory }) {
-    const client = factory((name) => {
-      if (name === 'react') return { createElement() {}, Component: class {} }
-      if (name === '@deepseek-ai/cordis') return { Service }
-      throw new Error(`Unexpected module ${name}`)
-    })
-    apply = client.apply
-    Workbenches = client.Workbenches
-    Market = client.Market
-    submissionAgentPrompt = client.submissionAgentPrompt
-    developmentWorkbenchAgentPrompt = client.developmentWorkbenchAgentPrompt
-    submissionWorkbenchAgentPrompt = client.submissionWorkbenchAgentPrompt
-    copySubmissionPrompt = client.copySubmissionPrompt
-  } } },
+  window: clientWindow,
   document,
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
 
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false })
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false; sessionStorage.clear() })
 
 function deferred() {
   let resolve
@@ -104,7 +112,7 @@ async function fixture(initial = emptyState()) {
     }
   }
   const request = vi.fn(async (url, options = {}) => {
-    if (url === '/api/desktop-workbenches/catalog') return Response.json({
+    if (url === '/api/desktop-workbenches/catalog' || url === '/api/desktop-workbenches/catalog?force=1') return Response.json({
       stale: false,
       catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [
         { id: 'writer', owner: 'test', repository: 'writer', url: 'https://github.com/test/writer', name: 'Writer', category: 'other', description: { zh: 'Writer' }, screenshots: [], version: '1.0.0', distribution: { name: 'writer' } },
@@ -137,15 +145,15 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
-  it('collapses an expanded sidebar once when a workbench enters the foreground', async () => {
+  it('keeps the sidebar state unchanged when a workbench enters the foreground', async () => {
     const { service, ctx } = await fixture()
     sidebarWide = true
     registerProvider(service, ctx, 'writer', { title: 'Writer' })
     await service.add('writer')
     await service.open('writer')
-    expect(ctx.layout.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(ctx.layout.toggleSidebar).not.toHaveBeenCalled()
     await service.open('writer')
-    expect(ctx.layout.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(ctx.layout.toggleSidebar).not.toHaveBeenCalled()
   })
 
   it('migrates legacy market identities to repository identities and preserves owned data', async () => {
@@ -166,16 +174,63 @@ describe('desktop workbench client navigation', () => {
   })
 
   it('tracks the market as the current sidebar destination and clears it when a workbench opens', async () => {
-    const { service, ctx } = await fixture()
+    const { service, ctx, request } = await fixture()
     service.showMarket()
     expect(service.getSnapshot().marketOpen).toBe(true)
     expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith('desktop-workbenches')
+    expect(request).toHaveBeenCalledWith('/api/desktop-workbenches/catalog?force=1', expect.objectContaining({ cache: 'no-store' }))
+    await service.catalogRefresh
 
     await service.add('writer')
     await service.open('writer')
     expect(service.getSnapshot().marketOpen).toBe(false)
     expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
     service.dispose()
+  })
+
+  it('refreshes the catalog without changing navigation or persisted workbench state', async () => {
+    const { service, request } = await fixture(boundState())
+    service.setMarketOpen(true)
+    const before = structuredClone(service.state)
+    request.mockImplementationOnce(async (url) => {
+      expect(url).toBe('/api/desktop-workbenches/catalog?force=1')
+      return Response.json({ stale: false, catalog: {
+        schemaVersion: 2, kind: 'catalog', categories: [{ id: 'productivity', name: { zh: '效率' } }],
+        workbenches: [{ id: 'owner/new', owner: 'owner', repository: 'new', url: 'https://github.com/owner/new', name: 'New', category: 'productivity', description: { zh: 'New' }, screenshots: [] }]
+      } })
+    })
+
+    await service.refreshCatalog()
+
+    expect(service.state).toEqual(before)
+    expect(service.getSnapshot()).toMatchObject({ marketOpen: true, catalogRefreshing: false, catalogError: '' })
+    expect(service.getSnapshot().catalog.some(entry => entry.catalogId === 'owner/new')).toBe(true)
+  })
+
+  it('restores the market after a renderer reload and clears the marker after leaving it', async () => {
+    const first = await fixture(boundState())
+    first.service.showMarket()
+    await first.service.catalogRefresh
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBe('true')
+
+    const reloaded = new Workbenches(first.ctx, first.request)
+    // The sidebar icon may briefly mount inactive before the async service load
+    // restores the selected panel after Cmd-R.
+    reloaded.setMarketOpen(false)
+    first.ctx.fiber.name = 'writer'
+    reloaded.register({ title: 'Writer' }, () => null)
+    first.ctx.fiber.name = 'research'
+    reloaded.register({ title: 'Research' }, () => null)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(true)
+    expect(first.ctx.layout.selectPanel).toHaveBeenLastCalledWith('desktop-workbenches')
+
+    await reloaded.open('writer')
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    const afterLeaving = new Workbenches(first.ctx, first.request)
+    expect(afterLeaving.getSnapshot().marketOpen).toBe(false)
+    reloaded.dispose()
+    afterLeaving.dispose()
   })
 
   it('merges Awesome metadata with loaded providers without treating remote entries as installed', async () => {
@@ -220,7 +275,7 @@ describe('desktop workbench client navigation', () => {
     ctx.fiber.name = 'local-package'
     service.register({ title: 'Local workbench', repository: 'https://github.com/Owner/Local-Workbench.git' }, () => null)
     expect(service.getSnapshot().catalog).toContainEqual(expect.objectContaining({
-      id: 'owner/local-workbench', catalogId: 'owner/local-workbench', sourcePackage: 'local-package', installed: true
+      id: 'owner/local-workbench', catalogId: 'owner/local-workbench', sourcePackage: 'local-package', installed: true, listed: false, local: true
     }))
     service.dispose()
   })
@@ -288,7 +343,7 @@ describe('desktop workbench client navigation', () => {
       },
       slots: { inject: (_name, callback) => callback(), register: vi.fn() },
       sessions: { list: { subscribe: vi.fn() } },
-      uiWorkspace: { registerSessionOpener: vi.fn(), registerSessionReuseFilter: vi.fn() }
+      uiWorkspace: { registerSessionOpener: vi.fn(), registerSessionReuseFilter: vi.fn(), registerSessionFilter: vi.fn() }
     }
     apply(ctx)
     expect(service).toBeInstanceOf(Workbenches)
@@ -622,7 +677,7 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.sessionBindings[id]).toBe('writer')
   })
 
-  it('deduplicates provider creation and retains original ownership without stealing focus after a switch', async () => {
+  it('deduplicates provider creation and leaves a cancelled session unbound after a switch', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
     ctx.fiber.name = 'writer'
@@ -635,7 +690,7 @@ describe('desktop workbench client navigation', () => {
     refresh.resolve()
     const id = await first
     expect(ctx.sessions.create).toHaveBeenCalledTimes(1)
-    expect(service.state.sessionBindings[id]).toBe('writer')
+    expect(service.state.sessionBindings[id]).toBeUndefined()
     expect(service.state.active).toBe('research')
     expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('research-1')
   })
@@ -883,6 +938,31 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.pinned).toEqual(['writer'])
   })
 
+  it('moves a pinned workbench to the end and scopes sessions to the active mode', async () => {
+    const { service, saved } = await fixture({ ...boundState(), pinned: ['writer', 'research'] })
+    await service.reorder('writer', null)
+    expect(saved().state.pinned).toEqual(['research', 'writer'])
+    expect(service.sessionVisible('old')).toBe(true)
+    expect(service.sessionVisible('writer-1')).toBe(false)
+    await service.open('writer')
+    expect(service.sessionVisible('old')).toBe(false)
+    expect(service.sessionVisible('writer-1')).toBe(true)
+    expect(service.sessionVisible('research-1')).toBe(false)
+  })
+
+  it('uses the Workbench setting as the master switch for navigation and session filtering', async () => {
+    const { service, ctx } = await fixture(boundState())
+    await service.open('writer')
+    service.setEnabled(false)
+    await service.queue
+    expect(service.state.active).toBeNull()
+    expect(service.sessionVisible('old')).toBe(true)
+    expect(service.sessionVisible('writer-1')).toBe(true)
+    expect(ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
+    await expect(service.open('writer')).rejects.toThrow('工作台功能已关闭')
+    service.setEnabled(true)
+  })
+
   it('persists favorites independently from installation and lets an unavailable favorite be removed', async () => {
     const { service, saved } = await fixture()
     await service.toggleFavorite('writer')
@@ -989,7 +1069,7 @@ describe('desktop workbench client navigation', () => {
     expect(saved().state.recentSessions.writer).toBe(second)
   })
 
-  it('does not let slow session creation steal focus after switching workbenches', async () => {
+  it('does not bind or focus a slow session after switching workbenches', async () => {
     const { service, ctx, saved, list } = await fixture(boundState())
     await service.open('writer')
     const creation = deferred()
@@ -1002,9 +1082,62 @@ describe('desktop workbench client navigation', () => {
     await pendingCreation
     expect(currentOf(list)).toBe('research-1')
     expect(saved().state.active).toBe('research')
-    expect(saved().state.sessionBindings['slow-created']).toBe('writer')
+    expect(saved().state.sessionBindings['slow-created']).toBeUndefined()
     expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('slow-created')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
+  })
+
+  it('suppresses selection events until a created session has its owner binding', async () => {
+    const { service, ctx, list, saved } = await fixture(boundState())
+    await service.open('writer')
+    ctx.sessions.create.mockImplementationOnce(async ({ workspaceId }) => {
+      const id = 'created-during-selection'
+      list.ids.push(id)
+      list.byId[id] = { sessionId: id, displayTitle: id }
+      const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+      workspace.sessionIds.push(id)
+      selectIn(list, id)
+      service.selectionChanged()
+      return id
+    })
+
+    await service.newSession('project-1')
+    await service.queue
+
+    expect(saved().state.active).toBe('writer')
+    expect(saved().state.sessionBindings['created-during-selection']).toBe('writer')
+    expect(saved().state.recentSessions.writer).toBe('created-during-selection')
+    expect(service.pendingSessionOwners.size).toBe(0)
+    expect(service.selectionDeferred).toBe(false)
+  })
+
+  it('leaves a created session unbound when its owner is removed before creation resolves', async () => {
+    const { service, ctx, list, saved } = await fixture(boundState())
+    await service.open('writer')
+    const creation = deferred()
+    ctx.sessions.create.mockImplementationOnce(() => creation.promise)
+    const pendingCreation = service.newSession('project-1')
+
+    await service.remove('writer')
+    list.ids.push('created-after-remove')
+    list.byId['created-after-remove'] = { sessionId: 'created-after-remove', displayTitle: 'Created after remove' }
+    creation.resolve('created-after-remove')
+    await pendingCreation
+
+    expect(saved().state.active).toBeNull()
+    expect(saved().state.added).not.toContain('writer')
+    expect(saved().state.sessionBindings['created-after-remove']).toBeUndefined()
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalledWith('created-after-remove')
+  })
+
+  it('restores a created session owner and recent pointer after service reload', async () => {
+    const { service, saved } = await fixture(boundState())
+    await service.open('writer')
+    const sessionId = await service.newSession('project-1')
+    await service.load()
+    expect(service.state.sessionBindings[sessionId]).toBe('writer')
+    expect(service.state.recentSessions.writer).toBe(sessionId)
+    expect(saved().state.sessionBindings[sessionId]).toBe('writer')
   })
 
   it('leaves the active workbench when native navigation opens or clears an ordinary session', async () => {
@@ -1189,8 +1322,8 @@ describe('workbench business layout contract', () => {
 describe('workbench market screenshot and metadata display', () => {
   const fullSource = code
   it('explains the workbench concept and the sidebar shortcut model', () => {
-    expect(fullSource).toContain('切换工作台，进入不同工作方式')
-    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。可通过左侧快捷栏在原生会话与不同工作台之间切换。')
+    expect(fullSource).toContain("tab === 'submit' ? '制作属于你的工作台' : '工作台'")
+    expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。可通过顶部快捷栏在原生会话与不同工作台之间切换。')
   })
 
   it('does not embed provider-specific market screenshots in Desktop', async () => {
@@ -1210,11 +1343,21 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
-  it('renders native and pinned workbench icons in a compact row above New Session', () => {
+  it('renders one current mode dropdown with persistent Workbench management', () => {
     expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
-    expect(fullSource).toContain("'aria-label': '原生会话'")
-    expect(fullSource).toContain('onClick: () => startSession()')
+    expect(fullSource).toContain("'aria-haspopup': 'menu', 'aria-expanded': open")
+    expect(fullSource).toContain("role: 'menu', 'aria-label': '选择会话模式'")
+    expect(fullSource).toContain("role: 'menuitemradio'")
+    expect(fullSource).toContain('service.openNative(startSession)')
+    expect(fullSource).toContain("name: 'home'")
+    expect(fullSource).not.toContain('dshWbSidebarTooltip')
+    expect(fullSource).toContain("active?.title || '原生会话'")
+    expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
+    expect(fullSource).toContain('onClick: () => service.showMarket()')
+    expect(fullSource).toContain('.dshWbModeSelect{display:flex;align-items:center;gap:8px;min-width:0;flex:1;')
+    expect(fullSource).toContain('.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;')
+    expect(fullSource).toContain('background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)')
     expect(fullSource).toContain("ctx.slots.inject('sidebar.quickSwitcher'")
     expect(fullSource).not.toContain('function WorkbenchDock(')
     expect(fullSource).not.toContain('dshWbDockWrap')
@@ -1222,24 +1365,90 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('dshWbNavItems')
   })
 
+  it('uses one compact grip per Workbench and keeps selection rows non-draggable', () => {
+    expect(fullSource).toContain("pinned.length > 1 && h('button', { type: 'button', role: 'menuitem', className: 'dshWbModeDragHandle', draggable: !disabled")
+    expect(fullSource).toContain("h(MarketIcon, { name: 'gripVertical', size: 16 })")
+    expect(fullSource).toContain("if (name === 'gripVertical') return h('svg', common")
+    expect(fullSource).toContain("h('circle', { cx: 9, cy: 7, r: 1, fill: 'currentColor', stroke: 'none' })")
+    expect(fullSource).not.toContain("className: 'dshWbModeOption', role: 'menuitemradio', draggable")
+    expect(fullSource).not.toContain('dshWbModeOrder')
+    expect(fullSource).not.toContain('dshWbModeOrderButton')
+    expect(fullSource).not.toContain("name: 'chevronUp', size: 11")
+    expect(fullSource).not.toContain("name: 'chevronDown', size: 11")
+  })
+
+  it('supports native handle drag and drop with insertion-edge feedback', () => {
+    expect(fullSource).toContain("event.dataTransfer.effectAllowed = 'move'")
+    expect(fullSource).toContain("event.dataTransfer.setData('text/plain', item.id)")
+    expect(fullSource).toContain("event.dataTransfer.setData('application/x-dsh-workbench-id', item.id)")
+    expect(fullSource).toContain("const preview = event.currentTarget.closest('.dshWbModeOptionRow')")
+    expect(fullSource).toContain("if (preview && typeof event.dataTransfer.setDragImage === 'function') event.dataTransfer.setDragImage(preview, 12, 17)")
+    expect(fullSource).toContain("event.dataTransfer.dropEffect = 'move'")
+    expect(fullSource).toContain("if (sourceId === targetId) {")
+    expect(fullSource).toContain("if (dropTargetRef.current) { dropTargetRef.current = null; setDropTarget(null) }")
+    expect(fullSource).toContain("const edge = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'")
+    expect(fullSource).toContain("const remaining = pinned.filter((entry) => entry.id !== sourceId)")
+    expect(fullSource).toContain("const before = edge === 'before' ? targetId : (remaining[targetIndex + 1]?.id ?? null)")
+    expect(fullSource).toContain("onDragStart: (event) => onDragStart(event, item), onDragEnd: clearDrag")
+    expect(fullSource).toContain("onDragOver: (event) => onDragOver(event, item.id), onDrop: (event) => onDrop(event, item.id)")
+    expect(fullSource).toContain('.dshWbModeOptionRow[data-dragging=true]{opacity:.46}')
+    expect(fullSource).toContain('.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after')
+    expect(fullSource).not.toContain('.dshWbModeOptionRow{transition')
+  })
+
+  it('keeps grip ordering keyboard accessible and announces successful moves', () => {
+    expect(fullSource).toContain("if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return")
+    expect(fullSource).toContain('event.preventDefault()')
+    expect(fullSource).toContain('event.stopPropagation()')
+    expect(fullSource).toContain("if (event.key === 'ArrowUp' && index > 0) move(item, index, pinned[index - 1].id, index)")
+    expect(fullSource).toContain("if (event.key === 'ArrowDown' && index < pinned.length - 1) move(item, index, pinned[index + 2]?.id ?? null, index + 2)")
+    expect(fullSource).toContain("'aria-keyshortcuts': 'ArrowUp ArrowDown', 'aria-roledescription': '拖拽排序手柄'")
+    expect(fullSource).toContain("'aria-label': `${item.title}，当前位置 ${index + 1}/${pinned.length}，使用上下方向键调整顺序`")
+    expect(fullSource).toContain("setAnnouncement(`${item.title} 已移至第 ${nextPosition} 位`)")
+    expect(fullSource).toContain("className: 'dshWbSrOnly', role: 'status', 'aria-live': 'polite', 'aria-atomic': true")
+    expect(fullSource).not.toContain('aria-grabbed')
+    expect(fullSource).toContain('.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}')
+  })
+
+  it('keeps the submit page heading only in the market header', () => {
+    expect(fullSource).not.toContain('dshWbSubmitHero')
+    expect(fullSource).not.toContain('制作属于你自己的工作台')
+    expect(fullSource).not.toContain('照着下面三步做。只给自己用的话，做完第二步就够了。')
+  })
+
   it('keeps an entry path by opening added workbenches from the Workbench page', () => {
     expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
     expect(fullSource).not.toContain("dshWbInstalled', disabled: true }, '已安装'")
   })
 
-  it('registers Workbench beside the host global panel entries', () => {
-    expect(fullSource).toContain("ctx.slots.inject('sidebar.panellist'")
-    expect(fullSource).toContain("id: PANEL, order: 100, label: '工作台'")
-    expect(fullSource).toContain('function WorkbenchPanelIcon({ service, size = 16, active = false })')
-    expect(fullSource).toContain('React.useEffect(() => service.setMarketOpen(active), [service, active])')
-    expect(fullSource).not.toContain("title: '工作台市场', 'aria-label': '工作台市场'")
+  it('uses the top switcher as the only Workbench navigation entry', () => {
+    expect(fullSource).not.toContain("ctx.slots.inject('sidebar.panellist'")
+    expect(fullSource).not.toContain('function WorkbenchPanelIcon(')
+    expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
   })
 
-  it('lets the Workbench page persistently show or hide the sidebar shortcut row', () => {
-    expect(fullSource).toContain("const WORKBENCH_DOCK_PREF = 'dsh-workbench-dock-visible'")
-    expect(fullSource).toContain("role: 'switch', 'aria-checked': dockVisible")
-    expect(fullSource).toContain("h('span', null, '显示工作台快捷栏')")
-    expect(fullSource).toContain('workbenchDockPreference.set(!dockVisible)')
+  it('does not fail the whole Workbench plugin when an older host lacks session filtering', () => {
+    expect(fullSource).toContain("typeof ctx.uiWorkspace.registerSessionFilter === 'function'")
+    expect(fullSource).toContain("typeof ctx.uiWorkspace.registerSessionStarter === 'function'")
+  })
+
+  it('keeps the shortcut row on whenever the Workbench feature is enabled', () => {
+    expect(fullSource).not.toContain('WORKBENCH_DOCK_PREF')
+    expect(fullSource).not.toContain('workbenchDockPreference')
+    expect(fullSource).not.toContain('显示工作台快捷栏')
+    expect(fullSource).toContain('if (!enabled || !wide) return null')
+    expect(fullSource).toContain('onChange: (event) => service.setEnabled(event.target.checked)')
+    expect(fullSource).toContain('if (!workbenchEnabled) return conversation')
+  })
+
+  it('offers an independent catalog refresh without resetting local market controls', () => {
+    const source = Market.toString()
+    expect(source).toContain("const [search, setSearch] = React.useState('')")
+    expect(source).toContain("const [category, setCategory] = React.useState('全部')")
+    expect(source).toContain('service.run(service.refreshCatalog())')
+    expect(source).toContain("'aria-label': catalogRefreshing ? '正在刷新目录' : '刷新目录'")
+    expect(source).toContain("h(MarketIcon, { name: 'refresh', size: 17 })")
+    expect(fullSource).toContain('.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}')
   })
 
   it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {
@@ -1279,6 +1488,8 @@ describe('workbench market screenshot and metadata display', () => {
 
   it('gives each workbench its own icon instead of the shared market glyph', () => {
     expect(fullSource).toContain("if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph'")
+    expect(fullSource).toContain("[/投标|招标|标书|bid|tender/i, 'bid']")
+    expect(fullSource).toContain("if (name === 'bid') return h('svg'")
     expect(fullSource).toContain("[/玄学|命理|人生|life/i, 'life']")
     expect(fullSource).toContain("if (name === 'life') return h('svg'")
     expect(fullSource).not.toContain("function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }")
@@ -1411,6 +1622,23 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.marketInstallFor('o/helper')).toBe('o/helper')
   })
 
+  it('keeps a failed workbench in the market with recovery actions', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    ctx.modules = { entries: { state: { getSnapshot: () => ({
+      failures: [{ id: 'helper', message: 'Error: incompatible client API' }]
+    }) } } }
+    service.publish()
+
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({
+      installed: false,
+      loadFailure: 'Error: incompatible client API'
+    })
+    expect(Market.toString()).toContain("'加载失败'")
+    expect(Market.toString()).toContain('entry.loadFailure')
+  })
+
   it('rejects malformed install records and entries not in the market', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
@@ -1467,12 +1695,14 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('已有会话、项目文件和工作台笔记都会保留')
   })
 
-  it('implements roving keyboard navigation for the three collection tabs', () => {
+  it('implements roving keyboard navigation for all four collection tabs', () => {
     const source = Market.toString()
     expect(source).toContain("event.key === 'ArrowRight'")
     expect(source).toContain("event.key === 'ArrowLeft'")
     expect(source).toContain("event.key === 'Home'")
     expect(source).toContain("event.key === 'End'")
     expect(source).toContain("tabIndex: tab === 'favorites' ? 0 : -1")
+    expect(source).toContain("tabIndex: tab === 'local' ? 0 : -1")
+    expect(source).toContain('本地工作台')
   })
 })

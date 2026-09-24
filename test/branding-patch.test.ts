@@ -51,6 +51,18 @@ describe('DSH Desktop sidebar branding', () => {
     expect(client).toContain('renderSlot("sidebar.session.leading", { sessionId: result.id, size: 14 })')
   })
 
+  it('lets product modes reactively scope both workspace rows and search results', async () => {
+    const client = await readFile(
+      path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js'),
+      'utf8'
+    )
+
+    expect(client).toContain('registerSessionFilter(filter, subscribe)')
+    expect(client).toContain('sourceList.ids.filter(isSessionVisible)')
+    expect(client).toContain('workspace.sessionIds.filter(isSessionVisible)')
+    expect(client).toContain('sessionVisibility: uiWorkspace.sessionVisibility')
+  })
+
   it('installs the source logo into the Harness static frontend', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
