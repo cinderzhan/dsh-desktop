@@ -1352,7 +1352,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('service.openNative(startSession)')
     expect(fullSource).toContain("name: 'home'")
     expect(fullSource).not.toContain('draggable: !disabled')
-    expect(fullSource).toContain('dshWbSidebarTooltip')
+    expect(fullSource).not.toContain('dshWbSidebarTooltip')
     expect(fullSource).toContain("active?.title || '原生会话'")
     expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
     expect(fullSource).toContain('onClick: () => service.showMarket()')
@@ -1364,6 +1364,23 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('dshWbDockWrap')
     expect(fullSource).not.toContain("ctx.slots.inject('sidebar.footer.action'")
     expect(fullSource).not.toContain('dshWbNavItems')
+  })
+
+  it('offers accessible move controls for every pinned Workbench without closing the menu', () => {
+    expect(fullSource).toContain("className: 'dshWbModeOptionRow', role: 'none'")
+    expect(fullSource).toContain("title: `上移${item.title}`, 'aria-label': `上移${item.title}`, disabled: index === 0")
+    expect(fullSource).toContain('service.reorder(item.id, pinned[index - 1].id)')
+    expect(fullSource).toContain("title: `下移${item.title}`, 'aria-label': `下移${item.title}`, disabled: index === pinned.length - 1")
+    expect(fullSource).toContain('service.reorder(item.id, pinned[index + 2]?.id ?? null)')
+    expect(fullSource).toContain("name: 'chevronUp', size: 13")
+    expect(fullSource).toContain("name: 'chevronDown', size: 13")
+    expect(fullSource).toContain('.dshWbModeOrderButton{display:grid;place-items:center;')
+  })
+
+  it('keeps the submit page heading only in the market header', () => {
+    expect(fullSource).not.toContain('dshWbSubmitHero')
+    expect(fullSource).not.toContain('制作属于你自己的工作台')
+    expect(fullSource).not.toContain('照着下面三步做。只给自己用的话，做完第二步就够了。')
   })
 
   it('keeps an entry path by opening added workbenches from the Workbench page', () => {
