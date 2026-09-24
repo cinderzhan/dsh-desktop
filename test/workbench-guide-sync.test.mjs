@@ -24,7 +24,8 @@ describe('bundled workbench development guide', () => {
   it('covers development and the local self-test only', () => {
     const guide = read(GUIDE_TARGET)
     expect(guide).toBe(read(GUIDE_SOURCE))
-    expect(guide).toContain('## 1. 直接交给 AI 的任务')
+    expect(guide).toContain('## 1. 执行原则')
+    expect(guide).not.toContain('开发时可以把需求与本文一起交给 AI')
     expect(guide).toContain('## 3. 包格式')
     expect(guide).toContain('## 8. 本地自测清单')
     // Listing is covered once, by the market acceptance spec.
