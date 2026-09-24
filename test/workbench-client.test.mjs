@@ -35,7 +35,8 @@ const clientWindow = { sessionStorage, __ModuleLoader__: { load({ factory }) {
   copySubmissionPrompt = client.copySubmissionPrompt
 } } }
 
-const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
+// Windows checkout may rewrite this file to CRLF; source-contract assertions use LF.
+const code = (await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
 let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
 vm.runInNewContext(code, {
   window: clientWindow,
