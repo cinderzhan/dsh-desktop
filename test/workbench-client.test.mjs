@@ -1357,7 +1357,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
     expect(fullSource).toContain('onClick: () => service.showMarket()')
     expect(fullSource).toContain('.dshWbModeSelect{display:flex;align-items:center;gap:8px;min-width:0;flex:1;')
-    expect(fullSource).toContain('.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:42px;')
+    expect(fullSource).toContain('.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;')
     expect(fullSource).toContain('background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)')
     expect(fullSource).toContain("ctx.slots.inject('sidebar.quickSwitcher'")
     expect(fullSource).not.toContain('function WorkbenchDock(')
@@ -1368,13 +1368,17 @@ describe('workbench market screenshot and metadata display', () => {
 
   it('offers accessible move controls for every pinned Workbench without closing the menu', () => {
     expect(fullSource).toContain("className: 'dshWbModeOptionRow', role: 'none'")
+    expect(fullSource).toContain("pinned.length > 1 && h('span', { className: 'dshWbModeOrder'")
     expect(fullSource).toContain("title: `上移${item.title}`, 'aria-label': `上移${item.title}`, disabled: index === 0")
     expect(fullSource).toContain('service.reorder(item.id, pinned[index - 1].id)')
     expect(fullSource).toContain("title: `下移${item.title}`, 'aria-label': `下移${item.title}`, disabled: index === pinned.length - 1")
     expect(fullSource).toContain('service.reorder(item.id, pinned[index + 2]?.id ?? null)')
-    expect(fullSource).toContain("name: 'chevronUp', size: 13")
-    expect(fullSource).toContain("name: 'chevronDown', size: 13")
-    expect(fullSource).toContain('.dshWbModeOrderButton{display:grid;place-items:center;')
+    expect(fullSource).toContain("name: 'chevronUp', size: 11")
+    expect(fullSource).toContain("name: 'chevronDown', size: 11")
+    expect(fullSource).toContain('.dshWbModeOptionRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0;')
+    expect(fullSource).toContain('.dshWbModeOrder{display:grid;grid-template-rows:repeat(2,16px);width:20px;height:32px;gap:0}')
+    expect(fullSource).toContain('.dshWbModeOrderButton{display:grid;place-items:center;width:20px;height:16px;')
+    expect(fullSource).toContain('.dshWbModeOrderButton:focus-visible{outline:none;box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2)}')
   })
 
   it('keeps the submit page heading only in the market header', () => {
