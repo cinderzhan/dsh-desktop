@@ -271,7 +271,7 @@ describe('native Workspace navigation with workbench routing', () => {
 
     await uiWorkspace.openWorkspace('project')
 
-    expect(uiWorkspace.sessions.create).not.toHaveBeenCalled()
+    expect(uiWorkspace.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: ordinary })
     expect(mainViewOf(sessionState)).toBe(ordinary)
     expect(controller.state.active).toBeNull()
     expect(uiWorkspace.sessions.retain).not.toHaveBeenCalledWith(bound, { source: 'mainView' })
