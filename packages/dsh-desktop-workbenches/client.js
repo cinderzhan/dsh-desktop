@@ -888,6 +888,7 @@ window.__ModuleLoader__.load({
       if (name === 'remove') return h('svg', common, h('path', { d: 'M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5' }))
       if (name === 'market') return h('svg', common, h('rect', { x: 3.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 3.5, y: 13.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 13.5, width: 7, height: 7, rx: 1.5 }))
       if (name === 'home') return h('svg', common, h('path', { d: 'm3.5 10 8.5-7 8.5 7' }), h('path', { d: 'M5.5 9v11h13V9M9.5 20v-6h5v6' }))
+      if (name === 'bid') return h('svg', common, h('path', { d: 'M7 3.5h7l4 4v13H7z' }), h('path', { d: 'M14 3.5v4h4' }), h('path', { d: 'm9 14 2 2 4-5' }))
       if (name === 'content') return h('svg', common, h('rect', { x: 3.5, y: 4, width: 17, height: 16, rx: 2 }), h('path', { d: 'M8 4v16M8 9h12M8 15h12' }))
       if (name === 'location') return h('svg', common, h('path', { d: 'M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z' }), h('circle', { cx: 12, cy: 10, r: 2 }))
       if (name === 'life') return h('svg', common, h('circle', { cx: 12, cy: 12, r: 8.5 }), h('path', { d: 'M12 3.5c3.2 2.2 3.2 6.4 0 8.5s-3.2 6.3 0 8.5' }), h('circle', { cx: 12, cy: 7.7, r: .7, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 12, cy: 16.3, r: .7, fill: 'currentColor', stroke: 'none' }))
@@ -900,7 +901,7 @@ window.__ModuleLoader__.load({
     }
     // A workbench's own short icon (an emoji or character) wins; otherwise its
     // category and title pick a themed glyph, then its first character.
-    const TOPIC_ICONS = [[/内容|运营|媒体|content|media/i, 'content'], [/选址|地图|地理|location|map/i, 'location'], [/玄学|命理|人生|life/i, 'life'], [/花|植物|flower/i, 'flower']]
+    const TOPIC_ICONS = [[/投标|招标|标书|bid|tender/i, 'bid'], [/内容|运营|媒体|content|media/i, 'content'], [/选址|地图|地理|location|map/i, 'location'], [/玄学|命理|人生|life/i, 'life'], [/花|植物|flower/i, 'flower']]
     function WorkbenchIcon({ entry, size = 16 }) {
       const own = typeof entry?.icon === 'string' ? entry.icon.trim() : ''
       if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph', style: { fontSize: size } }, own)

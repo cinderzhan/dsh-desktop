@@ -1438,6 +1438,8 @@ describe('workbench market screenshot and metadata display', () => {
 
   it('gives each workbench its own icon instead of the shared market glyph', () => {
     expect(fullSource).toContain("if (own && [...own].length <= 2) return h('span', { className: 'dshWbGlyph'")
+    expect(fullSource).toContain("[/投标|招标|标书|bid|tender/i, 'bid']")
+    expect(fullSource).toContain("if (name === 'bid') return h('svg'")
     expect(fullSource).toContain("[/玄学|命理|人生|life/i, 'life']")
     expect(fullSource).toContain("if (name === 'life') return h('svg'")
     expect(fullSource).not.toContain("function WorkbenchIcon({ size = 16 }) { return h(MarketIcon, { name: 'market', size }) }")
