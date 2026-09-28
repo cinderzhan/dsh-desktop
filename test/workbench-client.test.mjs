@@ -24,6 +24,7 @@ const clientWindow = { sessionStorage, __ModuleLoader__: { load({ factory }) {
   const client = factory((name) => {
     if (name === 'react') return { createElement() {}, Component: class {} }
     if (name === '@deepseek-ai/cordis') return { Service }
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return { Switch: () => null }
     throw new Error(`Unexpected module ${name}`)
   })
   apply = client.apply
@@ -54,7 +55,7 @@ function marketCard(service) {
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   vm.runInNewContext(code, { window: { sessionStorage, __ModuleLoader__: { load({ factory }) {
-    renderMarket = factory(name => name === 'react' ? testReact : { Service }).Market
+    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).Market
   } } }, document, setTimeout, clearTimeout, AbortController })
   const tree = renderMarket({ service })
   const find = (node, predicate) => {
@@ -1515,7 +1516,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('workbenchDockPreference')
     expect(fullSource).not.toContain('显示工作台快捷栏')
     expect(fullSource).toContain('if (!enabled || !wide) return null')
-    expect(fullSource).toContain('onChange: (event) => service.setEnabled(event.target.checked)')
+    expect(fullSource).toContain("h(Switch, { checked: enabled, onChange: (next) => service.setEnabled(next), label: '启用工作台功能' })")
     expect(fullSource).toContain('if (!workbenchEnabled) return conversation')
   })
 

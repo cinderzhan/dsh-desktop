@@ -23,6 +23,7 @@ vm.runInNewContext(workbenchSource, {
     const client = factory((name) => {
       if (name === 'react') return { createElement() {}, Component: class {} }
       if (name === '@deepseek-ai/cordis') return { Service }
+      if (name === '@deepseek-ai/dsh-client-ui-primitives') return { Switch: () => null }
       throw new Error(`Unexpected module ${name}`)
     })
     apply = client.apply
