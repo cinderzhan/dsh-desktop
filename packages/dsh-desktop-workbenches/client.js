@@ -865,7 +865,20 @@ window.__ModuleLoader__.load({
       @media(max-width:900px){.dshWbMarket{padding:24px}.dshWbBusiness{min-width:180px}}
       @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
     `
-    function useWorkbench(service) { return React.useSyncExternalStore(service.subscribe, service.getSnapshot) }
+    function ensureStyles() {
+      const existing = document.querySelector('style[data-plugin-css="dsh-desktop-workbenches"]')
+      if (existing) { if (existing.textContent !== css) existing.textContent = css; return }
+      const style = document.createElement('style')
+      style.dataset.pluginCss = 'dsh-desktop-workbenches'
+      style.textContent = css
+      document.head.appendChild(style)
+    }
+    function useWorkbench(service) {
+      // The host can replace the document head during a live client rebuild.
+      // Restore this stylesheet after a workbench view mounts or updates.
+      React.useLayoutEffect(ensureStyles)
+      return React.useSyncExternalStore(service.subscribe, service.getSnapshot)
+    }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
     function Notice({ service }) {
       const { error, catalogError, catalogStale, pending, ready, restartNeeded } = useWorkbench(service)
@@ -1582,17 +1595,12 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')
       ctx.effect(() => ctx.modules?.entries?.state?.subscribe?.(() => service.publish()), 'workbenches: client module failures')
-      ctx.effect(() => {
-        const style = document.createElement('style')
-        style.dataset.pluginCss = 'dsh-desktop-workbenches'
-        style.textContent = css
-        document.head.appendChild(style)
-        return () => style.remove()
-      }, 'workbenches: styles')
+      ctx.effect(ensureStyles, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
       function WorkbenchEnableSetting() {
+        React.useLayoutEffect(ensureStyles)
         const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
         return h('div', { className: 'dshWbSetting' }, h('div', { className: 'dshWbSettingText' }, h('strong', null, '启用工作台功能'), h('small', null, '开启后可使用工作台市场和已安装的工作台；关闭后所有工作台不加载，不影响已保存的会话和数据。')),
           h(Switch, { checked: enabled, onChange: (next) => service.setEnabled(next), label: '启用工作台功能' }))

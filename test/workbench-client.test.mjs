@@ -52,6 +52,7 @@ function marketCard(service) {
     Component: class {},
     Fragment: Symbol('Fragment'),
     useState: (initial) => [initial, () => {}],
+    useLayoutEffect: () => {},
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   vm.runInNewContext(code, { window: { sessionStorage, __ModuleLoader__: { load({ factory }) {
@@ -430,6 +431,27 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('keeps the workbench stylesheet when a client effect is retired while slots remain mounted', () => {
+    const styles = []
+    const testDocument = {
+      querySelector: () => styles.find(style => style.dataset.pluginCss === 'dsh-desktop-workbenches') || null,
+      createElement: () => ({ dataset: {}, textContent: '', remove() { styles.splice(styles.indexOf(this), 1) } }),
+      head: { appendChild: style => styles.push(style) }
+    }
+    let applyLocal
+    vm.runInNewContext(code, { window: { sessionStorage, __ModuleLoader__: { load({ factory }) {
+      applyLocal = factory(name => name === 'react' ? { createElement() {}, Component: class {} } : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).apply
+    } } }, document: testDocument, setTimeout, clearTimeout, AbortController })
+    let styleEffect
+    applyLocal({ effect: (callback, label) => { if (label === 'workbenches: styles') styleEffect = callback }, slots: { inject: () => {} } })
+    const cleanup = styleEffect()
+    cleanup?.()
+    expect(styles).toHaveLength(1)
+    expect(styles[0].textContent).toContain('.dshWbModeSelect')
+    styleEffect()
+    expect(styles).toHaveLength(1)
+  })
+
   it.each(['research-notebook', 'writing-notebook'])('preserves retired %s data across loading, native navigation and saving', async (id) => {
     const initial = {
       ...emptyState(), added: [id], pinned: [id], active: id,
@@ -641,6 +663,7 @@ describe('desktop workbench client navigation', () => {
     const react = {
       createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
       Component: class {},
+      useLayoutEffect: () => {},
       useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
       useCallback: callback => callback,
       useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
@@ -681,6 +704,7 @@ describe('desktop workbench client navigation', () => {
     const react = {
       createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
       Component: class {},
+      useLayoutEffect: () => {},
       useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
       useCallback: callback => callback,
       useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
@@ -920,6 +944,7 @@ describe('desktop workbench client navigation', () => {
       createElement: (type, props, ...children) => ({ type, props, children }),
       useState: (value) => [typeof value === 'function' ? value() : value, () => {}],
       useCallback: (callback) => callback,
+      useLayoutEffect: () => {},
       useSyncExternalStore(subscribe, getSnapshot) {
         // React calls these as standalone functions, without a store receiver.
         cleanups.push(subscribe(() => {}))
