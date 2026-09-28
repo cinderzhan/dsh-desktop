@@ -44,6 +44,39 @@ vm.runInNewContext(code, {
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
 
+function marketCard(service) {
+  let renderMarket
+  const testReact = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    Component: class {},
+    Fragment: Symbol('Fragment'),
+    useState: (initial) => [initial, () => {}],
+    useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
+  }
+  vm.runInNewContext(code, { window: { sessionStorage, __ModuleLoader__: { load({ factory }) {
+    renderMarket = factory(name => name === 'react' ? testReact : { Service }).Market
+  } } }, document, setTimeout, clearTimeout, AbortController })
+  const tree = renderMarket({ service })
+  const find = (node, predicate) => {
+    if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
+    if (!node || typeof node !== 'object') return []
+    return [...(predicate(node) ? [node] : []), ...find(node.props?.children, predicate)]
+  }
+  return find(tree, node => node.type === 'article')[0]
+}
+
+function cardButtons(card) {
+  const buttons = []
+  const visit = node => {
+    if (Array.isArray(node)) return node.forEach(visit)
+    if (!node || typeof node !== 'object') return
+    if (node.type?.name === 'Button') buttons.push(node)
+    visit(node.props?.children)
+  }
+  visit(card)
+  return buttons.map(button => button.props.children.flat().filter(child => typeof child === 'string').join(''))
+}
+
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false; sessionStorage.clear() })
 
 function deferred() {
@@ -61,6 +94,11 @@ function selectIn(list, target) {
   for (const id of Object.keys(list.byId)) list.byId[id] = { ...list.byId[id], retainedBy: id === target ? { mainView: 1 } : {} }
 }
 
+function setFiberPackage(ctx, source, name = source) {
+  ctx.fiber.name = name
+  ctx.fiber.entry = { options: { name: source } }
+}
+
 function registerProvider(service, ctx, id, descriptor = {}, Component = () => null) {
   const source = `package-${id}`
   if (!service.remoteCatalog.some(entry => entry.id === id)) service.remoteCatalog.push({
@@ -68,7 +106,7 @@ function registerProvider(service, ctx, id, descriptor = {}, Component = () => n
     categoryName: '其他', description: { zh: descriptor.title || id }, screenshots: [], version: '1.0.0', distribution: { name: source }
   })
   else service.remoteCatalog = service.remoteCatalog.map(entry => entry.id === id ? { ...entry, distribution: { ...entry.distribution, name: source } } : entry)
-  ctx.fiber.name = source
+  setFiberPackage(ctx, source)
   return service.register(descriptor, Component)
 }
 
@@ -81,7 +119,7 @@ async function fixture(initial = emptyState()) {
   let navigation = new AbortController()
   let service
   const ctx = {
-    fiber: { name: 'fixture' },
+    fiber: { name: 'fixture', entry: { options: { name: 'fixture' } } },
     sessions: {
       list: { getSnapshot: () => list },
       refresh: vi.fn(async () => {}),
@@ -129,9 +167,9 @@ async function fixture(initial = emptyState()) {
     } catch (error) { return Response.json({ error: error.message }, { status: error.status || 500 }) }
   })
   service = new Workbenches(ctx, request)
-  ctx.fiber.name = 'writer'
+  setFiberPackage(ctx, 'writer')
   service.register({ title: 'Writer' }, () => null)
-  ctx.fiber.name = 'research'
+  setFiberPackage(ctx, 'research')
   service.register({ title: 'Research' }, () => null)
   await service.load()
   return {
@@ -218,9 +256,9 @@ describe('desktop workbench client navigation', () => {
     // The sidebar icon may briefly mount inactive before the async service load
     // restores the selected panel after Cmd-R.
     reloaded.setMarketOpen(false)
-    first.ctx.fiber.name = 'writer'
+    setFiberPackage(first.ctx, 'writer')
     reloaded.register({ title: 'Writer' }, () => null)
-    first.ctx.fiber.name = 'research'
+    setFiberPackage(first.ctx, 'research')
     reloaded.register({ title: 'Research' }, () => null)
     await reloaded.load()
     expect(reloaded.getSnapshot().marketOpen).toBe(true)
@@ -263,7 +301,7 @@ describe('desktop workbench client navigation', () => {
       id: 'owner/remote', owner: 'owner', url: 'https://github.com/owner/remote', name: '远程工作台',
       categoryName: '内容', description: { zh: '中文简介', en: 'English description' }, screenshots: [], distribution: { name: 'remote-package' }
     }]
-    ctx.fiber.name = 'remote-package'
+    setFiberPackage(ctx, 'remote-package')
     service.register({ title: '本地标题' }, () => null)
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'owner/remote')).toMatchObject({
       id: 'owner/remote', title: '远程工作台', installed: true
@@ -271,9 +309,45 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('registers two real packages that share a generated fiber name and resolves calls by entry identity', async () => {
+    const { service, ctx } = await fixture()
+    service.remoteCatalog = [
+      { id: 'dataelement/dsh-site-selection', owner: 'dataelement', url: 'https://github.com/dataelement/dsh-site-selection', name: '门店选址', categoryName: '运营', description: { zh: '门店选址' }, screenshots: [], distribution: { name: 'dsh-site-selection' } },
+      { id: 'dataelement/dsh-ming-life', owner: 'dataelement', url: 'https://github.com/dataelement/dsh-ming-life', name: '玄学人生', categoryName: '其他', description: { zh: '玄学人生' }, screenshots: [], distribution: { name: 'ming-life' } }
+    ]
+
+    setFiberPackage(ctx, 'dsh-site-selection', 'cf')
+    service.register({ title: '门店选址' }, () => null)
+    setFiberPackage(ctx, 'ming-life', 'cf')
+    service.register({ title: '玄学人生' }, () => null)
+
+    expect([...service.providers.keys()]).toEqual(expect.arrayContaining(['dsh-site-selection', 'ming-life']))
+    expect([...service.catalog.keys()]).toEqual(expect.arrayContaining(['dataelement/dsh-site-selection', 'dataelement/dsh-ming-life']))
+    expect(service.getSnapshot().catalog.filter(entry => entry.installed).map(entry => entry.catalogId)).toEqual(expect.arrayContaining(['dataelement/dsh-site-selection', 'dataelement/dsh-ming-life']))
+    await service.add('dataelement/dsh-site-selection')
+    await service.add('dataelement/dsh-ming-life')
+    await service.open('dataelement/dsh-site-selection')
+    setFiberPackage(ctx, 'dsh-site-selection', 'cf')
+    expect(service.isActive()).toBe(true)
+    setFiberPackage(ctx, 'ming-life', 'cf')
+    expect(service.isActive()).toBe(false)
+    await expect(service.ensureSession({ folder: '/business' })).rejects.toThrow('请先打开')
+  })
+
+  it('rejects a repeated real package entry even if its generated fiber name changes', async () => {
+    const { service, ctx } = await fixture()
+    service.remoteCatalog = [{ id: 'dataelement/dsh-ming-life', owner: 'dataelement', url: 'https://github.com/dataelement/dsh-ming-life', name: '玄学人生', categoryName: '其他', description: { zh: '玄学人生' }, screenshots: [], distribution: { name: 'ming-life' } }]
+    setFiberPackage(ctx, 'ming-life', 'cf')
+    service.register({ title: '玄学人生' }, () => null)
+    setFiberPackage(ctx, 'ming-life', 'another-generated-name')
+    expect(() => service.register({ title: '重复的玄学人生' }, () => null)).toThrow('Duplicate workbench provider: ming-life')
+    delete ctx.fiber.entry
+    expect(() => service.register({ title: '缺少真实包名' }, () => null)).toThrow('client package entry name')
+  })
+
   it('derives an unlisted local provider identity from its GitHub repository', async () => {
     const { service, ctx } = await fixture()
-    ctx.fiber.name = 'local-package'
+    setFiberPackage(ctx, 'local-package')
     service.register({ title: 'Local workbench', repository: 'https://github.com/Owner/Local-Workbench.git' }, () => null)
     expect(service.getSnapshot().catalog).toContainEqual(expect.objectContaining({
       id: 'owner/local-workbench', catalogId: 'owner/local-workbench', sourcePackage: 'local-package', installed: true, listed: false, local: true
@@ -287,7 +361,7 @@ describe('desktop workbench client navigation', () => {
       id: 'owner/listed', owner: 'owner', url: 'https://github.com/owner/listed', name: 'Listed',
       categoryName: '其他', description: { zh: 'Listed' }, screenshots: [], distribution: { name: 'local-package' }
     }]
-    ctx.fiber.name = 'local-package'
+    setFiberPackage(ctx, 'local-package')
     service.register({ title: 'Wrong', repository: 'https://github.com/owner/other' }, () => null)
     expect(service.catalog.size).toBe(0)
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'owner/listed')).toMatchObject({ installed: false })
@@ -304,7 +378,7 @@ describe('desktop workbench client navigation', () => {
       'owner/workbench': { catalogId: 'owner/workbench', pluginName: 'workbench-package', version: '1.0.0' }
     }
 
-    ctx.fiber.name = 'workbench-package'
+    setFiberPackage(ctx, 'workbench-package')
     service.register({ title: '工作台' }, () => null)
     await service.queue
 
@@ -321,13 +395,13 @@ describe('desktop workbench client navigation', () => {
       id: 'owner/workbench', owner: 'owner', url: 'https://github.com/owner/workbench', name: '工作台', version: '1.2.0',
       categoryName: '其他', description: { zh: '市场版本' }, screenshots: [], distribution: { name: 'workbench-package' }
     }]
-    ctx.fiber.name = 'workbench-package'
+    setFiberPackage(ctx, 'workbench-package')
     service.register({ title: '工作台', version: '0.1.1' }, () => null)
     expect(service.getSnapshot().catalog.find(item => item.catalogId === 'owner/workbench')).toMatchObject({
       version: '1.2.0', listedVersion: '1.2.0'
     })
 
-    ctx.fiber.name = 'local-package'
+    setFiberPackage(ctx, 'local-package')
     service.register({ title: '本地工作台', repository: 'https://github.com/owner/local', version: '0.3.0' }, () => null)
     expect(service.getSnapshot().catalog.find(item => item.catalogId === 'owner/local')).toMatchObject({ version: '0.3.0' })
     service.dispose()
@@ -336,7 +410,7 @@ describe('desktop workbench client navigation', () => {
   it('does not register the retired notebook templates when the plugin is applied', () => {
     let service
     const ctx = {
-      fiber: { name: 'external-package' },
+      fiber: { name: 'external-package', entry: { options: { name: 'external-package' } } },
       reflect: { provide: (name, value) => { if (name === 'desktopWorkbenches') service = value } },
       effect: (callback, label) => {
         // Exercise registration effects without mounting DOM styles or starting network I/O.
@@ -647,7 +721,7 @@ describe('desktop workbench client navigation', () => {
   it('creates and binds a provider business folder session without a manual picker', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    ctx.fiber.name = 'writer'
+    setFiberPackage(ctx, 'writer')
     const id = await service.ensureSession({ folder: '/business/profile' })
     expect(ctx.workspaces.create).toHaveBeenCalledWith({ path: '/business/profile' })
     expect(ctx.uiWorkspace.pickDirectory).not.toHaveBeenCalled()
@@ -658,7 +732,7 @@ describe('desktop workbench client navigation', () => {
   it('restores an owned saved session or adopts a real unowned session without changing its workspace', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    ctx.fiber.name = 'writer'
+    setFiberPackage(ctx, 'writer')
     expect(await service.ensureSession({ sessionId: 'writer-2', folder: '/other' })).toBe('writer-2')
     expect(await service.ensureSession({ sessionId: 'old', folder: '/other' })).toBe('old')
     expect(service.state.sessionBindings.old).toBe('writer')
@@ -670,7 +744,7 @@ describe('desktop workbench client navigation', () => {
   it('rejects conflicting ownership and recreates a deleted saved session', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    ctx.fiber.name = 'writer'
+    setFiberPackage(ctx, 'writer')
     await expect(service.ensureSession({ sessionId: 'research-1', folder: '/business' })).rejects.toThrow('不能重新绑定')
     expect(ctx.sessions.create).not.toHaveBeenCalled()
     const id = await service.ensureSession({ sessionId: 'deleted', folder: '/business' })
@@ -681,7 +755,7 @@ describe('desktop workbench client navigation', () => {
   it('deduplicates provider creation and leaves a cancelled session unbound after a switch', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    ctx.fiber.name = 'writer'
+    setFiberPackage(ctx, 'writer')
     const refresh = deferred()
     ctx.sessions.refresh.mockReturnValueOnce(refresh.promise)
     const args = { folder: '/business' }
@@ -699,11 +773,11 @@ describe('desktop workbench client navigation', () => {
   it('rejects inactive providers and aborts removed providers before creating a session', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    ctx.fiber.name = 'research'
+    setFiberPackage(ctx, 'research')
     await expect(service.ensureSession({ folder: '/business' })).rejects.toThrow('请先打开')
     const refresh = deferred()
     ctx.sessions.refresh.mockReturnValueOnce(refresh.promise)
-    ctx.fiber.name = 'writer'
+    setFiberPackage(ctx, 'writer')
     const pending = service.ensureSession({ folder: '/business' })
     await service.remove('writer')
     refresh.resolve()
@@ -828,7 +902,7 @@ describe('desktop workbench client navigation', () => {
     await service.load()
     expect(service.ready).toBe(true)
     expect(service.error).toBe('')
-    ctx.fiber.name = 'writer'
+    setFiberPackage(ctx, 'writer')
     service.register({ title: 'Writer' }, () => null)
     await service.add('example/writer')
     // state, catalog and market installs on load, then one state write.
@@ -1475,7 +1549,7 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
   it('keeps a direct open action when an added workbench also has an update', () => {
-    expect(fullSource).toContain("state.added.includes(entry.id)\n                    ? h(React.Fragment, null,")
+    expect(fullSource).toContain("entry.installed && state.added.includes(entry.id)\n                    ? h(React.Fragment, null,")
     expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
     expect(fullSource).toContain("installing === catalogId ? '更新中…' : '更新'")
     expect(fullSource).toContain("installing === catalogId ? '正在更新…' : '检测到更新')")
@@ -1611,7 +1685,9 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: true, installs: { 'o/helper': { pluginName: 'helper' } } })
     expect(saved().state.added).toEqual(['o/helper'])
     // Until the provider loads, the card stays a market entry awaiting restart.
-    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false })
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false, pendingRestart: true, loadFailure: '' })
+    expect(cardButtons(marketCard(service))).toContain('重启后生效')
+    expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
   })
 
   it('merges the installed provider through its caller package identity', async () => {
@@ -1620,9 +1696,10 @@ describe('workbench market screenshot and metadata display', () => {
     withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) })
     await service.installFromMarket('o/helper')
     expect(saved().state.added).toEqual(['o/helper'])
-    ctx.fiber.name = 'helper'
+    setFiberPackage(ctx, 'helper')
     service.register({ title: 'Helper' }, () => null)
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ id: 'o/helper', installed: true, listedVersion: '1.0.0' })
+    expect(cardButtons(marketCard(service))).toContain('打开工作台')
     expect(service.marketInstallFor('o/helper')).toBe('o/helper')
   })
 
@@ -1639,8 +1716,58 @@ describe('workbench market screenshot and metadata display', () => {
       installed: false,
       loadFailure: 'Error: incompatible client API'
     })
-    expect(Market.toString()).toContain("'加载失败'")
-    expect(Market.toString()).toContain('entry.loadFailure')
+    const card = marketCard(service)
+    expect(cardButtons(card)).toContain('安装失败')
+    expect(cardButtons(card)).toContain('重试安装')
+    expect(cardButtons(card)).toContain('卸载')
+    expect(cardButtons(card)).not.toContain('打开工作台')
+    expect(JSON.stringify(card)).toContain('Error: incompatible client API')
+  })
+
+  it('marks stale added and installed records as failed after a restart, even without a module error', async () => {
+    const { service } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
+    service.remoteCatalog = [listed()]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    service.publish()
+    const entry = service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper')
+    expect(entry).toMatchObject({ installed: false, pendingRestart: false })
+    expect(entry.loadFailure).toContain('启动后未注册')
+    expect(cardButtons(marketCard(service))).toEqual(expect.arrayContaining(['安装失败', '重试安装', '卸载']))
+    expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
+
+    service.installs = {}
+    service.publish()
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper').loadFailure).toContain('安装包不存在')
+    expect(cardButtons(marketCard(service))).toEqual(expect.arrayContaining(['安装失败', '重试安装', '移除记录']))
+  })
+
+  it('shows an install API error on the card and recovers after a successful retry', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ error: 'Package checksum mismatch' }, { status: 500 }) })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('Package checksum mismatch')
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper').loadFailure).toBe('Package checksum mismatch')
+    expect(cardButtons(marketCard(service))).toEqual(expect.arrayContaining(['安装失败', '重试安装']))
+    expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
+
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) })
+    await service.installFromMarket('o/helper')
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper')).toMatchObject({ pendingRestart: true, loadFailure: '' })
+    expect(cardButtons(marketCard(service))).toContain('重启后生效')
+  })
+
+  it('shows a failed update instead of an open action while the older provider remains registered', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper' }, () => null)
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ error: 'Update rejected' }, { status: 500 }) })
+
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('Update rejected')
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper')).toMatchObject({ installed: true, loadFailure: 'Update rejected' })
+    expect(cardButtons(marketCard(service))).toContain('安装失败')
+    expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
   })
 
   it('rejects malformed install records and entries not in the market', async () => {
@@ -1659,7 +1786,7 @@ describe('workbench market screenshot and metadata display', () => {
   it('uninstalls the market package of a removed workbench but only unpins others', async () => {
     const { service, ctx, saved } = await fixture({ ...emptyState(), added: ['writer', 'o/helper'], pinned: ['writer', 'o/helper'] })
     service.remoteCatalog = [listed()]
-    ctx.fiber.name = 'helper'
+    setFiberPackage(ctx, 'helper')
     service.register({ title: 'Helper' }, () => null)
     service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
     const calls = withMarket(service, { '/api/desktop-workbenches/market-uninstall': (options) => Response.json({ restartRequired: true, got: JSON.parse(options.body) }) })
@@ -1676,7 +1803,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).toContain('service.installFromMarket(catalogId)')
     expect(source).toContain('`更新到 v${entry.listedVersion}`')
     expect(source).toContain("'重启后生效'")
-    expect(source).toContain('service.uninstallFromMarket(catalogId)')
+    expect(source).toContain('service.removeWorkbench(entry.id)')
     expect(source).toContain('service.removeWorkbench(removing)')
     expect(code).toContain('工作台安装变更需要重启 Harness 后生效')
   })

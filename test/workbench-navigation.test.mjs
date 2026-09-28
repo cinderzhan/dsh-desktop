@@ -108,7 +108,7 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
   const cleanups = []
   const ctx = {
     sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) },
-    fiber: { name: 'dsh-media-workbench' },
+    fiber: { name: 'dsh-media-workbench', entry: { options: { name: 'dsh-media-workbench' } } },
     workspaces: uiWorkspace.workspaces,
     layout: uiWorkspace.ctx.layout,
     uiWorkspace,
@@ -131,6 +131,7 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
   ]
   controller.register({ title: 'Media Workbench' }, () => null)
   ctx.fiber.name = 'huaxue'
+  ctx.fiber.entry = { options: { name: 'huaxue' } }
   controller.register({ title: 'Huaxue' }, () => null)
   controller.state = {
     version: 1,
@@ -285,7 +286,7 @@ describe('native Workspace navigation with workbench routing', () => {
     sessionState.ids.push('old-recent')
     sessionState.byId['old-recent'] = { id: 'old-recent', sessionId: 'old-recent', cwd: '/project', displayTitle: 'Old recent' }
     workspaceState.items[0].sessionIds.push('old-recent')
-    const ctx = { fiber: { name: workbenchId }, sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) }, workspaces: uiWorkspace.workspaces, layout: uiWorkspace.ctx.layout, uiWorkspace }
+    const ctx = { fiber: { name: workbenchId, entry: { options: { name: workbenchId } } }, sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) }, workspaces: uiWorkspace.workspaces, layout: uiWorkspace.ctx.layout, uiWorkspace }
     const request = vi.fn(async () => Response.json({ revision: 2, state: controller.state }))
     const controller = new Workbenches(ctx, request)
     controller.remoteCatalog = [{ id: workbenchId, distribution: { name: workbenchId }, description: { zh: '' }, screenshots: [] }]
@@ -351,7 +352,7 @@ describe('native Workspace navigation with workbench routing', () => {
     workspaceState.items[0].sessionIds.push(removedSession)
 
     const ctx = {
-      fiber: { name: 'writer' },
+      fiber: { name: 'writer', entry: { options: { name: 'writer' } } },
       sessions: {
         ...uiWorkspace.sessions,
         refresh: vi.fn(async () => {})
