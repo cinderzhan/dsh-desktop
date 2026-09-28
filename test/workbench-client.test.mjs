@@ -49,13 +49,14 @@ vm.runInNewContext(code, {
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
 
-function marketCard(service) {
+function marketCard(service, tab = 'market') {
   let renderMarket
+  let stateIndex = 0
   const testReact = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     Component: class {},
     Fragment: Symbol('Fragment'),
-    useState: (initial) => [initial, () => {}],
+    useState: (initial) => [stateIndex++ === 0 ? tab : initial, () => {}],
     useLayoutEffect: () => {},
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
@@ -1559,9 +1560,10 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('照着下面三步做。只给自己用的话，做完第二步就够了。')
   })
 
-  it('keeps an entry path by opening added workbenches from the Workbench page', () => {
+  it('opens workbenches only from the installed collection', () => {
     expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
-    expect(fullSource).not.toContain("dshWbInstalled', disabled: true }, '已安装'")
+    expect(fullSource).toContain("tab === 'mine'\n                        ? h(Button")
+    expect(fullSource).toContain("h('span', { className: 'dshWbInstalled', role: 'status' }, '已安装')")
   })
 
   it('uses the top switcher as the only Workbench navigation entry', () => {
@@ -1613,7 +1615,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain("'GitHub：'")
   })
 
-  it('keeps a direct open action when an added workbench also has an update', () => {
+  it('keeps the update action alongside installed status in the market', () => {
     expect(fullSource).toContain("entry.installed && state.added.includes(entry.id)\n                    ? h(React.Fragment, null,")
     expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
     expect(fullSource).toContain("installing === catalogId ? '更新中…' : '更新'")
@@ -1623,10 +1625,10 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('.dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center;flex-wrap:nowrap}')
   })
 
-  it('bookmarks favorites and opens added workbenches from their cards', () => {
+  it('bookmarks favorites and marks added workbenches as installed outside the installed collection', () => {
     expect(fullSource).toContain("h(MarketIcon, { name: 'bookmark', size: 17 })")
     expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
-    expect(fullSource).not.toContain('dshWbInstalled')
+    expect(fullSource).toContain('dshWbInstalled')
   })
 
   it('gives each workbench its own icon instead of the shared market glyph', () => {
@@ -1764,7 +1766,15 @@ describe('workbench market screenshot and metadata display', () => {
     setFiberPackage(ctx, 'helper')
     service.register({ title: 'Helper' }, () => null)
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ id: 'o/helper', installed: true, listedVersion: '1.0.0' })
-    expect(cardButtons(marketCard(service))).toContain('打开工作台')
+    expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
+    expect(JSON.stringify(marketCard(service))).toContain('已安装')
+    expect(cardButtons(marketCard(service, 'mine'))).toContain('打开工作台')
+    service.state.favorites = ['o/helper']
+    service.installs['o/helper'].version = '0.9.0'
+    service.publish()
+    expect(cardButtons(marketCard(service))).toContain('更新')
+    expect(cardButtons(marketCard(service, 'favorites'))).not.toContain('打开工作台')
+    expect(cardButtons(marketCard(service, 'mine'))).toEqual(expect.arrayContaining(['打开工作台', '更新']))
     expect(service.marketInstallFor('o/helper')).toBe('o/helper')
   })
 
