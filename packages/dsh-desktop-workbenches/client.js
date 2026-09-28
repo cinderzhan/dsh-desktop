@@ -29,8 +29,15 @@ window.__ModuleLoader__.load({
     const ACCEPTANCE_READING = `先阅读并遵循工作台市场验收规范：${ACCEPTANCE_DOC_URL} 。它包含上传 GitHub、安装来源、上架资料、收录 PR 和验收清单。`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const MARKET_OPEN_SESSION = 'dsh-desktop-workbenches.market-open.v1'
+    const NATIVE_LOCATION = 'dsh-desktop-workbenches.native-location.v1'
     const storedMarketOpen = () => { try { return window.sessionStorage?.getItem(MARKET_OPEN_SESSION) === 'true' } catch { return false } }
     const storeMarketOpen = (open) => { try { if (open) window.sessionStorage?.setItem(MARKET_OPEN_SESSION, 'true'); else window.sessionStorage?.removeItem(MARKET_OPEN_SESSION) } catch {} }
+    const storedNativeLocation = () => {
+      try {
+        const value = JSON.parse(window.localStorage?.getItem(NATIVE_LOCATION) || 'null')
+        return typeof value?.sessionId === 'string' && typeof value?.workspaceId === 'string' ? value : null
+      } catch { return null }
+    }
     const workbenchPreference = {
       listeners: new Set(),
       enabled: (() => { try { return window.localStorage.getItem(WORKBENCH_PREF) !== 'false' } catch { return true } })(),
@@ -83,6 +90,7 @@ window.__ModuleLoader__.load({
         this.suppressSelection = false
         this.internalSessionOpen = null
         this.lastSession = undefined
+        this.nativeLocation = storedNativeLocation()
         this.publish()
       }
       getSnapshot = () => this.snapshot
@@ -358,6 +366,7 @@ window.__ModuleLoader__.load({
           this.blocked = false
           this.ready = true
           this.lastSession = this.currentSession()
+          if (!this.state.active) this.rememberNativeSession(this.lastSession)
           this.publish()
           this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
@@ -449,6 +458,7 @@ window.__ModuleLoader__.load({
         if (!workbenchPreference.getSnapshot()) throw new Error('工作台功能已关闭。')
         if (!this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
         if (sessionId && this.state.sessionBindings[sessionId] !== id) throw new Error('会话不属于当前工作台。')
+        this.rememberNativeSession(this.currentSession())
         this.setMarketOpen(false)
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
@@ -469,6 +479,7 @@ window.__ModuleLoader__.load({
       async home(id = this.state.active) {
         if (!workbenchPreference.getSnapshot()) throw new Error('工作台功能已关闭。')
         if (!id || !this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
+        this.rememberNativeSession(this.currentSession())
         this.setMarketOpen(false)
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
@@ -497,7 +508,14 @@ window.__ModuleLoader__.load({
         this.setMarketOpen(false)
         if (this.state.active) await this.leave()
         else this.ctx.layout.selectPanel(null)
-        startSession()
+        const location = this.nativeLocation
+        const sessions = this.ctx.sessions.list.getSnapshot().byId
+        if (location?.sessionId && sessions[location.sessionId] && !this.state.sessionBindings[location.sessionId]) {
+          this.openSession(location.sessionId)
+          return
+        }
+        const workspace = this.ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === location?.workspaceId)
+        startSession(workspace?.workspaceId)
       }
       setEnabled(enabled) {
         workbenchPreference.set(enabled)
@@ -578,6 +596,13 @@ window.__ModuleLoader__.load({
       }
       workspaceFor(sessionId) {
         return this.ctx.workspaces.list.getSnapshot().items.find((item) => item.sessionIds.includes(sessionId))
+      }
+      rememberNativeSession(sessionId) {
+        if (!sessionId || this.state.sessionBindings[sessionId]) return
+        const workspace = this.workspaceFor(sessionId)
+        if (!workspace) return
+        this.nativeLocation = { sessionId, workspaceId: workspace.workspaceId }
+        try { window.localStorage?.setItem(NATIVE_LOCATION, JSON.stringify(this.nativeLocation)) } catch {}
       }
       defaultWorkspace() {
         const current = this.currentSession()
@@ -729,6 +754,7 @@ window.__ModuleLoader__.load({
         this.lastSession = current
         ++this.navigation
         const owner = workbenchPreference.getSnapshot() && current && this.state.sessionBindings[current]
+        if (!owner) this.rememberNativeSession(current)
         // Native workspace/session navigation invalidates pending workbench
         // navigation. A bound session activates its available owner; every
         // ordinary or unavailable-owner session leaves workbench mode.

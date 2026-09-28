@@ -20,7 +20,11 @@ const sessionStorage = {
   removeItem: key => sessionValues.delete(key),
   clear: () => sessionValues.clear()
 }
-const clientWindow = { sessionStorage, __ModuleLoader__: { load({ factory }) {
+const clientWindow = { sessionStorage, localStorage: {
+  getItem: key => sessionValues.has(key) ? sessionValues.get(key) : null,
+  setItem: (key, value) => sessionValues.set(key, String(value)),
+  removeItem: key => sessionValues.delete(key)
+}, __ModuleLoader__: { load({ factory }) {
   const client = factory((name) => {
     if (name === 'react') return { createElement() {}, Component: class {} }
     if (name === '@deepseek-ai/cordis') return { Service }
@@ -186,6 +190,41 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
+  it('restores the last native workspace when switching back from a workbench', async () => {
+    const { service, ctx, list } = await fixture(boundState())
+    const workspaces = ctx.workspaces.list.getSnapshot().items
+    workspaces.push({ workspaceId: 'project-2', title: 'Other project', sessionIds: ['native-2'] })
+    list.ids.push('native-2')
+    list.byId['native-2'] = { sessionId: 'native-2', displayTitle: 'Native session' }
+    selectIn(list, 'native-2')
+    service.selectionChanged()
+    await service.open('writer')
+
+    const startSession = vi.fn()
+    await service.openNative(startSession)
+
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('native-2')
+    expect(currentOf(list)).toBe('native-2')
+    expect(startSession).not.toHaveBeenCalled()
+    expect(service.state.active).toBeNull()
+  })
+
+  it('starts in the last native workspace when its previous session is gone', async () => {
+    const { service, ctx, list } = await fixture(boundState())
+    ctx.workspaces.list.getSnapshot().items.push({ workspaceId: 'project-2', title: 'Other project', sessionIds: ['native-2'] })
+    list.ids.push('native-2')
+    list.byId['native-2'] = { sessionId: 'native-2', displayTitle: 'Native session' }
+    selectIn(list, 'native-2')
+    service.selectionChanged()
+    await service.open('writer')
+    delete list.byId['native-2']
+
+    const startSession = vi.fn()
+    await service.openNative(startSession)
+
+    expect(startSession).toHaveBeenCalledWith('project-2')
+  })
+
   it('keeps the sidebar state unchanged when a workbench enters the foreground', async () => {
     const { service, ctx } = await fixture()
     sidebarWide = true
