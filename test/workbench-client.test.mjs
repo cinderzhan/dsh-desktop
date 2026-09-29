@@ -1866,8 +1866,8 @@ describe('workbench market screenshot and metadata display', () => {
     const source = Market.toString()
     expect(source).toContain("const [search, setSearch] = React.useState('')")
     expect(source).toContain("const [category, setCategory] = React.useState('全部')")
-    expect(source).toContain('service.run(service.refreshCatalog())')
-    expect(source).toContain("'aria-label': catalogRefreshing ? '正在刷新目录' : '刷新目录'")
+    expect(source).toContain("tab === 'mine' ? service.checkUpdates() : service.refreshCatalog()")
+    expect(source).toContain("tab === 'mine' ? '检查更新' : '刷新目录'")
     expect(source).toContain("h(MarketIcon, { name: 'refresh', size: 17 })")
     expect(fullSource).toContain('.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}')
   })
@@ -2178,6 +2178,91 @@ describe('workbench market screenshot and metadata display', () => {
     expect(versionIn('mine')).toBe('v1.0.0')
   })
 
+  it('checks updates for a native-installed workbench without a market install record', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '0.3.4', distribution: { type: 'github-release', version: '0.3.4' } })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '0.3.3', repository: 'https://github.com/o/helper' }, () => null)
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '0.3.3' }] })) } }
+    await service.refreshNative()
+    expect(service.installs).toEqual({})
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper')).toMatchObject({ listed: true, installedVersion: '0.3.3' })
+    expect(service.updateAvailableFor(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper'))).toBe(true)
+    const ui = interactiveMarket(service, 'mine')
+    let card = ui.find(ui.render(), node => node.type === 'article')[0]
+    const update = ui.find(card, node => node.props?.className === 'dshWbUpdate')[0]
+    expect(update.props.title).toBe('更新Helper至 v0.3.4')
+    expect(update.props.children.at(-1).props.children[0]).toBe('更新 v0.3.4')
+    expect(ui.find(card, node => node.props?.className === 'dshWbCardVersion')[0].props.children).toEqual(['v0.3.3'])
+    expect(ui.find(card, node => node.props?.role === 'switch')).toHaveLength(1)
+    expect(cardButtons(card)).toEqual([])
+    const check = ui.find(ui.render(), node => node.props?.['aria-label'] === '检查更新')[0]
+    expect(check).toBeDefined()
+    expect(check.props.children.at(-1)).toBe('检查更新')
+
+    let finishInstall
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': () => new Promise(resolve => { finishInstall = resolve }) })
+    update.props.onClick()
+    await vi.waitFor(() => expect(calls).toEqual(['/api/desktop-workbenches/market-install']))
+    card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')[0].props.children.at(-1).props.children[0]).toBe('更新中…')
+    finishInstall(Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '0.3.4' }, restartRequired: true }))
+    await vi.waitFor(() => expect(service.getSnapshot().restartNeeded).toBe(true))
+    card = ui.find(ui.render(), node => node.type === 'article')[0]
+    const pending = ui.find(card, node => node.props?.className === 'dshWbUpdate')[0]
+    expect(pending.props.disabled).toBe(true)
+    expect(pending.props.title).toContain('重启 Harness 后生效')
+    expect(ui.find(card, node => node.props?.className === 'dshWbCardVersion')[0].props.children).toEqual(['v0.3.3'])
+  })
+
+  it('offers only newer semver targets, including prereleases, and prevents downgrade', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.10.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '1.9.0' }, () => null)
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '1.9.0' }] })) } }
+    await service.refreshNative()
+    const entry = () => service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper')
+    const check = (target, current) => {
+      service.remoteCatalog = [listed({ version: target })]
+      service.native.bundles.helper.version = current
+      service.publish()
+      return service.updateAvailableFor(entry())
+    }
+    expect(check('1.10.0', '1.9.0')).toBe(true)
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.10.0' } }
+    expect(check('1.10.0', '1.9.0')).toBe(true)
+    service.installs = {}
+    expect(check('1.9.0', '1.9.0')).toBe(false)
+    expect(check('1.8.9', '1.9.0')).toBe(false)
+    expect(check('1.9.0', '1.9.0-rc.2')).toBe(true)
+    expect(check('1.9.0-rc.10', '1.9.0-rc.2')).toBe(true)
+    expect(check('1.9.0-rc.2', '1.9.0')).toBe(false)
+    expect(check('latest', '1.9.0')).toBe(false)
+    expect(check('1.8.9', '1.9.0')).toBe(false)
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('避免降级')
+  })
+
+  it('checks the catalog and native inventory together, then offers retry after a failed update', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '1.0.0' }, () => null)
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }] })) } }
+    const readCatalog = vi.spyOn(service, 'readCatalog').mockResolvedValue({ entries: [listed({ version: '1.1.0' })], categories: [], stale: false })
+    await service.checkUpdates()
+    expect(readCatalog).toHaveBeenCalledWith(true)
+    expect(ctx.remote.pluginManager.listBundles).toHaveBeenCalledOnce()
+    expect(service.getSnapshot().checkingUpdates).toBe(false)
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ error: 'Update rejected' }, { status: 500 }) })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('Update rejected')
+    const ui = interactiveMarket(service, 'mine')
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')[0].props.children.at(-1).props.children[0]).toBe('重试更新 v1.1.0')
+    expect(ui.find(card, node => node.props?.className === 'dshWbFailureIcon')[0].props.title).toBe('Update rejected')
+    expect(service.getSnapshot().restartNeeded).toBe(false)
+  })
+
   it('uses local provider versions and hides unknown versions', async () => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['owner/local'] })
     setFiberPackage(ctx, 'local-package')
@@ -2411,7 +2496,7 @@ describe('workbench market screenshot and metadata display', () => {
     const source = Market.toString()
     expect(source).toContain('service.installFromMarket(catalogId)')
     expect(source).not.toContain('`更新到 v${entry.listedVersion}`')
-    expect(source).not.toContain("'重启后生效'")
+    expect(source).toContain("awaitingRestart ? '重启后生效'")
     expect(source).toContain('service.removeWorkbench(removing)')
     expect(fullSource).toContain('async removeWorkbench(id)')
     expect(code).toContain('工作台安装变更需要重启 Harness 后生效')
