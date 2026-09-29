@@ -38,7 +38,7 @@ function loadSidebar() {
 }
 
 describe('rc.2 workbench patch slots', () => {
-  it('declares and renders the quick switcher before New Session with the native action', async () => {
+  it('declares and renders the quick switcher between New Session and the native panel navigation with the native action', async () => {
     const sidebar = await loadSidebar()
     const registrations = []
     const startSession = vi.fn()
@@ -60,14 +60,15 @@ describe('rc.2 workbench patch slots', () => {
     const rendered = []
     const markup = renderToStaticMarkup(React.createElement(shell.Component, {
       collapsed: false, width: 250, startSession, toggleSidebar: () => {}, selectPanel: () => {},
-      usePanels: () => [], useShortcuts: () => [], usePanelInfo: () => ({}), t: key => key,
+      usePanels: () => [{ id: 'plugins', label: '插件' }], useShortcuts: () => [], usePanelInfo: () => ({}), t: key => key,
       renderSlot: (name, owner) => {
         rendered.push({ name, owner })
         return name === 'sidebar.quickSwitcher' ? React.createElement('span', null, 'Workbench switcher') : null
       }
     }))
     expect(markup).toContain('Workbench switcher')
-    expect(markup.indexOf('Workbench switcher')).toBeLessThan(markup.indexOf('class="hHd-Xa_newSession"'))
+    expect(markup.indexOf('Workbench switcher')).toBeGreaterThan(markup.indexOf('class="hHd-Xa_newSession"'))
+    expect(markup.indexOf('Workbench switcher')).toBeLessThan(markup.indexOf('class="hHd-Xa_panelList"'))
     expect(rendered.find(item => item.name === 'sidebar.quickSwitcher')?.owner).toEqual({ wide: true, startSession })
     expect(rendered.findIndex(item => item.name === 'sidebar.quickSwitcher')).toBeGreaterThan(-1)
   })

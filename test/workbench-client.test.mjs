@@ -1560,7 +1560,7 @@ describe('workbench market screenshot and metadata display', () => {
   it('renders a persistent Workbench home area beside the current mode and switch button', () => {
     expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
-    expect(fullSource).toContain("className: 'dshWbModeSwitch', title: '切换工作台', 'aria-label': '切换工作台', 'aria-haspopup': 'menu', 'aria-expanded': open")
+    expect(fullSource).toContain("className: 'dshWbModeSwitch', title: `切换工作台（当前：${active?.title || '默认'}）`, 'aria-label': `切换工作台，当前：${active?.title || '默认'}`, 'aria-haspopup': 'menu', 'aria-expanded': open")
     expect(fullSource).toContain("role: 'menu', 'aria-label': '选择会话模式'")
     expect(fullSource).toContain("role: 'menuitemradio'")
     expect(fullSource).toContain('service.openNative(startSession)')
@@ -1570,6 +1570,9 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("title: '工作台主页', 'aria-label': '打开工作台主页'")
     expect(fullSource).toContain('setOpen(false); service.showMarket()')
     expect(fullSource).toContain('.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 100px;min-width:100px;')
+    expect(fullSource).toContain('.dshWbWorkbenchHome:hover,.dshWbWorkbenchHome[aria-current=page]{background:var(--dsw-alias-interactive-bg-hover)}')
+    expect(fullSource).toContain('min-height:36px;margin:0 2px 8px;padding:0 8px;')
+    expect(fullSource).toContain('.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}')
     expect(fullSource).toContain('.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
     expect(fullSource).toContain('.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;')
     expect(fullSource).toContain('background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)')
@@ -1592,13 +1595,15 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain("name: 'chevronDown', size: 11")
   })
 
-  it('opens the Workbench homepage from its fixed hot area and uses a separate switch button', () => {
+  it('opens the Workbench homepage from its fixed hot area and switches by clicking the name or icon', () => {
     const ui = sidebarSwitcher({ pinned: ['writer'], active: 'writer', title: '投标作战室' })
     let tree = ui.render()
     const home = ui.find(tree, node => node.props?.className === 'dshWbWorkbenchHome')[0]
     const switchButton = ui.find(tree, node => node.props?.className === 'dshWbModeSwitch')[0]
     expect(home.props['aria-label']).toBe('打开工作台主页')
-    expect(ui.find(tree, node => node.props?.className === 'dshWbCurrentModeLabel')[0].props.children).toEqual(['投标作战室'])
+    expect(ui.find(switchButton, node => node.props?.className === 'dshWbCurrentModeLabel')[0].props.children).toEqual(['投标作战室'])
+    expect(ui.find(switchButton, node => node.type?.name === 'MarketIcon' && node.props?.name === 'switch')).toHaveLength(1)
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCurrentMode')).toHaveLength(0)
     expect(ui.find(tree, node => node.props?.className === 'dshWbCurrentModeIcon')).toHaveLength(0)
     expect(switchButton.props['aria-expanded']).toBe(false)
     switchButton.props.onClick()
