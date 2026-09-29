@@ -720,6 +720,39 @@ describe('desktop workbench client navigation', () => {
     expect(styles).toHaveLength(1)
   })
 
+  it('restores workbench styles after head changes without a React rerender and stops observing on disposal', async () => {
+    const { JSDOM } = await import('jsdom')
+    const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>')
+    let applyLocal
+    vm.runInNewContext(code, { window: { __ModuleLoader__: { load({ factory }) {
+      applyLocal = factory(name => name === 'react' ? { createElement() {}, Component: class {} } : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).apply
+    } } }, document: dom.window.document, MutationObserver: dom.window.MutationObserver, setTimeout, clearTimeout, AbortController })
+    let styleEffect
+    applyLocal({ effect: (callback, label) => { if (label === 'workbenches: styles') styleEffect = callback }, slots: { inject: () => {} } })
+    const cleanup = styleEffect()
+    const selector = 'style[data-plugin-css="dsh-desktop-workbenches"]'
+    expect(dom.window.document.querySelectorAll(selector)).toHaveLength(1)
+
+    dom.window.document.querySelector(selector).remove()
+    await Promise.resolve()
+    expect(dom.window.document.querySelectorAll(selector)).toHaveLength(1)
+
+    const replacement = dom.window.document.createElement('head')
+    dom.window.document.head.replaceWith(replacement)
+    await Promise.resolve()
+    expect(replacement.querySelectorAll(selector)).toHaveLength(1)
+
+    replacement.querySelector(selector).remove()
+    await Promise.resolve()
+    expect(replacement.querySelectorAll(selector)).toHaveLength(1)
+
+    cleanup()
+    replacement.querySelector(selector).remove()
+    await Promise.resolve()
+    expect(replacement.querySelector(selector)).toBeNull()
+    dom.window.close()
+  })
+
   it.each(['research-notebook', 'writing-notebook'])('preserves retired %s data across loading, native navigation and saving', async (id) => {
     const initial = {
       ...emptyState(), added: [id], pinned: [id], active: id,

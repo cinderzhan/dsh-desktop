@@ -1067,9 +1067,28 @@ window.__ModuleLoader__.load({
       style.textContent = css
       document.head.appendChild(style)
     }
+    function maintainStyles() {
+      ensureStyles()
+      if (typeof MutationObserver !== 'function' || !document.documentElement || !document.head) return
+      let observedHead = document.head
+      // A live client rebuild can replace <head> without rerendering a workbench.
+      // Watch only direct head/root changes, not mutations throughout the body.
+      const observer = new MutationObserver(() => {
+        if (document.head !== observedHead) {
+          observedHead = document.head
+          observer.disconnect()
+          observer.observe(document.documentElement, { childList: true })
+          if (observedHead) observer.observe(observedHead, { childList: true })
+        }
+        if (observedHead) ensureStyles()
+      })
+      observer.observe(document.documentElement, { childList: true })
+      observer.observe(observedHead, { childList: true })
+      return () => observer.disconnect()
+    }
     function useWorkbench(service) {
       // The host can replace the document head during a live client rebuild.
-      // Restore this stylesheet after a workbench view mounts or updates.
+      // Restore the stylesheet immediately when a workbench view mounts or updates.
       React.useLayoutEffect(ensureStyles)
       return React.useSyncExternalStore(service.subscribe, service.getSnapshot)
     }
@@ -1712,7 +1731,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         const disposeReset = ctx.on?.('connection/reset', refresh)
         return () => { disposeChanged?.(); disposeReset?.() }
       }, 'workbenches: native plugin status')
-      ctx.effect(ensureStyles, 'workbenches: styles')
+      ctx.effect(maintainStyles, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
