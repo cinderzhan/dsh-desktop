@@ -2155,7 +2155,7 @@ describe('workbench market screenshot and metadata display', () => {
       const ui = interactiveMarket(service, tab)
       const card = ui.find(ui.render(), node => node.type === 'article')[0]
       const footer = ui.find(card, node => node.props?.className === 'dshWbActions')[0]
-      expect(footer.props.children[0].props.className).toBe('dshWbCardVersion')
+      expect(footer.props.children[0].props.className).toBe('dshWbCardVersionActions')
       expect(footer.props.children[1].props.className).toBe('dshWbCardControls')
       return ui.find(footer, node => node.props?.className === 'dshWbCardVersion')[0]?.props.children[0]
     }
@@ -2192,7 +2192,12 @@ describe('workbench market screenshot and metadata display', () => {
     let card = ui.find(ui.render(), node => node.type === 'article')[0]
     const update = ui.find(card, node => node.props?.className === 'dshWbUpdate')[0]
     expect(update.props.title).toBe('更新Helper至 v0.3.4')
-    expect(update.props.children.at(-1).props.children[0]).toBe('更新 v0.3.4')
+    expect(update.props.children.at(-1).props.children[0]).toBe('更新')
+    const footer = ui.find(card, node => node.props?.className === 'dshWbActions')[0]
+    const versionActions = ui.find(footer, node => node.props?.className === 'dshWbCardVersionActions')[0]
+    expect(versionActions.props.children[1]).toBe(update)
+    expect(ui.find(card, node => node.props?.className === 'dshWbMediaActions')[0].props.children[0].props.className).toBe('dshWbUninstall')
+    expect(ui.find(card, node => node.props?.className === 'dshWbMediaActions')[0].props.children).toHaveLength(1)
     expect(ui.find(card, node => node.props?.className === 'dshWbCardVersion')[0].props.children).toEqual(['v0.3.3'])
     expect(ui.find(card, node => node.props?.role === 'switch')).toHaveLength(1)
     expect(cardButtons(card)).toEqual([])
@@ -2213,6 +2218,38 @@ describe('workbench market screenshot and metadata display', () => {
     expect(pending.props.disabled).toBe(true)
     expect(pending.props.title).toContain('重启 Harness 后生效')
     expect(ui.find(card, node => node.props?.className === 'dshWbCardVersion')[0].props.children).toEqual(['v0.3.3'])
+  })
+
+  it('places the same short update action beside the installed version in Market, Favorites, and Installed', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], favorites: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '2.0.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '1.0.0' }, () => null)
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }] })) } }
+    await service.refreshNative()
+
+    for (const tab of ['market', 'favorites', 'mine']) {
+      const ui = interactiveMarket(service, tab)
+      const card = ui.find(ui.render(), node => node.type === 'article')[0]
+      const footer = ui.find(card, node => node.props?.className === 'dshWbActions')[0]
+      const versionActions = ui.find(footer, node => node.props?.className === 'dshWbCardVersionActions')[0]
+      expect(versionActions.props.children[0].props.children).toEqual(['v1.0.0'])
+      const update = versionActions.props.children[1]
+      expect(update.props.className).toBe('dshWbUpdate')
+      expect(update.props.children.at(-1).props.children[0]).toBe('更新')
+      expect(update.props['aria-label']).toBe('更新Helper至 v2.0.0')
+      expect(ui.find(card, node => node.props?.className === 'dshWbMediaActions').flatMap(node => ui.find(node, child => child.props?.className === 'dshWbUpdate'))).toHaveLength(0)
+      expect(ui.find(footer, node => node.props?.className === 'dshWbCardControls')).toHaveLength(1)
+    }
+
+    service.remoteCatalog = [listed({ version: '1.0.0' })]
+    service.publish()
+    for (const tab of ['market', 'favorites', 'mine']) {
+      const ui = interactiveMarket(service, tab)
+      const card = ui.find(ui.render(), node => node.type === 'article')[0]
+      expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')).toHaveLength(0)
+      expect(ui.find(card, node => node.props?.className === 'dshWbCardVersionActions')).toHaveLength(1)
+    }
   })
 
   it('offers only newer semver targets, including prereleases, and prevents downgrade', async () => {
@@ -2243,7 +2280,7 @@ describe('workbench market screenshot and metadata display', () => {
     await expect(service.installFromMarket('o/helper')).rejects.toThrow('避免降级')
   })
 
-  it('checks the catalog and native inventory together, then offers retry after a failed update', async () => {
+  it('checks the catalog and native inventory together, then keeps the update action after a failed update', async () => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
     service.remoteCatalog = [listed({ version: '1.1.0' })]
     setFiberPackage(ctx, 'helper')
@@ -2256,10 +2293,27 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().checkingUpdates).toBe(false)
     withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ error: 'Update rejected' }, { status: 500 }) })
     await expect(service.installFromMarket('o/helper')).rejects.toThrow('Update rejected')
-    const ui = interactiveMarket(service, 'mine')
-    const card = ui.find(ui.render(), node => node.type === 'article')[0]
-    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')[0].props.children.at(-1).props.children[0]).toBe('重试更新 v1.1.0')
-    expect(ui.find(card, node => node.props?.className === 'dshWbFailureIcon')[0].props.title).toBe('Update rejected')
+    service.state.favorites = ['o/helper']
+    service.publish()
+    for (const tab of ['market', 'favorites', 'mine']) {
+      const ui = interactiveMarket(service, tab)
+      const card = ui.find(ui.render(), node => node.type === 'article')[0]
+      const footer = ui.find(card, node => node.props?.className === 'dshWbActions')[0]
+      const versionActions = ui.find(footer, node => node.props?.className === 'dshWbCardVersionActions')[0]
+      const controls = ui.find(footer, node => node.props?.className === 'dshWbCardControls')[0]
+      expect(footer.props.children).toEqual([versionActions, controls])
+      expect(versionActions.props.children[0].props.children).toEqual(['v1.0.0'])
+      expect(versionActions.props.children[1].props.children.at(-1).props.children[0]).toBe('更新')
+      const diagnostic = versionActions.props.children[2]
+      expect(diagnostic.props.className).toBe('dshWbFailureIcon')
+      expect(diagnostic.props.title).toBe('Update rejected')
+      expect(diagnostic.props['aria-label']).toBe('更新失败详情：Update rejected')
+      expect(diagnostic.props.tabIndex).toBe(0)
+      expect(ui.find(controls, node => node.props?.className === 'dshWbInstallFailed')).toHaveLength(0)
+      expect(ui.find(card, node => node.props?.className === 'dshWbRetry')).toHaveLength(0)
+      if (tab === 'mine') expect(ui.find(controls, node => node.props?.role === 'switch')).toHaveLength(1)
+      else expect(ui.find(controls, node => node.props?.className === 'dshWbInstalled')[0].props.children).toEqual(['已安装'])
+    }
     expect(service.getSnapshot().restartNeeded).toBe(false)
   })
 
@@ -2278,13 +2332,15 @@ describe('workbench market screenshot and metadata display', () => {
     expect(ui.find(unknown, node => node.props?.className === 'dshWbCardVersion')).toHaveLength(0)
   })
 
-  it('shows one failure action with a hover diagnostic and retry in every collection', async () => {
+  it('keeps the card footer intact for module load failures in every collection', async () => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
     service.remoteCatalog = [listed({ version: '1.1.0' })]
     service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
     ctx.modules = { entries: { state: { getSnapshot: () => ({
       failures: [{ id: 'helper', message: 'Error: incompatible client API' }]
     }) } } }
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }] })) } }
+    await service.refreshNative()
     service.publish()
 
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({
@@ -2297,13 +2353,26 @@ describe('workbench market screenshot and metadata display', () => {
       const ui = interactiveMarket(service, tab)
       const card = ui.find(ui.render(), node => node.type === 'article')[0]
       expect(ui.find(card, node => node.props?.className === 'dshWbMuted')).toHaveLength(0)
-      expect(ui.find(card, node => node.props?.className === 'dshWbInstalled dshWbInstallFailed')[0].props.children).toEqual(['安装失败'])
+      const footer = ui.find(card, node => node.props?.className === 'dshWbActions')[0]
+      const versionActions = ui.find(footer, node => node.props?.className === 'dshWbCardVersionActions')[0]
+      const controls = ui.find(footer, node => node.props?.className === 'dshWbCardControls')[0]
+      expect(footer.props.children).toEqual([versionActions, controls])
+      expect(ui.find(card, node => node.props?.className === 'dshWbInstalled dshWbInstallFailed')).toHaveLength(0)
       const diagnostic = ui.find(card, node => node.props?.className === 'dshWbFailureIcon')[0]
       expect(diagnostic.props.title).toBe('Error: incompatible client API')
-      expect(diagnostic.props['aria-label']).toContain('Error: incompatible client API')
-      const button = ui.find(card, node => node.props?.className === 'dshWbRetry')[0]
-      expect(button.props['aria-label']).toBe('重试安装Helper')
-      expect(ui.find(card, node => node.props?.role === 'switch')).toHaveLength(0)
+      expect(diagnostic.props['aria-label']).toBe('工作台加载失败详情：Error: incompatible client API')
+      expect(diagnostic.props.tabIndex).toBe(0)
+      expect(versionActions.props.children[2]).toBe(diagnostic)
+      expect(ui.find(card, node => node.props?.className === 'dshWbRetry')).toHaveLength(0)
+      const button = ui.find(card, node => node.props?.className === 'dshWbUpdate')[0]
+      expect(button.props['aria-label']).toBe('更新Helper至 v1.1.0')
+      expect(button.props.children.at(-1).props.children[0]).toBe('更新')
+      expect(versionActions.props.children[1]).toBe(button)
+      if (tab === 'mine') {
+        expect(ui.find(controls, node => node.props?.role === 'switch')).toHaveLength(1)
+      } else {
+        expect(ui.find(controls, node => node.props?.className === 'dshWbInstalled')[0].props.children).toEqual(['已安装'])
+      }
       button.props.onClick()
     }
     await vi.waitFor(() => expect(retry).toHaveBeenCalledTimes(3))
@@ -2335,6 +2404,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper').loadFailure).toBe('Package checksum mismatch')
     expect(JSON.stringify(marketCard(service))).toContain('安装失败')
     expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
+    const ui = interactiveMarket(service, 'market')
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    const controls = ui.find(card, node => node.props?.className === 'dshWbCardControls')[0]
+    expect(ui.find(controls, node => node.props?.className === 'dshWbInstalled dshWbInstallFailed')[0].props.children).toEqual(['安装失败'])
+    expect(ui.find(controls, node => node.props?.className === 'dshWbFailureIcon')[0].props.title).toBe('Package checksum mismatch')
+    expect(ui.find(controls, node => node.props?.className === 'dshWbRetry')).toHaveLength(1)
+    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')).toHaveLength(0)
 
     withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) })
     await service.installFromMarket('o/helper')
@@ -2353,7 +2429,12 @@ describe('workbench market screenshot and metadata display', () => {
 
     await expect(service.installFromMarket('o/helper')).rejects.toThrow('Update rejected')
     expect(service.getSnapshot().catalog.find(item => item.catalogId === 'o/helper')).toMatchObject({ installed: true, loadFailure: 'Update rejected' })
-    expect(JSON.stringify(marketCard(service))).toContain('安装失败')
+    const ui = interactiveMarket(service, 'market')
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')[0].props.children.at(-1).props.children[0]).toBe('更新')
+    expect(ui.find(card, node => node.props?.className === 'dshWbFailureIcon')[0].props.title).toBe('Update rejected')
+    expect(ui.find(card, node => node.props?.className === 'dshWbInstalled')[0].props.children).toEqual(['已安装'])
+    expect(ui.find(card, node => node.props?.className === 'dshWbInstallFailed')).toHaveLength(0)
     expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
   })
 
