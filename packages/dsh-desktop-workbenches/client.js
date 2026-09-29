@@ -1220,7 +1220,7 @@ window.__ModuleLoader__.load({
         document.body
       )
     }
-    function ConfirmRemoveModal({ entry, disabled, uninstall, onCancel, onConfirm }) {
+    function ConfirmRemoveModal({ entry, disabled, uninstall, recordOnly, onCancel, onConfirm }) {
       const dialogRef = React.useRef(null)
       useDialogFocus(!!entry, onCancel, dialogRef)
       if (!entry) return null
@@ -1229,7 +1229,7 @@ window.__ModuleLoader__.load({
           h('div', { ref: dialogRef, className: 'dshWbModal dshWbConfirm', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-remove-title', 'aria-describedby': 'dsh-workbench-remove-description', tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbConfirmIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'remove', size: 18 })),
             h('h2', { id: 'dsh-workbench-remove-title', style: { fontSize: 18, lineHeight: '26px' } }, `移除「${entry.title || entry.id}」？`),
-            h('p', { id: 'dsh-workbench-remove-description', className: 'dshWbMuted' }, uninstall ? '这会卸载从市场安装的工作台，并移除左侧固定入口，重启 Harness 后生效。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : '这会移除本地工作台和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。'),
+            h('p', { id: 'dsh-workbench-remove-description', className: 'dshWbMuted' }, uninstall ? '这会卸载从市场安装的工作台，并移除左侧固定入口，重启 Harness 后生效。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : recordOnly ? '这会移除工作台安装记录和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : '这会移除本地工作台和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。'),
             h('div', { className: 'dshWbActions' },
               h(Button, { autoFocus: true, onClick: onCancel }, '取消'),
               h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, '确认移除')))),
@@ -1527,12 +1527,12 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                     ? h(React.Fragment, null,
                       h(Button, { disabled: true }, '安装失败'),
                       entry.distribution && h(Button, { disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '重试中…' : '重试安装'),
-                      !!installs[catalogId] && h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => service.run(service.removeWorkbench(entry.id)) }, '卸载'),
-                      !installs[catalogId] && state.added.includes(entry.id) && tab !== 'mine' && h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: () => service.run(service.remove(entry.id)) }, '移除记录'))
+                      !!installs[catalogId] && h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => setRemoving(entry.id) }, '卸载'),
+                      !installs[catalogId] && state.added.includes(entry.id) && h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => setRemoving(entry.id) }, '移除记录'))
                   : entry.pendingRestart
                     ? h(React.Fragment, null,
                       h(Button, { disabled: true }, '重启后生效'),
-                      h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => service.run(service.removeWorkbench(entry.id)) }, '卸载'))
+                      h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => setRemoving(entry.id) }, '卸载'))
                   : entry.installed && state.added.includes(entry.id)
                     ? h(React.Fragment, null,
                       tab === 'mine'
@@ -1546,12 +1546,12 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                       : entry.distribution
                           ? h(Button, { primary: true, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在安装…' : '安装')
                           : h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, '查看安装说明'),
-                  tab === 'mine' && h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: () => setRemoving(entry.id) }, '移除'))))
+                  tab === 'mine' && !entry.loadFailure && !entry.pendingRestart && h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => setRemoving(entry.id) }, '移除'))))
           }), entries.length === 0 && h('div', { className: 'dshWbEmpty' }, h('div', null,
             h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : tab === 'local' && !search ? '还没有本地工作台' : '没有找到匹配的工作台'),
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击书签即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : tab === 'local' && !search ? '本地开发且尚未上架市场的工作台会显示在这里。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
-        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }),
+        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled: disabled || !!installing, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), recordOnly: !!removingEntry?.loadFailure && !service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }),
         guideOpen && h(GuideModal, { service, open: !!guideOpen, document: guideOpen, onClose: () => setGuideOpen(null) }))
     }
     function Notebook({ service, entry }) {

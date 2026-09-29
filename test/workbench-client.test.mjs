@@ -84,6 +84,38 @@ function cardButtons(card) {
   return buttons.map(button => button.props.children.flat().filter(child => typeof child === 'string').join(''))
 }
 
+function interactiveMarket(service, tab = 'market') {
+  let renderMarket
+  let stateIndex = 0
+  const state = []
+  const testReact = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    Component: class {},
+    Fragment: Symbol('Fragment'),
+    useState: (initial) => {
+      const index = stateIndex++
+      if (!(index in state)) state[index] = index === 0 ? tab : initial
+      return [state[index], (value) => { state[index] = value }]
+    },
+    useLayoutEffect: () => {},
+    useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
+  }
+  vm.runInNewContext(code, { window: { sessionStorage, __ModuleLoader__: { load({ factory }) {
+    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).Market
+  } } }, document, setTimeout, clearTimeout, AbortController })
+  const find = (node, predicate) => {
+    if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
+    if (!node || typeof node !== 'object') return []
+    return [...(predicate(node) ? [node] : []), ...find(node.props?.children, predicate)]
+  }
+  return {
+    render: () => { stateIndex = 0; return renderMarket({ service }) },
+    find,
+    button: (tree, label) => find(tree, node => node.type?.name === 'Button' && node.props.children.flat().filter(child => typeof child === 'string').join('') === label)[0],
+    modal: tree => find(tree, node => node.type?.name === 'ConfirmRemoveModal')[0]
+  }
+}
+
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false; sessionStorage.clear() })
 
 function deferred() {
@@ -1873,12 +1905,57 @@ describe('workbench market screenshot and metadata display', () => {
     expect(saved().state.added).toEqual([])
   })
 
+  it.each([
+    ['failed install', 'market', '卸载', true],
+    ['pending restart', 'market', '卸载', true],
+    ['missing package record', 'mine', '移除记录', false]
+  ])('confirms removal of a %s before changing the workbench', async (scenario, tab, action, uninstall) => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
+    service.remoteCatalog = [listed()]
+    if (uninstall) service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    if (scenario === 'failed install') ctx.modules = { entries: { state: { getSnapshot: () => ({ failures: [{ id: 'helper', message: 'Load failed' }] }) } } }
+    if (scenario === 'pending restart') service.pendingRestart.add('o/helper')
+    service.publish()
+    const remove = vi.spyOn(service, 'removeWorkbench').mockResolvedValue(undefined)
+    const ui = interactiveMarket(service, tab)
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(cardButtons(card)).toContain(action)
+    if (tab === 'mine') expect(cardButtons(card)).not.toContain('移除')
+    ui.button(card, action).props.onClick()
+    expect(remove).not.toHaveBeenCalled()
+    const confirmation = ui.modal(ui.render())
+    expect(confirmation.props.entry.id).toBe('o/helper')
+    expect(confirmation.props.uninstall).toBe(uninstall)
+    expect(confirmation.props.recordOnly).toBe(!uninstall)
+    confirmation.props.onCancel()
+    expect(ui.modal(ui.render())).toBeUndefined()
+    expect(remove).not.toHaveBeenCalled()
+    ui.button(ui.find(ui.render(), node => node.type === 'article')[0], action).props.onClick()
+    ui.modal(ui.render()).props.onConfirm()
+    expect(remove).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledWith('o/helper')
+    await vi.waitFor(() => expect(ui.modal(ui.render())).toBeUndefined())
+  })
+
+  it('disables confirmation while a workbench install is in progress', async () => {
+    const { service } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed()]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    service.pendingRestart.add('o/helper')
+    service.publish()
+    const ui = interactiveMarket(service)
+    ui.button(ui.find(ui.render(), node => node.type === 'article')[0], '卸载').props.onClick()
+    service.installing = 'o/helper'
+    service.publish()
+    expect(ui.modal(ui.render()).props.disabled).toBe(true)
+  })
+
   it('offers install, update, pending-restart and uninstall from the market cards', () => {
     const source = Market.toString()
     expect(source).toContain('service.installFromMarket(catalogId)')
     expect(source).toContain('`更新到 v${entry.listedVersion}`')
     expect(source).toContain("'重启后生效'")
-    expect(source).toContain('service.removeWorkbench(entry.id)')
+    expect(source).not.toContain('service.removeWorkbench(entry.id)')
     expect(source).toContain('service.removeWorkbench(removing)')
     expect(code).toContain('工作台安装变更需要重启 Harness 后生效')
   })
