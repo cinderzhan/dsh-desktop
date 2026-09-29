@@ -11,6 +11,14 @@ window.__ModuleLoader__.load({
     const MIGRATE_API = '/api/desktop-workbenches/state/migrate'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
     const MARKET_INSTALLS_API = '/api/desktop-workbenches/market-installs'
+    const NATIVE_STATUS = { idle: 'idle', ready: 'ready', unavailable: 'unavailable' }
+    const KNOWN_PROVIDERS_KEY = 'dsh-desktop-workbenches.known-providers.v1'
+    const readKnownProviders = () => {
+      try {
+        const value = JSON.parse(window.localStorage?.getItem(KNOWN_PROVIDERS_KEY) || '{}')
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+      } catch { return {} }
+    }
     const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
     // The website is the public home for both documents. Agents read Markdown;
@@ -61,6 +69,7 @@ window.__ModuleLoader__.load({
         this.listeners = new Set()
         this.catalog = new Map()
         this.providers = new Map()
+        this.knownProviders = readKnownProviders()
         this.remoteCatalog = []
         // The market's own category list; submissions choose from it.
         this.marketCategories = []
@@ -72,6 +81,11 @@ window.__ModuleLoader__.load({
         // identity. A new package only runs after Harness restarts, so
         // restartNeeded stays set until then.
         this.installs = {}
+        this.native = { status: NATIVE_STATUS.idle, bundles: {} }
+        this.nativeTicket = 0
+        this.togglingPlugin = null
+        this.removingPlugin = null
+        this.removedWorkbenchIds = new Set()
         this.installing = null
         this.restartNeeded = false
         this.pendingRestart = new Set()
@@ -91,20 +105,69 @@ window.__ModuleLoader__.load({
       }
       getSnapshot = () => this.snapshot
       subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+      pluginFor(entry) {
+        // A disabled native bundle unloads its provider. The market package name
+        // remains available on the listing even when no install record exists.
+        return this.installs[entry.catalogId || entry.id]?.pluginName || entry.sourcePackage || entry.distribution?.name || this.knownProviders[entry.catalogId || entry.id]?.sourcePackage || null
+      }
+      activationFor(entry) {
+        const name = this.pluginFor(entry)
+        if (!name || this.native.status !== NATIVE_STATUS.ready) return 'unknown'
+        const bundle = this.native.bundles[name]
+        return bundle ? bundle.error ? 'unknown' : bundle.enabled ? 'on' : 'off' : 'unknown'
+      }
+      async refreshNative() {
+        const ticket = ++this.nativeTicket
+        try {
+          const manager = this.ctx.remote?.pluginManager
+          if (!manager?.listBundles) throw new Error('Native plugin manager unavailable')
+          const result = await manager.listBundles()
+          if (!result?.ok || !Array.isArray(result.value)) throw new Error('Native plugin inventory unavailable')
+          if (this.disposed || ticket !== this.nativeTicket) return
+          this.native = { status: NATIVE_STATUS.ready, bundles: Object.fromEntries(result.value.filter((bundle) => typeof bundle?.name === 'string').map((bundle) => [bundle.name, bundle])) }
+        } catch {
+          if (this.disposed || ticket !== this.nativeTicket) return
+          this.native = { status: NATIVE_STATUS.unavailable, bundles: {} }
+        }
+        this.publish()
+        const active = this.state.active && (this.catalog.get(this.state.active) || { id: this.state.active })
+        if (this.ready && active && this.activationFor(active) === 'off') this.run(this.leave())
+      }
+      async setPluginEnabled(name, enabled) {
+        if (!name || this.native.status !== NATIVE_STATUS.ready || this.togglingPlugin) throw new Error('无法确定此工作台的原生插件状态。')
+        this.togglingPlugin = name
+        this.publish()
+        try {
+          const result = await this.ctx.remote.pluginManager.setBundleEnabled(name, enabled)
+          if (!result?.ok) throw new Error(result?.error?.diagnostic || '无法切换插件状态。')
+          if (result.value.application === 'failed' || result.value.application === 'cancelled') throw new Error(result.value.error?.diagnostic || '插件状态切换失败。')
+          if (result.value.application === 'restart-required') this.restartNeeded = true
+          await this.refreshNative()
+          if (!enabled && this.state.active && this.pluginFor(this.catalog.get(this.state.active) || { id: this.state.active }) === name) await this.leave()
+        } catch (error) {
+          await this.refreshNative()
+          throw error
+        } finally {
+          this.togglingPlugin = null
+          this.publish()
+        }
+      }
       marketCatalog() {
         const matched = new Set()
         const providers = [...this.catalog.values()]
         const moduleFailures = new Map((this.ctx.modules?.entries?.state?.getSnapshot?.().failures || []).map((failure) => [failure.id, failure.message]))
         const remote = this.remoteCatalog.map((item) => {
-          const provider = this.catalog.get(item.id)
+          const provider = this.removedWorkbenchIds.has(item.id) ? undefined : this.catalog.get(item.id)
           if (provider) matched.add(provider.id)
           const install = this.installs[item.id]
           const failedPackage = [item.distribution?.name, install?.pluginName].find((name) => moduleFailures.has(name))
           const pendingRestart = !provider && this.pendingRestart.has(item.id)
-          const missingProvider = !provider && !pendingRestart && (install || this.state.added.includes(item.id))
-          const loadFailure = this.installFailures.get(item.id) || (!provider && !pendingRestart && ((failedPackage && moduleFailures.get(failedPackage)) || (missingProvider && (install
+          const pluginName = this.pluginFor({ ...item, catalogId: item.id, sourcePackage: provider?.sourcePackage })
+          const pluginClosed = pluginName && this.native.bundles[pluginName]?.enabled === false
+          const missingProvider = !provider && !pendingRestart && !pluginClosed && (install || this.state.added.includes(item.id))
+          const loadFailure = !pluginClosed && (this.installFailures.get(item.id) || (!provider && !pendingRestart && ((failedPackage && moduleFailures.get(failedPackage)) || (missingProvider && (install
             ? '已有安装记录，但工作台启动后未注册。请重试安装或卸载后重试。'
-            : '工作台仍在已安装列表中，但安装包不存在或未能加载。请重新安装。'))))
+            : '工作台仍在已安装列表中，但安装包不存在或未能加载。请重新安装。')))))
           return {
             ...item,
             ...(provider || {}),
@@ -115,6 +178,7 @@ window.__ModuleLoader__.load({
             // tag-driven release and must not override the catalog.
             version: item.version,
             listedVersion: item.version,
+            installedVersion: install?.version || provider?.version,
             title: item.name,
             category: item.categoryName,
             description: item.description.zh,
@@ -129,10 +193,18 @@ window.__ModuleLoader__.load({
           }
         })
         for (const provider of providers) {
-          if (!matched.has(provider.id)) {
+          if (!matched.has(provider.id) && !this.removedWorkbenchIds.has(provider.id)) {
             const installedFromMarket = Object.values(this.installs).some((install) => install?.pluginName === provider.sourcePackage)
             remote.push({ ...provider, catalogId: provider.id, listed: false, local: !installedFromMarket, installed: true })
           }
+        }
+        const visible = new Set(remote.map((entry) => entry.catalogId || entry.id))
+        for (const [id, remembered] of Object.entries(this.knownProviders)) {
+          if (visible.has(id) || this.removedWorkbenchIds.has(id) || typeof remembered?.sourcePackage !== 'string') continue
+          const bundle = this.native.bundles[remembered.sourcePackage]
+          if (!bundle && !this.state.added.includes(id)) continue
+          remote.push({ ...remembered, id, catalogId: id, listed: false, local: true, installed: !!bundle,
+            loadFailure: !bundle && this.native.status === NATIVE_STATUS.ready ? '工作台插件当前不可用。' : '' })
         }
         return remote
       }
@@ -169,7 +241,12 @@ window.__ModuleLoader__.load({
           try { id = this.identityForSource(source, provider.repository, provider.id) } catch { continue }
           if (catalog.has(id)) throw new Error(`Duplicate workbench provider: ${id}`)
           catalog.set(id, { ...provider, id, sourcePackage: source })
+          this.knownProviders[id] = { id, sourcePackage: source,
+            title: provider.title, description: provider.description, category: provider.category,
+            repository: provider.repository, icon: provider.icon, screenshot: provider.screenshot,
+            screenshots: provider.screenshots, author: provider.author, version: provider.version }
         }
+        try { window.localStorage?.setItem(KNOWN_PROVIDERS_KEY, JSON.stringify(this.knownProviders)) } catch {}
         this.catalog = catalog
         for (const [id] of previous) {
           if (!preserveActive && !catalog.has(id) && this.state.active === id) this.state = { ...this.state, active: null }
@@ -221,7 +298,7 @@ window.__ModuleLoader__.load({
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
           catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, pending: this.pending, marketOpen: this.marketOpen,
-          catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, restartNeeded: this.restartNeeded }
+          catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded }
         for (const listener of this.listeners) listener()
       }
       report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
@@ -302,6 +379,7 @@ window.__ModuleLoader__.load({
           const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId)
           if (data.install?.catalogId !== catalogId || typeof data.install?.pluginName !== 'string') throw new Error('市场安装记录无效。')
           this.installs = { ...this.installs, [catalogId]: data.install }
+          this.removedWorkbenchIds.delete(catalogId)
           this.pendingRestart.add(catalogId)
           this.installFailures.delete(catalogId)
           this.publish()
@@ -329,10 +407,39 @@ window.__ModuleLoader__.load({
         return this.installs[id] ? id : null
       }
       async removeWorkbench(id) {
-        // Market installs also remove the package; sessions, files and notes stay.
+        // Market installs use their recorded package identity. Other workbenches
+        // must resolve to a removable native bundle before their record is cleared.
         const catalogId = this.marketInstallFor(id)
-        if (catalogId) await this.uninstallFromMarket(catalogId)
-        return this.remove(id)
+        if (catalogId) {
+          await this.uninstallFromMarket(catalogId)
+          this.removedWorkbenchIds.add(id)
+          await this.remove(id)
+          this.publish()
+          return
+        }
+        if (this.removingPlugin || this.native.status !== NATIVE_STATUS.ready) throw new Error('无法确定此工作台的原生插件状态。')
+        const entry = this.catalog.get(id) || this.marketCatalog().find((item) => item.id === id)
+        const name = entry && this.pluginFor(entry)
+        const bundle = name && this.native.bundles[name]
+        if (!bundle || bundle.installed === false || bundle.removable !== true) throw new Error('此工作台的原生插件当前不可卸载。')
+        if (!this.ctx.remote?.pluginManager?.removeBundle) throw new Error('原生插件卸载服务不可用。')
+        this.removingPlugin = name
+        this.publish()
+        try {
+          const result = await this.ctx.remote.pluginManager.removeBundle(name)
+          if (!result?.ok) throw new Error(result?.error?.diagnostic || '卸载原生插件失败。')
+          if (!['applied', 'restart-required'].includes(result.value?.application) || result.value.changed === false) throw new Error(result.value?.error?.diagnostic || '卸载原生插件未生效。')
+          if (result.value.application === 'restart-required') this.restartNeeded = true
+          this.removedWorkbenchIds.add(id)
+          await this.remove(id)
+          await this.refreshNative()
+        } catch (error) {
+          await this.refreshNative()
+          throw error
+        } finally {
+          this.removingPlugin = null
+          this.publish()
+        }
       }
       async load() {
         await this.queue
@@ -344,7 +451,8 @@ window.__ModuleLoader__.load({
           const [data, catalog, installs] = await Promise.all([
             this.read(),
             this.readCatalog().catch(error => ({ error })),
-            this.readInstalls().catch(() => ({}))
+            this.readInstalls().catch(() => ({})),
+            this.refreshNative()
           ])
           await this.ctx.sessions.refresh()
           if (this.disposed || ticket !== this.navigation) return
@@ -367,13 +475,14 @@ window.__ModuleLoader__.load({
           this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
           const active = this.state.active
+          if (active && this.activationFor(this.catalog.get(active) || { id: active }) === 'off') await this.leave()
           const restoreMarket = this.restoreMarketOnLoad || this.marketOpen
           this.restoreMarketOnLoad = false
           if (restoreMarket) {
             this.setMarketOpen(true)
             this.ctx.layout.selectPanel(PANEL)
           }
-          else if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
+          else if (active && this.catalog.has(active) && this.state.added.includes(active) && this.activationFor(this.catalog.get(active)) !== 'off') await this.open(active)
           else this.selectionChanged()
           for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
         } catch (error) { this.report(error) }
@@ -453,6 +562,7 @@ window.__ModuleLoader__.load({
       async open(id, sessionId) {
         if (!workbenchPreference.getSnapshot()) throw new Error('工作台功能已关闭。')
         if (!this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
+        if (this.activationFor(this.catalog.get(id)) === 'off') throw new Error('工作台插件已关闭，请先开启。')
         if (sessionId && this.state.sessionBindings[sessionId] !== id) throw new Error('会话不属于当前工作台。')
         this.rememberNativeSession(this.currentSession())
         this.setMarketOpen(false)
@@ -475,6 +585,7 @@ window.__ModuleLoader__.load({
       async home(id = this.state.active) {
         if (!workbenchPreference.getSnapshot()) throw new Error('工作台功能已关闭。')
         if (!id || !this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
+        if (this.activationFor(this.catalog.get(id)) === 'off') throw new Error('工作台插件已关闭，请先开启。')
         this.rememberNativeSession(this.currentSession())
         this.setMarketOpen(false)
         const ticket = ++this.navigation
@@ -499,6 +610,7 @@ window.__ModuleLoader__.load({
         this.setMarketOpen(true)
         this.ctx.layout.selectPanel(PANEL)
         this.run(this.refreshCatalog())
+        this.run(this.refreshNative())
       }
       async openNative(startSession) {
         this.setMarketOpen(false)
@@ -609,7 +721,7 @@ window.__ModuleLoader__.load({
         const workspace = context?.workspaceId
           ? this.ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === context.workspaceId)
           : this.workspaceFor(sessionId)
-        if (!workbenchPreference.getSnapshot() || !this.ready || this.blocked || this.disposed || !active || !workspace || !this.state.added.includes(active) || !this.catalog.has(active)) return false
+        if (!workbenchPreference.getSnapshot() || !this.ready || this.blocked || this.disposed || !active || !workspace || !this.state.added.includes(active) || !this.catalog.has(active) || this.activationFor(this.catalog.get(active)) === 'off') return false
         // A native workspace switch names whichever blank session the host
         // would normally open. While a workbench is active we intentionally do
         // not adopt that ordinary or differently-owned session: create a fresh
@@ -754,7 +866,7 @@ window.__ModuleLoader__.load({
         // Native workspace/session navigation invalidates pending workbench
         // navigation. A bound session activates its available owner; every
         // ordinary or unavailable-owner session leaves workbench mode.
-        const active = owner && this.state.added.includes(owner) && this.catalog.has(owner) ? owner : null
+        const active = owner && this.state.added.includes(owner) && this.catalog.has(owner) && this.activationFor(this.catalog.get(owner)) !== 'off' ? owner : null
         if (!active && this.state.active === null) return
         this.run(this.commit((state) => {
           state.active = active
@@ -828,11 +940,12 @@ window.__ModuleLoader__.load({
       .dshWbGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
       .dshWbCard{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);overflow:hidden;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s cubic-bezier(.2,.8,.2,1)}
       .dshWbCard:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.08)}
-      .dshWbCardBody{display:flex;flex-direction:column;gap:10px;padding:16px 16px 15px;flex:1}.dshWbCardTitle{display:flex;align-items:center;gap:8px;min-width:0}
-      .dshWbCard h2{overflow-wrap:anywhere;display:flex;align-items:center;gap:7px;min-width:0;font-size:17px;line-height:24px;letter-spacing:-.018em;font-weight:650;margin:0}.dshWbCard p{overflow-wrap:anywhere;margin:0;font-size:13px;line-height:20px}.dshWbCardDescription{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:40px}
-      .dshWbCard .dshWbActions{margin-top:auto;gap:8px;padding-top:2px;align-items:center;flex-wrap:nowrap}.dshWbCard .dshWbActions>.dshWbBtn:first-child{margin-right:auto;border-color:transparent;background:transparent;color:var(--dsw-alias-label-secondary)}.dshWbCard .dshWbActions>.dshWbBtn:first-child:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbCardIcon{display:grid;place-items:center;width:20px;height:20px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dshWbGlyph{display:inline-grid;place-items:center;line-height:1;flex-shrink:0}.dshWbMonogram{box-sizing:border-box;border:1.3px solid currentColor;border-radius:4px;font-weight:600}.dshWbCard .dshWbBtn{font-size:12px;line-height:18px;padding:6px 11px}.dshWbInstalled{display:inline-flex;align-items:center;min-height:32px;padding:6px 11px;box-sizing:border-box;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+      .dshWbCardBody{display:flex;flex-direction:column;gap:8px;padding:18px 20px 16px;height:232px;flex:0 0 232px;box-sizing:border-box;min-width:0}.dshWbCardTitle{display:flex;align-items:center;gap:8px;min-width:0;height:26px;flex:0 0 26px}.dshWbCardTitle h2{flex:1;min-width:0;white-space:nowrap;overflow:hidden}.dshWbCardTitle .dshWbTitleLink{min-width:0;overflow:hidden;white-space:nowrap}
+      .dshWbCard h2{overflow-wrap:anywhere;display:flex;align-items:center;gap:7px;min-width:0;font-size:18px;line-height:26px;letter-spacing:-.018em;font-weight:650;margin:0}.dshWbCard p{overflow-wrap:anywhere;margin:0;font-size:14px;line-height:22px}.dshWbCardDescription{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;min-height:88px}
+      .dshWbCard .dshWbActions{margin-top:auto;min-height:36px;gap:8px;padding-top:8px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}.dshWbCardControls{display:flex;align-items:center;gap:8px;margin-left:auto}.dshWbCardVersion{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}.dshWbCardIcon{display:grid;place-items:center;width:20px;height:20px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dshWbGlyph{display:inline-grid;place-items:center;line-height:1;flex-shrink:0}.dshWbMonogram{box-sizing:border-box;border:1.3px solid currentColor;border-radius:4px;font-weight:600}.dshWbCard .dshWbBtn{font-size:12px;line-height:18px;padding:6px 11px}.dshWbInstalled{display:inline-flex;align-items:center;min-height:32px;padding:6px 11px;box-sizing:border-box;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}.dshWbInstallFailed{color:var(--dsw-alias-state-error-primary)}.dshWbFailureIcon{display:inline-grid;place-items:center;width:24px;height:24px;flex:0 0 24px;color:var(--dsw-alias-state-error-primary);cursor:help}.dshWbRetry{display:inline-grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary)}.dshWbRetry:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}.dshWbRunSwitch{position:relative;width:38px;height:22px;flex:0 0 38px;padding:0;border:0;border-radius:999px;background:var(--dsw-alias-border-l2);transition:background .15s}.dshWbRunSwitch[aria-checked=true]{background:var(--dsw-alias-label-primary)}.dshWbRunSwitch::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);transition:transform .15s}.dshWbRunSwitch[aria-checked=true]::after{transform:translateX(16px)}
       .dshWbCategory{margin-left:auto;font-size:11px;line-height:18px;color:var(--dsw-alias-label-secondary);background:transparent;padding:0;white-space:nowrap}
       .dshWbMedia{position:relative;aspect-ratio:16/9;background:var(--dsw-alias-bg-module-platform);overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l2)}
+      .dshWbMediaOpen{display:block;position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent;cursor:pointer}.dshWbMediaOpen:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-3px;z-index:1}.dshWbMediaZoom{position:absolute;right:12px;bottom:10px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary)}
       .dshWbPreview{position:absolute;inset:0;display:grid;grid-template-rows:22px 1fr;background:var(--dsw-alias-bg-module-platform);overflow:hidden;color:var(--dsw-alias-label-secondary)}
       .dshWbPreviewBar{display:flex;align-items:center;gap:4px;padding:0 9px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}.dshWbPreviewDot{width:4px;height:4px;border-radius:50%;background:var(--dsw-alias-border-l2)}
       .dshWbPreviewCanvas{display:grid;min-height:0}.dshWbPreviewPane{padding:13px;min-width:0;font-size:10px;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dshWbPreviewPane+.dshWbPreviewPane{border-left:1px solid var(--dsw-alias-border-l2)}
@@ -840,10 +953,12 @@ window.__ModuleLoader__.load({
       .dshWbCardScreenshot{display:block;width:100%;height:100%;object-fit:cover;background:var(--dsw-alias-bg-module-platform)}
       .dshWbFavorite{position:absolute;right:10px;top:10px;z-index:2;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;transform:translateY(-3px);transition:opacity .16s,transform .16s,color .16s}
       .dshWbCard:hover .dshWbFavorite,.dshWbFavorite:focus-visible,.dshWbFavorite[aria-pressed=true]{opacity:1;transform:none}.dshWbFavorite:hover,.dshWbFavorite[aria-pressed=true]{color:var(--dsw-alias-label-primary)}.dshWbFavorite[aria-pressed=true] svg{fill:currentColor}
-      .dshWbTitleLink{color:inherit;text-decoration:none}.dshWbTitleLink:hover{text-decoration:underline;text-underline-offset:3px}.dshWbTitleLink:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px;border-radius:3px}
+      .dshWbUninstall{position:absolute;left:10px;top:10px;z-index:2;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;transform:translateY(-3px);transition:opacity .16s,transform .16s,color .16s}.dshWbCard:hover .dshWbUninstall,.dshWbUninstall:focus-visible{opacity:1;transform:none}.dshWbUninstall:hover:not(:disabled){color:var(--dsw-alias-state-error-primary)}
+      .dshWbTitleLink{display:inline-flex;align-items:center;gap:7px;color:inherit;text-decoration:none;border-bottom:1px solid transparent}a.dshWbTitleLink:hover{border-bottom-color:currentColor}.dshWbTitleLink:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px;border-radius:3px}.dshWbTitleText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .dshWbAvatar{width:18px;height:18px;flex:0 0 auto;border-radius:50%;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform)}
       .dshWbMeta{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2);font-variant-numeric:tabular-nums;min-width:0}
       .dshWbMetaItem{display:flex;align-items:center;gap:5px;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;min-width:0}.dshWbMetaItem svg{flex:0 0 auto}.dshWbMetaItem b{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}.dshWbMetaItem small{font-size:10px;line-height:16px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbAuthor b{font-size:12px}.dshWbMetaItem:not(:first-child) small{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+      .dshWbCard .dshWbMeta{padding:0;border:0;gap:12px}.dshWbCard .dshWbMetaItem{font-size:12px}.dshWbCard .dshWbAvatar{width:20px;height:20px}.dshWbCard .dshWbAuthor b{font-size:13px}.dshWbCard .dshWbMetaItem small{font-size:11px}
       .dshWbVersion{font-size:10px;color:var(--dsw-alias-label-secondary);white-space:nowrap}.dshWbPending{font-weight:600;color:var(--dsw-alias-label-primary)}
       .dshWbEmpty{grid-column:1/-1;display:flex;min-height:240px;align-items:center;justify-content:center;text-align:center;padding:32px;border:1px dashed var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-module-platform)}.dshWbEmpty strong{display:block;font-size:15px;margin-bottom:5px}.dshWbEmpty p{margin:0}
       .dshWbDetail{padding:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;margin-bottom:16px;background:var(--dsw-alias-bg-layer-1)}
@@ -869,7 +984,7 @@ window.__ModuleLoader__.load({
          workbench's semantic top header share that row after its reserved width. */
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbBusiness[data-side=left][data-embedded=true] > :first-child > header:first-child,
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbCustomFrame > :first-child > header:first-child{padding-inline-start:var(--dsh-frame-leading-clearance,160px)}
-      .dshWbSidebarSwitcher{position:relative;z-index:30;display:flex;align-items:center;gap:8px;min-width:0;margin:0 0 8px;padding:0 2px;overflow:visible}.dshWbModeSelect{display:flex;align-items:center;gap:8px;min-width:0;flex:1;height:36px;padding:0 9px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;transition:background .14s ease,border-color .14s ease}.dshWbModeSelect:hover,.dshWbModeSelect[aria-expanded=true]{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l2)}.dshWbModeSelect:active{transform:translateY(1px)}.dshWbModeSelectIcon{display:grid;place-items:center;flex:0 0 18px;color:var(--dsw-alias-label-secondary)}.dshWbModeSelectLabel{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}.dshWbModeChevron{display:grid;place-items:center;flex:0 0 auto;color:var(--dsw-alias-label-tertiary);transition:transform .14s ease}.dshWbModeSelect[aria-expanded=true] .dshWbModeChevron{transform:rotate(180deg)}.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;top:calc(100% + 5px);display:grid;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 28px rgba(0,0,0,.14)}.dshWbModeOptionRow{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:0;min-width:0}.dshWbModeOptionRow[data-dragging=true]{opacity:.46}.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after{content:"";position:absolute;z-index:1;left:8px;right:6px;height:2px;border-radius:1px;background:var(--dsw-alias-label-primary);pointer-events:none}.dshWbModeOptionRow[data-drop-edge=before]::before{top:-2px}.dshWbModeOptionRow[data-drop-edge=after]::after{bottom:-2px}.dshWbModeOption{display:grid;grid-template-columns:18px minmax(0,1fr) 16px;align-items:center;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left}.dshWbModeOption:hover:not(:disabled),.dshWbModeOption:focus-visible{background:var(--dsw-alias-bg-layer-2)}.dshWbModeOptionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.dshWbModeOptionCheck{font-size:12px;text-align:center;color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle{display:grid;place-items:center;width:24px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:grab}.dshWbModeDragHandle:hover:not(:disabled),.dshWbModeDragHandle:focus-visible{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}.dshWbModeDragHandle:active{cursor:grabbing}.dshWbModeDragHandle:disabled{cursor:default;opacity:.35}.dshWbSrOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.dshWbSidebarSwitcherItem{display:grid;place-items:center;position:relative;flex:0 0 36px;width:36px;height:36px;padding:0;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary);transition:background .14s ease,color .14s ease}.dshWbSidebarSwitcherItem:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbSidebarSwitcherItem[aria-current=page]{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.dshWbSidebarSwitcher{position:relative;z-index:30;display:flex;align-items:center;gap:8px;box-sizing:border-box;min-width:0;min-height:36px;margin:0 2px 8px;padding:0;overflow:visible}.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1 1 0;min-width:88px;box-sizing:border-box;min-height:36px;padding:7px 8px;font:inherit;line-height:22px;cursor:pointer;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);text-align:left;white-space:nowrap}.dshWbSidebarSwitcher.dshWb{font-size:14px;line-height:22px}.dshWbSidebarSwitcher .dshWbWorkbenchHome{font:inherit;line-height:22px}.dshWbWorkbenchHome svg{flex:0 0 auto}.dshWbWorkbenchHome:hover,.dshWbWorkbenchHome[aria-current=page]{background:var(--dsw-alias-interactive-bg-hover)}.dshWbCurrentMode{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:42%;padding:0 8px;color:var(--dsw-alias-label-secondary);font-size:12px}.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dshWbModeSwitch{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:42%;box-sizing:border-box;height:36px;padding:7px 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer}.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}.dshWbModeSwitch:hover:not(:disabled),.dshWbModeSwitch[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}.dshWbModeSwitch:focus-visible,.dshWbWorkbenchHome:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;top:calc(100% + 5px);display:grid;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 28px rgba(0,0,0,.14)}.dshWbModeOptionRow{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:0;min-width:0}.dshWbModeOptionRow[data-dragging=true]{opacity:.46}.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after{content:"";position:absolute;z-index:1;left:8px;right:6px;height:2px;border-radius:1px;background:var(--dsw-alias-label-primary);pointer-events:none}.dshWbModeOptionRow[data-drop-edge=before]::before{top:-2px}.dshWbModeOptionRow[data-drop-edge=after]::after{bottom:-2px}.dshWbModeOption{display:grid;grid-template-columns:18px minmax(0,1fr) 16px;align-items:center;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left}.dshWbModeOption:hover:not(:disabled),.dshWbModeOption:focus-visible{background:var(--dsw-alias-bg-layer-2)}.dshWbModeOptionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.dshWbModeOptionCheck{font-size:12px;text-align:center;color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle{display:grid;place-items:center;width:24px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:grab}.dshWbModeDragHandle:hover:not(:disabled),.dshWbModeDragHandle:focus-visible{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}.dshWbModeDragHandle:active{cursor:grabbing}.dshWbModeDragHandle:disabled{cursor:default;opacity:.35}.dshWbSrOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
@@ -879,7 +994,7 @@ window.__ModuleLoader__.load({
       .dshWbNotice{padding:10px 14px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
       .dshWb [hidden]{display:none!important}
       @media(hover:none){.dshWbFavorite{opacity:1;transform:none}}
-      @media(prefers-reduced-motion:reduce){.dshWbCard,.dshWbFavorite,.dshWbModal,.dshWbModalBackdrop,.dshWbDockSwitch::after{animation:none;transition:none}}
+      @media(hover:none){.dshWbUninstall{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.dshWbCard,.dshWbFavorite,.dshWbUninstall,.dshWbModal,.dshWbModalBackdrop,.dshWbDockSwitch::after{animation:none;transition:none}}
       @container workbench-market (max-width:980px){.dshWbGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
       @container workbench-market (max-width:620px){.dshWbGrid{grid-template-columns:1fr}}
       @media(max-width:900px){.dshWbMarket{padding:24px}.dshWbBusiness{min-width:180px}}
@@ -938,8 +1053,11 @@ window.__ModuleLoader__.load({
       if (name === 'install') return h('svg', common, h('path', { d: 'M12 3v12m0 0 4-4m-4 4-4-4M5 20h14' }))
       if (name === 'bookmark') return h('svg', common, h('path', { d: 'M6.5 4.5A1.5 1.5 0 0 1 8 3h8a1.5 1.5 0 0 1 1.5 1.5V21L12 17.2 6.5 21V4.5Z' }))
       if (name === 'star') return h('svg', common, h('path', { d: 'm12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z' }))
+      if (name === 'zoom') return h('svg', common, h('circle', { cx: 10.5, cy: 10.5, r: 6.5 }), h('path', { d: 'm16 16 4 4M7.5 10.5h6m-3-3v6' }))
+      if (name === 'github') return h('svg', common, h('path', { d: 'M9 19c-4.3 1.3-4.3-2.2-6-2.7m12 5v-3.9c0-1.1-.4-1.8-.8-2.2 2.8-.3 5.8-1.4 5.8-6.2 0-1.4-.5-2.5-1.3-3.4.1-.3.6-1.6-.1-3.3 0 0-1.1-.4-3.5 1.3a12 12 0 0 0-6.4 0C6.3 1.9 5.2 2.3 5.2 2.3c-.7 1.7-.2 3-.1 3.3A4.9 4.9 0 0 0 3.8 9c0 4.8 3 5.9 5.8 6.2-.4.4-.8 1.1-.8 2.2v3.9' }))
       if (name === 'search') return h('svg', common, h('circle', { cx: 10.5, cy: 10.5, r: 6.5 }), h('path', { d: 'm16 16 4 4' }))
       if (name === 'refresh') return h('svg', common, h('path', { d: 'M20 7v5h-5' }), h('path', { d: 'M18.2 16a8 8 0 1 1 .9-7.9L20 12' }))
+      if (name === 'failure') return h('svg', common, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M12 7v6m0 4h.01' }))
       if (name === 'plus') return h('svg', common, h('path', { d: 'M12 5v14M5 12h14' }))
       if (name === 'remove') return h('svg', common, h('path', { d: 'M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5' }))
       if (name === 'market') return h('svg', common, h('rect', { x: 3.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 3.5, y: 13.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 13.5, width: 7, height: 7, rx: 1.5 }))
@@ -953,6 +1071,7 @@ window.__ModuleLoader__.load({
       if (name === 'chevronRight') return h('svg', common, h('path', { d: 'm10 7 5 5-5 5' }))
       if (name === 'chevronUp') return h('svg', common, h('path', { d: 'm7 14 5-5 5 5' }))
       if (name === 'chevronDown') return h('svg', common, h('path', { d: 'm7 10 5 5 5-5' }))
+      if (name === 'switch') return h('svg', common, h('path', { d: 'M4 8h16m0 0-3-3m3 3-3 3M20 16H4m0 0 3-3m-3 3 3 3' }))
       if (name === 'gripVertical') return h('svg', common,
         h('circle', { cx: 9, cy: 7, r: 1, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 15, cy: 7, r: 1, fill: 'currentColor', stroke: 'none' }),
         h('circle', { cx: 9, cy: 12, r: 1, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 15, cy: 12, r: 1, fill: 'currentColor', stroke: 'none' }),
@@ -978,8 +1097,9 @@ window.__ModuleLoader__.load({
       if (!entry) return null
       return h('span', { className: 'dshWb dshWbSessionIcon', role: 'img', title: entry.title, 'aria-label': `属于${entry.title}` }, h(WorkbenchIcon, { entry, size }))
     }
-    function WorkbenchSidebarSwitcher({ service, wide, startSession }) {
+    function WorkbenchSidebarSwitcher({ service, wide, startSession, usePanelInfo }) {
       const { state, catalog, ready, pending, marketOpen } = useWorkbench(service)
+      const marketSelected = usePanelInfo((info) => info.activePanelId === PANEL)
       const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [open, setOpen] = React.useState(false)
       const [draggingId, setDraggingId] = React.useState(null)
@@ -989,7 +1109,7 @@ window.__ModuleLoader__.load({
       const dropTargetRef = React.useRef(null)
       if (!enabled || !wide) return null
       const disabled = !ready || pending > 0 || service.blocked
-      const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && state.added.includes(item.id) && service.catalog.has(item.id))
+      const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && state.added.includes(item.id) && service.catalog.has(item.id) && service.activationFor(item) !== 'off')
       const active = state.active && pinned.find((item) => item.id === state.active)
       const chooseNative = () => {
         setOpen(false)
@@ -1061,28 +1181,28 @@ window.__ModuleLoader__.load({
         }
         clearDrag()
       }
-      return h('nav', { className: 'dshWb dshWbSidebarSwitcher', 'data-dsh-workbench-switcher': '', 'aria-label': '切换会话模式', onBlur: (event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false) }, onKeyDown: (event) => { if (event.key === 'Escape') { setOpen(false); event.currentTarget.querySelector('.dshWbModeSelect')?.focus() } } },
-        h('button', { type: 'button', className: 'dshWbModeSelect', 'aria-haspopup': 'menu', 'aria-expanded': open, disabled, onClick: () => setOpen((value) => !value) },
-          h('span', { className: 'dshWbModeSelectIcon', 'aria-hidden': true }, active ? h(WorkbenchIcon, { entry: active, size: 16 }) : h(MarketIcon, { name: 'home', size: 17 })),
-          h('span', { className: 'dshWbModeSelectLabel' }, active?.title || '原生会话'),
-          h('span', { className: 'dshWbModeChevron', 'aria-hidden': true }, h(MarketIcon, { name: 'chevronDown', size: 14 }))),
-        open && h('div', { className: 'dshWbModeMenu', role: 'menu', 'aria-label': '选择会话模式' },
+      return h('nav', { className: 'dshWb dshWbSidebarSwitcher', 'data-dsh-workbench-switcher': '', 'aria-label': '工作台导航', onBlur: (event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false) }, onKeyDown: (event) => { if (event.key === 'Escape' && open) { setOpen(false); event.currentTarget.querySelector('.dshWbModeSwitch')?.focus() } } },
+        h('button', { type: 'button', className: 'dshWbWorkbenchHome', title: '工作台主页', 'aria-label': '打开工作台主页', 'aria-current': marketSelected ? 'page' : undefined, onClick: () => { setOpen(false); service.showMarket() } },
+          h(MarketIcon, { name: 'market', size: 16 }), h('span', null, '工作台')),
+        pinned.length > 0
+          ? h('button', { type: 'button', className: 'dshWbModeSwitch', title: `切换工作台（当前：${active?.title || '默认'}）`, 'aria-label': `切换工作台，当前：${active?.title || '默认'}`, 'aria-haspopup': 'menu', 'aria-expanded': open, disabled, onClick: () => setOpen((value) => !value) },
+            h('span', { className: 'dshWbCurrentModeLabel' }, active?.title || '默认'), h(MarketIcon, { name: 'switch', size: 16 }))
+          : h('span', { className: 'dshWbCurrentMode', title: '默认', 'aria-label': '当前工作台：默认' }, h('span', { className: 'dshWbCurrentModeLabel' }, '默认')),
+        open && pinned.length > 0 && h('div', { className: 'dshWbModeMenu', role: 'menu', 'aria-label': '选择会话模式' },
           h('button', { type: 'button', className: 'dshWbModeOption', role: 'menuitemradio', 'aria-checked': !state.active, onClick: chooseNative },
             h(MarketIcon, { name: 'home', size: 16 }), h('span', { className: 'dshWbModeOptionLabel' }, '原生会话'), h('span', { className: 'dshWbModeOptionCheck', 'aria-hidden': true }, !state.active ? '✓' : '')),
           ...pinned.map((item, index) => h('div', { key: item.id, className: 'dshWbModeOptionRow', role: 'none', 'data-dragging': draggingId === item.id || undefined, 'data-drop-edge': dropTarget?.id === item.id ? dropTarget.edge : undefined, onDragOver: (event) => onDragOver(event, item.id), onDrop: (event) => onDrop(event, item.id) },
             h('button', { type: 'button', className: 'dshWbModeOption', role: 'menuitemradio', 'aria-checked': item.id === state.active, onClick: () => chooseWorkbench(item) },
               h(WorkbenchIcon, { entry: item, size: 16 }), h('span', { className: 'dshWbModeOptionLabel' }, item.title), h('span', { className: 'dshWbModeOptionCheck', 'aria-hidden': true }, item.id === state.active ? '✓' : '')),
             pinned.length > 1 && h('button', { type: 'button', role: 'menuitem', className: 'dshWbModeDragHandle', draggable: !disabled, disabled, title: `拖拽调整${item.title}顺序`, 'aria-label': `${item.title}，当前位置 ${index + 1}/${pinned.length}，使用上下方向键调整顺序`, 'aria-keyshortcuts': 'ArrowUp ArrowDown', 'aria-roledescription': '拖拽排序手柄', onKeyDown: (event) => onHandleKeyDown(event, item, index), onDragStart: (event) => onDragStart(event, item), onDragEnd: clearDrag }, h(MarketIcon, { name: 'gripVertical', size: 16 })))),
-          h('span', { className: 'dshWbSrOnly', role: 'status', 'aria-live': 'polite', 'aria-atomic': true }, announcement)),
-        h('button', { type: 'button', className: 'dshWbSidebarSwitcherItem dshWbSidebarManager', title: '工作台管理', 'aria-label': '打开工作台管理', 'aria-current': marketOpen ? 'page' : undefined, onClick: () => service.showMarket() },
-          h(MarketIcon, { name: 'market', size: 17 })))
+          h('span', { className: 'dshWbSrOnly', role: 'status', 'aria-live': 'polite', 'aria-atomic': true }, announcement)))
     }
     function MetaItem({ icon, label, value }) {
       return h('span', { className: 'dshWbMetaItem', title: label }, h(MarketIcon, { name: icon }), h('b', null, value), h('small', null, label))
     }
     const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
     // The listing owner is a GitHub login, so its avatar comes from GitHub.
-    function AuthorItem({ entry }) {
+    function AuthorItem({ entry, showVersion = true }) {
       const login = typeof entry.owner === 'string' && GITHUB_LOGIN.test(entry.owner) ? entry.owner : ''
       const [failed, setFailed] = React.useState(false)
       const name = login || entry.author || '暂无'
@@ -1091,21 +1211,23 @@ window.__ModuleLoader__.load({
           ? h('img', { className: 'dshWbAvatar', src: `https://github.com/${login}.png?size=40`, alt: '', loading: 'lazy', onError: () => setFailed(true) })
           : h(MarketIcon, { name: 'author' }),
         h('b', null, name),
-        entry.version && h('small', null, `· v${entry.version}`))
+        showVersion && entry.version && h('small', null, `· v${entry.version}`))
     }
     function metricValue(...values) { return values.find(value => Number.isSafeInteger(value) && value >= 0) }
-    function EntryMeta({ entry }) {
+    function EntryMeta({ entry, showVersion = true }) {
       const downloads = metricValue(entry.metrics?.npmDownloads30d?.value, entry.metrics?.githubReleaseDownloads?.value, entry.installations, entry.installCount)
       const stars = metricValue(entry.metrics?.githubStars?.value, entry.githubStars)
       return h('div', { className: 'dshWbMeta', 'aria-label': '工作台信息' },
-        h(AuthorItem, { entry }),
+        h(AuthorItem, { entry, showVersion }),
         h(MetaItem, { icon: 'star', label: stars === undefined ? 'GitHub Stars：暂无数据' : 'GitHub Stars', value: stars === undefined ? '—' : compactCount(stars) }),
         h(MetaItem, { icon: 'install', label: downloads === undefined ? '下载数：暂无数据' : '下载数', value: downloads === undefined ? '—' : compactCount(downloads) }))
     }
-    // The workbench name opens its GitHub repository.
-    function EntryTitle({ entry }) {
+    // The card link includes the workbench icon so its underline covers both.
+    function EntryTitle({ entry, showIcon = false }) {
       const href = typeof entry.repository === 'string' && /^https:\/\/github\.com\//.test(entry.repository) ? entry.repository : ''
-      return href ? h('a', { className: 'dshWbTitleLink', href, target: '_blank', rel: 'noopener noreferrer', title: `在 GitHub 上查看${entry.title || ''}` }, entry.title) : entry.title
+      const icon = showIcon && h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 15 }))
+      const title = h('span', { className: 'dshWbTitleText' }, entry.title)
+      return href ? h('a', { className: 'dshWbTitleLink', href, target: '_blank', rel: 'noopener noreferrer', title: `在 GitHub 上查看${entry.title || ''}` }, icon, title) : h('span', { className: 'dshWbTitleLink' }, icon, title)
     }
     function Preview({ entry, detail = false }) {
       const screenshot = screenshotFor(entry)
@@ -1211,19 +1333,20 @@ window.__ModuleLoader__.load({
         document.body
       )
     }
-    function ConfirmRemoveModal({ entry, disabled, uninstall, onCancel, onConfirm }) {
+    function ConfirmRemoveModal({ entry, disabled, uninstall, nativeUninstall, recordOnly, onCancel, onConfirm }) {
       const dialogRef = React.useRef(null)
-      useDialogFocus(!!entry, onCancel, dialogRef)
+      const dismiss = () => { if (!disabled) onCancel() }
+      useDialogFocus(!!entry, dismiss, dialogRef)
       if (!entry) return null
       return require('react-dom').createPortal(
-        h('div', { className: 'dshWbModalBackdrop', onClick: onCancel },
+        h('div', { className: 'dshWbModalBackdrop', onClick: dismiss },
           h('div', { ref: dialogRef, className: 'dshWbModal dshWbConfirm', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-remove-title', 'aria-describedby': 'dsh-workbench-remove-description', tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbConfirmIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'remove', size: 18 })),
-            h('h2', { id: 'dsh-workbench-remove-title', style: { fontSize: 18, lineHeight: '26px' } }, `移除「${entry.title || entry.id}」？`),
-            h('p', { id: 'dsh-workbench-remove-description', className: 'dshWbMuted' }, uninstall ? '这会卸载从市场安装的工作台，并移除左侧固定入口，重启 Harness 后生效。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : '这会移除本地工作台和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。'),
+            h('h2', { id: 'dsh-workbench-remove-title', style: { fontSize: 18, lineHeight: '26px' } }, `${uninstall || nativeUninstall ? '卸载' : '移除'}「${entry.title || entry.id}」？`),
+            h('p', { id: 'dsh-workbench-remove-description', className: 'dshWbMuted' }, uninstall ? '这会卸载从市场安装的工作台，并移除左侧固定入口，重启 Harness 后生效。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : nativeUninstall ? '这会从当前 Profile 卸载工作台插件，并移除左侧固定入口。若插件无法立即卸载，重启 Harness 后生效。已有会话、项目文件和工作台笔记都会保留。' : recordOnly ? '这会移除工作台安装记录和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。' : '这会移除本地工作台和左侧固定入口。已有会话、项目文件和工作台笔记都会保留，之后重新安装仍可继续使用。'),
             h('div', { className: 'dshWbActions' },
-              h(Button, { autoFocus: true, onClick: onCancel }, '取消'),
-              h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, '确认移除')))),
+              h(Button, { autoFocus: true, disabled, onClick: dismiss }, '取消'),
+              h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, uninstall || nativeUninstall ? '确认卸载' : '确认移除')))),
         document.body)
     }
     function developmentWorkbenchAgentPrompt() {
@@ -1299,7 +1422,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('a', { href: result.url, target: '_blank', rel: 'noopener noreferrer' }, '在 GitHub 查看'))))
     }
     function Market({ service }) {
-      const { state, catalog, categories: marketCategories = [], ready, pending, installs, installing, catalogRefreshing } = useWorkbench(service)
+      const { state, catalog, categories: marketCategories = [], ready, pending, installs, installing, catalogRefreshing, native, togglingPlugin, removingPlugin, removedWorkbenchIds = [] } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
@@ -1320,12 +1443,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const favorites = state.favorites || []
       const unavailableEntry = (id) => ({ id, title: id, category: '其他', unavailable: true, description: '提供此工作台的插件当前未加载。', loadFailure: '工作台插件当前未加载。' })
       const marketEntries = catalog.filter((entry) => entry.listed === true)
-      const localEntries = catalog.filter((entry) => entry.local === true)
-      const installedEntries = added.map((id) => catalog.find((entry) => entry.id === id) || unavailableEntry(id)).filter((entry) => entry.local !== true)
+      const installedEntries = [...added.filter((id) => !removedWorkbenchIds.includes(id)).map((id) => catalog.find((entry) => entry.id === id) || unavailableEntry(id)), ...catalog.filter((entry) => entry.local && !added.includes(entry.id))]
       const allEntries = tab === 'mine'
         ? installedEntries
-        : tab === 'local'
-          ? localEntries
         : tab === 'favorites'
           ? favorites.map((id) => catalog.find((entry) => entry.catalogId === id || entry.id === id) || unavailableEntry(id))
           : tab === 'market' ? marketEntries : []
@@ -1336,7 +1456,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const removingEntry = allEntries.find((entry) => entry.id === removing) || catalog.find((entry) => entry.id === removing)
       const selectCollection = (value) => { setTab(value); setCategory('全部'); setDetail(null) }
       const navigateCollections = (event) => {
-        const values = ['market', 'favorites', 'mine', 'local']
+        const values = ['market', 'favorites', 'mine']
         const current = values.indexOf(tab)
         let next = current
         if (event.key === 'ArrowRight') next = (current + 1) % values.length
@@ -1366,8 +1486,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': '工作台集合' },
             h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, '工作台市场'),
             h(Button, { id: 'dsh-workbench-favorites-tab', role: 'tab', tabIndex: tab === 'favorites' ? 0 : -1, 'aria-selected': tab === 'favorites', 'aria-controls': 'dsh-workbench-favorites-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('favorites') }, `我的收藏 (${favorites.length})`),
-            h(Button, { id: 'dsh-workbench-mine-tab', role: 'tab', tabIndex: tab === 'mine' ? 0 : -1, 'aria-selected': tab === 'mine', 'aria-controls': 'dsh-workbench-mine-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('mine') }, `已安装的工作台 (${installedEntries.length})`),
-            h(Button, { id: 'dsh-workbench-local-tab', role: 'tab', tabIndex: tab === 'local' ? 0 : -1, 'aria-selected': tab === 'local', 'aria-controls': 'dsh-workbench-local-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('local') }, `本地工作台 (${localEntries.length})`))),
+            h(Button, { id: 'dsh-workbench-mine-tab', role: 'tab', tabIndex: tab === 'mine' ? 0 : -1, 'aria-selected': tab === 'mine', 'aria-controls': 'dsh-workbench-mine-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('mine') }, `已安装 (${installedEntries.length})`))),
           h('div', { className: 'dshWbBrowseTools' },
             h('label', { className: 'dshWbSearch' }, h(MarketIcon, { name: 'search' }), h('input', { type: 'search', placeholder: '搜索名称、作者或分类', 'aria-label': '搜索工作台', value: search, onChange: (event) => setSearch(event.target.value) })),
             h('div', { className: 'dshWbCategories', role: 'group', 'aria-label': '按分类筛选' }, categories.map((value) => h('button', { key: value, type: 'button', className: 'dshWbCategoryFilter', 'aria-pressed': category === value, onClick: () => setCategory(value) }, value))))),
@@ -1384,7 +1503,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '2'),
               h('strong', null, '装到本机，自测确认能用'),
-              h('p', null, '需求确认并完成开发后，Agent 会把工作台装到这台 Desktop，并按开发规范的本地自测清单检查。尚未上架的版本会出现在「本地工作台」，添加后也会出现在顶部快捷栏。自己用的话，到这一步就完成了。')),
+              h('p', null, '需求确认并完成开发后，Agent 会把工作台装到这台 Desktop，并按开发规范的本地自测清单检查。尚未上架的版本会以「本地」标识出现在「已安装」中，添加后也会出现在顶部快捷栏。自己用的话，到这一步就完成了。')),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, '想上架，再按验收规范提交'),
@@ -1407,46 +1526,44 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => {
             const catalogId = entry.catalogId || entry.id
             const isFavorite = favorites.includes(catalogId)
-            // Offer an update only for market installs whose listed version moved on.
-            const updatable = installs[catalogId] && entry.listedVersion && installs[catalogId].version !== entry.listedVersion
+            const pluginName = service.pluginFor(entry)
+            const activation = service.activationFor(entry)
+            const bundle = pluginName && native?.bundles?.[pluginName]
+            const hasNativeControl = !!bundle && !bundle.readOnlyReason && !bundle.error
+            const canUninstall = !!service.marketInstallFor(entry.id) || (native?.status === NATIVE_STATUS.ready && !!bundle && bundle.installed !== false && bundle.removable === true)
+            const installed = !removedWorkbenchIds.includes(catalogId) && (entry.pendingRestart || (native?.status === NATIVE_STATUS.ready && pluginName
+              ? !!bundle && bundle.installed !== false
+              : entry.installed || !!installs[catalogId]))
+            // Native inventory describes the package actually on disk. The market
+            // record survives a stopped provider; the listing is for uninstalled cards.
+            const installedVersion = bundle?.installed !== false && bundle?.version || installs[catalogId]?.version || entry.installedVersion || (!entry.listed && entry.version)
+            const cardVersion = installed ? installedVersion : entry.listedVersion || entry.version
             return h('article', { key: catalogId, className: 'dshWbCard' },
-              h('div', { className: 'dshWbMedia' }, h(Preview, { entry }), !entry.local && h('button', { type: 'button', className: 'dshWbFavorite', title: isFavorite ? '取消收藏' : '收藏工作台', 'aria-label': isFavorite ? `取消收藏${entry.title}` : `收藏${entry.title}`, 'aria-pressed': isFavorite, disabled: disabled, onClick: () => service.run(service.toggleFavorite(catalogId)) }, h(MarketIcon, { name: 'bookmark', size: 17 }))),
+              h('div', { className: 'dshWbMedia' }, h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-label': `查看${entry.title}详情`, onClick: () => setDetail(catalogId) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))), tab === 'mine' && h('button', { type: 'button', className: 'dshWbUninstall', title: canUninstall ? `卸载${entry.title}` : '原生插件状态未知或不可卸载', 'aria-label': `卸载${entry.title}`, disabled: disabled || !!removingPlugin || !canUninstall, onClick: () => setRemoving(entry.id) }, h(MarketIcon, { name: 'remove', size: 17 })), !entry.local && h('button', { type: 'button', className: 'dshWbFavorite', title: isFavorite ? '取消收藏' : '收藏工作台', 'aria-label': isFavorite ? `取消收藏${entry.title}` : `收藏${entry.title}`, 'aria-pressed': isFavorite, disabled: disabled, onClick: () => service.run(service.toggleFavorite(catalogId)) }, h(MarketIcon, { name: 'bookmark', size: 17 }))),
               h('div', { className: 'dshWbCardBody' },
-                h('div', { className: 'dshWbCardTitle' }, h('h2', null, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 15 })), h(EntryTitle, { entry })), h('span', { className: 'dshWbCategory' }, entry.category || '其他')),
+                h('div', { className: 'dshWbCardTitle' }, h('h2', null, h(EntryTitle, { entry, showIcon: true })), h('span', { className: 'dshWbCategory' }, entry.local ? '本地' : entry.category || '其他')),
+                h(EntryMeta, { entry, showVersion: false }),
                 h('p', { className: 'dshWbMuted dshWbCardDescription' }, entry.description || '这个工作台暂时还没有填写介绍。'),
-                entry.loadFailure && h('p', { className: 'dshWbMuted', role: 'alert' }, `安装失败：${entry.loadFailure}`),
-                h(EntryMeta, { entry }),
-                h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setDetail(catalogId) }, '查看详情'),
-                  // The catalog shows installation status; opening belongs to the installed collection.
+                h('div', { className: 'dshWbActions' },
+                  typeof cardVersion === 'string' && cardVersion.trim() && h('span', { className: 'dshWbCardVersion' }, `v${cardVersion.trim()}`),
+                  h('div', { className: 'dshWbCardControls' },
                   entry.loadFailure
                     ? h(React.Fragment, null,
-                      h(Button, { disabled: true }, '安装失败'),
-                      entry.distribution && h(Button, { disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '重试中…' : '重试安装'),
-                      !!installs[catalogId] && h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => service.run(service.removeWorkbench(entry.id)) }, '卸载'),
-                      !installs[catalogId] && state.added.includes(entry.id) && tab !== 'mine' && h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: () => service.run(service.remove(entry.id)) }, '移除记录'))
-                  : entry.pendingRestart
-                    ? h(React.Fragment, null,
-                      h(Button, { disabled: true }, '重启后生效'),
-                      h(Button, { className: 'dshWbBtn dshWbDanger', disabled: disabled || !!installing, onClick: () => service.run(service.removeWorkbench(entry.id)) }, '卸载'))
-                  : entry.installed && state.added.includes(entry.id)
-                    ? h(React.Fragment, null,
-                      tab === 'mine'
-                        ? h(Button, { primary: true, disabled: disabled || !service.catalog.has(entry.id), onClick: () => service.run(service.open(entry.id)) }, '打开工作台')
-                        : h('span', { className: 'dshWbInstalled', role: 'status' }, '已安装'),
-                      updatable && h(Button, { title: `更新到 v${entry.listedVersion}`, 'aria-label': `更新${entry.title}到 v${entry.listedVersion}`, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '更新中…' : '更新'))
-                  : updatable
-                    ? h(Button, { title: `更新到 v${entry.listedVersion}`, 'aria-label': `更新${entry.title}到 v${entry.listedVersion}`, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在更新…' : '检测到更新')
-                  : entry.installed
-                      ? h(Button, { primary: true, disabled: disabled || entry.unavailable, onClick: () => service.run(service.add(entry.id)) }, '添加到我的工作台')
+                      h('span', { className: 'dshWbInstalled dshWbInstallFailed', role: 'status' }, '安装失败'),
+                      h('span', { className: 'dshWbFailureIcon', role: 'img', tabIndex: 0, title: entry.loadFailure, 'aria-label': `安装失败详情：${entry.loadFailure}` }, h(MarketIcon, { name: 'failure', size: 17 })),
+                      h('button', { type: 'button', className: 'dshWbRetry', title: entry.listed && entry.distribution ? '重试安装' : '重新加载', 'aria-label': `${entry.listed && entry.distribution ? '重试安装' : '重新加载'}${entry.title}`, disabled: disabled || !!installing, onClick: () => service.run(entry.listed && entry.distribution ? service.installFromMarket(catalogId) : service.load()) }, h(MarketIcon, { name: 'refresh', size: 17 })))
+                    : tab === 'mine'
+                    ? h('button', { type: 'button', className: 'dshWbRunSwitch', role: 'switch', 'aria-checked': activation === 'on', 'aria-label': `${entry.title}运行状态`, title: activation === 'unknown' ? '原生插件状态暂不可用' : activation === 'on' ? '运行中' : '已关闭', disabled: disabled || !!togglingPlugin || !hasNativeControl || activation === 'unknown', onClick: () => service.run(service.setPluginEnabled(pluginName, activation !== 'on')) })
+                    : installed
+                      ? h('span', { className: 'dshWbInstalled', role: 'status' }, '已安装')
                       : entry.distribution
-                          ? h(Button, { primary: true, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在安装…' : '安装')
-                          : h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, '查看安装说明'),
-                  tab === 'mine' && h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: () => setRemoving(entry.id) }, '移除'))))
+                        ? h(Button, { primary: true, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, installing === catalogId ? '正在安装…' : '安装')
+                        : h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, '查看安装说明')))))
           }), entries.length === 0 && h('div', { className: 'dshWbEmpty' }, h('div', null,
-            h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : tab === 'local' && !search ? '还没有本地工作台' : '没有找到匹配的工作台'),
-            h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击书签即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : tab === 'local' && !search ? '本地开发且尚未上架市场的工作台会显示在这里。' : '试试其他关键词或分类。'))))),
+            h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : '没有找到匹配的工作台'),
+            h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击书签即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
-        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }))
+        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled: disabled || !!installing || !!removingPlugin, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), nativeUninstall: !service.marketInstallFor(removing), recordOnly: false, onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }))
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)
@@ -1520,6 +1637,12 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')
       ctx.effect(() => ctx.modules?.entries?.state?.subscribe?.(() => service.publish()), 'workbenches: client module failures')
+      ctx.effect(() => {
+        const refresh = () => service.run(service.refreshNative())
+        const disposeChanged = ctx.remote?.$on?.('plugin-manager/changed', refresh)
+        const disposeReset = ctx.on?.('connection/reset', refresh)
+        return () => { disposeChanged?.(); disposeReset?.() }
+      }, 'workbenches: native plugin status')
       ctx.effect(ensureStyles, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))
@@ -1537,7 +1660,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         : undefined, 'workbenches: sidebar session scope')
       ctx.effect(() => typeof ctx.uiWorkspace.registerSessionStarter === 'function'
         ? ctx.uiWorkspace.registerSessionStarter((workspaceId) => {
-          if (!workbenchPreference.getSnapshot() || !service.ready || !service.state.active) return false
+          if (!workbenchPreference.getSnapshot() || !service.ready || !service.state.active || service.activationFor(service.catalog.get(service.state.active) || { id: service.state.active }) === 'off') return false
           service.run(service.newSession(workspaceId))
           return true
         })
@@ -1549,7 +1672,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         if (service.internalSessionOpen === sessionId) return false
         if (source === 'workspace' && service.routeWorkspaceSession(sessionId, context)) return true
         const id = service.state.sessionBindings[sessionId]
-        if (!service.ready || !id || !service.state.added.includes(id) || !service.catalog.has(id)) return false
+        if (!service.ready || !id || !service.state.added.includes(id) || !service.catalog.has(id) || service.activationFor(service.catalog.get(id)) === 'off') return false
         service.run(service.open(id, sessionId))
         return true
       }), 'workbenches: open linked session')
@@ -1560,6 +1683,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         return () => { window.removeEventListener('beforeunload', beforeUnload); service.dispose() }
       }, 'workbenches: lifecycle')
     }
-    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace', 'modules'], Workbenches, Frame, Market, Notebook, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt }
+    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace', 'modules', 'remote', 'remote.pluginManager'], Workbenches, Frame, Market, Notebook, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt }
   }
 })
