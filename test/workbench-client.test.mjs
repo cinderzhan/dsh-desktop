@@ -116,6 +116,44 @@ function interactiveMarket(service, tab = 'market') {
   }
 }
 
+function sidebarSwitcher({ pinned = [], active = null, title = '工作台' } = {}) {
+  let renderSidebar
+  let stateIndex = 0
+  const state = []
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    Component: class {},
+    useState: initial => {
+      const index = stateIndex++
+      if (!(index in state)) state[index] = initial
+      return [state[index], value => { state[index] = typeof value === 'function' ? value(state[index]) : value }]
+    },
+    useRef: initial => ({ current: initial }),
+    useLayoutEffect: () => {},
+    useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
+  }
+  const sandbox = { window: { sessionStorage, localStorage: clientWindow.localStorage, __ModuleLoader__: { load({ factory }) {
+    factory(name => name === 'react' ? react : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null })
+  } } }, document, setTimeout, clearTimeout, AbortController }
+  vm.runInNewContext(code.replace('    function MetaItem(', '    globalThis.__testSidebarSwitcher = WorkbenchSidebarSwitcher\n    function MetaItem('), sandbox)
+  renderSidebar = sandbox.__testSidebarSwitcher
+  const entry = { id: 'writer', title, icon: '✦' }
+  const service = {
+    subscribe: () => () => {},
+    getSnapshot: () => ({ state: { pinned, added: pinned, active, sessionBindings: {} }, catalog: pinned.map(() => entry), ready: true, pending: 0, marketOpen: false }),
+    catalog: new Map(pinned.map(id => [id, entry])),
+    blocked: false,
+    showMarket: vi.fn(), open: vi.fn(), openNative: vi.fn(), run: vi.fn()
+  }
+  const render = () => { stateIndex = 0; return renderSidebar({ service, wide: true, startSession: vi.fn() }) }
+  const find = (node, predicate) => {
+    if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
+    if (!node || typeof node !== 'object') return []
+    return [...(predicate(node) ? [node] : []), ...find(node.props?.children, predicate)]
+  }
+  return { render, find, service }
+}
+
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false; sessionStorage.clear() })
 
 function deferred() {
@@ -519,7 +557,7 @@ describe('desktop workbench client navigation', () => {
     const cleanup = styleEffect()
     cleanup?.()
     expect(styles).toHaveLength(1)
-    expect(styles[0].textContent).toContain('.dshWbModeSelect')
+    expect(styles[0].textContent).toContain('.dshWbWorkbenchHome')
     styleEffect()
     expect(styles).toHaveLength(1)
   })
@@ -1519,19 +1557,20 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('未安装')
   })
 
-  it('renders one current mode dropdown with persistent Workbench management', () => {
+  it('renders a persistent Workbench home area beside the current mode and switch button', () => {
     expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
-    expect(fullSource).toContain("'aria-haspopup': 'menu', 'aria-expanded': open")
+    expect(fullSource).toContain("className: 'dshWbModeSwitch', title: '切换工作台', 'aria-label': '切换工作台', 'aria-haspopup': 'menu', 'aria-expanded': open")
     expect(fullSource).toContain("role: 'menu', 'aria-label': '选择会话模式'")
     expect(fullSource).toContain("role: 'menuitemradio'")
     expect(fullSource).toContain('service.openNative(startSession)')
     expect(fullSource).toContain("name: 'home'")
     expect(fullSource).not.toContain('dshWbSidebarTooltip')
-    expect(fullSource).toContain("active?.title || '原生会话'")
-    expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
-    expect(fullSource).toContain('onClick: () => service.showMarket()')
-    expect(fullSource).toContain('.dshWbModeSelect{display:flex;align-items:center;gap:8px;min-width:0;flex:1;')
+    expect(fullSource).toContain("active?.title || '默认'")
+    expect(fullSource).toContain("title: '工作台主页', 'aria-label': '打开工作台主页'")
+    expect(fullSource).toContain('setOpen(false); service.showMarket()')
+    expect(fullSource).toContain('.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 100px;min-width:100px;')
+    expect(fullSource).toContain('.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
     expect(fullSource).toContain('.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;')
     expect(fullSource).toContain('background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)')
     expect(fullSource).toContain("ctx.slots.inject('sidebar.quickSwitcher'")
@@ -1551,6 +1590,42 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('dshWbModeOrderButton')
     expect(fullSource).not.toContain("name: 'chevronUp', size: 11")
     expect(fullSource).not.toContain("name: 'chevronDown', size: 11")
+  })
+
+  it('opens the Workbench homepage from its fixed hot area and uses a separate switch button', () => {
+    const ui = sidebarSwitcher({ pinned: ['writer'], active: 'writer', title: '投标作战室' })
+    let tree = ui.render()
+    const home = ui.find(tree, node => node.props?.className === 'dshWbWorkbenchHome')[0]
+    const switchButton = ui.find(tree, node => node.props?.className === 'dshWbModeSwitch')[0]
+    expect(home.props['aria-label']).toBe('打开工作台主页')
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCurrentModeLabel')[0].props.children).toEqual(['投标作战室'])
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCurrentModeIcon')).toHaveLength(0)
+    expect(switchButton.props['aria-expanded']).toBe(false)
+    switchButton.props.onClick()
+    tree = ui.render()
+    expect(ui.find(tree, node => node.props?.role === 'menu')).toHaveLength(1)
+    const modes = ui.find(tree, node => node.props?.role === 'menuitemradio')
+    expect(modes).toHaveLength(2)
+    expect(modes.map(mode => mode.props['aria-checked'])).toEqual([false, true])
+    modes[0].props.onClick()
+    expect(ui.service.openNative).toHaveBeenCalledOnce()
+    tree = ui.render()
+    expect(ui.find(tree, node => node.props?.role === 'menu')).toHaveLength(0)
+    ui.find(tree, node => node.props?.className === 'dshWbModeSwitch')[0].props.onClick()
+    tree = ui.render()
+    home.props.onClick()
+    expect(ui.service.showMarket).toHaveBeenCalledOnce()
+    tree = ui.render()
+    expect(ui.find(tree, node => node.props?.role === 'menu')).toHaveLength(0)
+  })
+
+  it('shows Default without a switch button when no Workbench is pinned', () => {
+    const ui = sidebarSwitcher()
+    const tree = ui.render()
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCurrentModeLabel')[0].props.children).toEqual(['默认'])
+    expect(ui.find(tree, node => node.props?.className === 'dshWbModeSwitch')).toHaveLength(0)
+    expect(ui.find(tree, node => node.props?.className === 'dshWbWorkbenchHome')).toHaveLength(1)
+    expect(code).not.toContain('.dshWbCurrentModeIcon{')
   })
 
   it('supports native handle drag and drop with insertion-edge feedback', () => {
@@ -1601,7 +1676,7 @@ describe('workbench market screenshot and metadata display', () => {
   it('uses the top switcher as the only Workbench navigation entry', () => {
     expect(fullSource).not.toContain("ctx.slots.inject('sidebar.panellist'")
     expect(fullSource).not.toContain('function WorkbenchPanelIcon(')
-    expect(fullSource).toContain("title: '工作台管理', 'aria-label': '打开工作台管理'")
+    expect(fullSource).toContain("title: '工作台主页', 'aria-label': '打开工作台主页'")
   })
 
   it('does not fail the whole Workbench plugin when an older host lacks session filtering', () => {
