@@ -1256,7 +1256,13 @@ window.__ModuleLoader__.load({
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
       .dshWbBusiness[data-embedded=true]{padding:0;overflow:hidden;display:flex;flex-direction:column}.dshWbBusiness[data-embedded=true]>div{flex:1;min-height:0}
       .dshWbBusiness h3{margin:0 0 8px;font-size:16px}.dshWbBusiness textarea{display:block;resize:vertical;min-height:260px;width:100%;padding:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;line-height:1.7}
-      .dshWbPanelFailure p+p{margin-top:12px}
+      .dshWbPanelFailure{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:408px;max-height:100%;min-width:0;min-height:0;margin:auto;padding:24px;text-align:center;overflow:auto;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+      .dshWbPanelFailureIcon{display:flex;color:var(--dsw-alias-label-tertiary)}
+      .dshWbPanelFailureHeading{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
+      .dshWbPanelFailure h2{margin:0;font-size:15px;line-height:22px;font-weight:600}
+      .dshWbPanelFailure p{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
+      .dshWbPanelFailure .dshWbPanelFailureName{color:var(--dsw-alias-label-primary)}
+      .dshWbPanelFailure .dshWbPanelFailureHint{font-size:12px;line-height:18px}
       .dshWbInit{width:100%;max-width:440px;min-width:0;box-sizing:border-box;padding:24px;margin:auto;overflow-wrap:anywhere}.dshWbInit h2{font-size:20px;line-height:28px;font-weight:600;margin:0 0 8px}.dshWbInit p{margin:0}.dshWbInit .dshWbInitWorkspace{display:flex;flex-direction:column;gap:8px;margin-top:24px;min-width:0}.dshWbInit label{font-size:13px;line-height:20px;font-weight:500}.dshWbInitWorkspaceRow{display:flex;flex-wrap:wrap;gap:8px;min-width:0}.dshWbInit select{flex:1 1 180px;width:100%;min-width:0;max-width:100%;height:34px;padding:5px 8px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px}.dshWbInit .dshWbBtn{min-height:34px;white-space:normal;overflow-wrap:anywhere;flex-shrink:0;max-width:100%}.dshWbInitNew{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:20px;padding-top:20px;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbInitNew:first-of-type{margin-top:24px}.dshWbInitHint{font-size:12px;line-height:18px}
       .dshWbNotice{padding:10px 14px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
       .dshWb [hidden]{display:none!important}
@@ -1958,11 +1964,13 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       useHostLocale(service)
       const title = displayEntry(entry || {}).title
       const name = typeof title === 'string' && title.trim() ? title.trim() : tr('此工作台')
-      return h('section', { className: 'dshWbInit dshWbPanelFailure', role: 'alert' },
-        h('h2', null, tr('工作台加载失败')),
-        h('p', null, name),
+      return h('section', { className: 'dshWbPanelFailure', role: 'alert' },
+        h('span', { className: 'dshWbPanelFailureIcon' }, h(MarketIcon, { name: 'failure', size: 28 })),
+        h('div', { className: 'dshWbPanelFailureHeading' },
+          h('h2', null, tr('工作台加载失败')),
+          h('p', { className: 'dshWbPanelFailureName' }, name)),
         h('p', null, tr('请检查该工作台是否已正确安装，重启 DSH 后重试；若仍失败，请联系工作台作者修复。')),
-        h('p', { className: 'dshWbMuted' }, tr('你仍可从侧栏使用会话和其他工作台。')))
+        h('p', { className: 'dshWbPanelFailureHint' }, tr('你仍可从侧栏使用会话和其他工作台。')))
     }
     // The portal destination stays stable; providers may dock its mount anywhere
     // inside their own main-area layout without remounting the native input.

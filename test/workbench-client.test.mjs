@@ -1287,7 +1287,8 @@ describe('desktop workbench client navigation', () => {
     { customFrame: false, language: 'zh', title: '合同审核工作台', expected: '合同审核工作台' },
     { customFrame: true, language: 'en', title: '合同审核工作台', titleEn: 'Contract Workbench', expected: 'Contract Workbench' },
     { customFrame: true, language: 'zh', title: '<img src=x onerror=alert(1)>', expected: '<img src=x onerror=alert(1)>' },
-    { customFrame: false, language: 'en', title: ' ', expected: 'This workbench' }
+    { customFrame: false, language: 'en', title: ' ', expected: 'This workbench' },
+    { customFrame: true, language: 'zh', title: '跨部门合同审核与合规风险管理工作台'.repeat(8), expected: '跨部门合同审核与合规风险管理工作台'.repeat(8) }
   ])('identifies the failed workbench and recovery steps ($customFrame, $language, $expected)', async ({ customFrame, language, title, titleEn, expected }) => {
     const { JSDOM } = await import('jsdom')
     const ReactDOM = await import('react-dom')
