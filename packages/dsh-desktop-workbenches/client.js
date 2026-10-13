@@ -540,14 +540,14 @@ window.__ModuleLoader__.load({
         if (data.packages && typeof data.packages === 'object') this.packageEvidence = data.packages
         return data.installs && typeof data.installs === 'object' ? data.installs : {}
       }
-      async marketPackage(path, catalogId) {
+      async marketPackage(path, catalogId, options = {}) {
         if (this.installing) throw new Error('另一个工作台正在安装，请稍候。')
         this.installing = catalogId
         this.error = ''
         this.publish()
         try {
           const response = await this.request(path, {
-            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: catalogId })
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: catalogId, ...options })
           })
           const data = await response.json()
           if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
@@ -572,9 +572,9 @@ window.__ModuleLoader__.load({
           ? !!bundle && bundle.installed !== false
           : !!installed?.installed || !!this.installRecordFor(catalogId)
         if (installedVersion && newerVersion(installedVersion, entry.version)) throw new Error('本机工作台版本高于市场版本，已取消安装以避免降级。')
-        if (wasInstalled && this.originFor(installed) !== 'market' && !confirmedReplacement) throw new Error('需要确认替换本机工作台代码。')
+        if (wasInstalled && this.originFor(installed) !== 'market' && confirmedReplacement !== true) throw new Error('需要确认替换本机工作台代码。')
         try {
-          const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId)
+          const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId, confirmedReplacement === true ? { confirmedReplacement: true } : {})
           if (data.install?.catalogId !== catalogId || typeof data.install?.pluginName !== 'string') throw new Error('市场安装记录无效。')
           this.installs = { ...this.installs, [catalogId]: data.install }
           this.removedWorkbenchIds.delete(catalogId)

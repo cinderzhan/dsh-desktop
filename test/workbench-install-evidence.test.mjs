@@ -51,6 +51,16 @@ describe('actual workbench installation evidence', () => {
     expect(result).toMatchObject({ origin: 'local', metadata: { title: '本机名称', titleEn: 'Actual name', description: '本机说明', descriptionEn: 'Actual description' } })
   })
 
+  it('keeps declared or present unreadable packages unknown while absent packages stay absent', async () => {
+    const { home, directory } = await fixture()
+    await writeFile(join(directory, 'package.json'), '{invalid')
+    expect((await readInstallEvidence({}, home, ['workbench'])).workbench.origin).toBe('unknown')
+    await rm(directory, { recursive: true })
+    expect((await readInstallEvidence({}, home, ['workbench'])).workbench.origin).toBe('unknown')
+    await writeFile(join(home, 'profiles', 'web', 'package.json'), JSON.stringify({ dependencies: {} }))
+    expect(await readInstallEvidence({}, home, ['workbench'])).toEqual({})
+  })
+
   it('does not follow plugin-owned symlinks as verified content', async () => {
     const { home, directory } = await fixture()
     const { symlink } = await import('node:fs/promises')

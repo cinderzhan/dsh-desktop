@@ -2479,9 +2479,11 @@ describe('workbench market screenshot and metadata display', () => {
   it('installs a market entry, pins its repository identity, and asks for a restart', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
-    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) })
+    const bodies = []
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => { bodies.push(JSON.parse(options.body)); return Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) } })
     await service.installFromMarket('o/helper')
     expect(calls).toEqual(['/api/desktop-workbenches/market-install'])
+    expect(bodies).toEqual([{ id: 'o/helper' }])
     expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: true, installs: { 'o/helper': { pluginName: 'helper' } } })
     expect(saved().state.added).toEqual(['o/helper'])
     // Until the provider loads, the card stays a market entry awaiting restart.
@@ -2861,7 +2863,8 @@ describe('workbench market screenshot and metadata display', () => {
     service.register({ title: 'Local', version: '1.0.0' }, () => null)
     service.packageEvidence = { helper: { origin: 'local' } }
     service.publish()
-    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0', fingerprint: 'new' }, restartRequired: true }) })
+    const bodies = []
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => { bodies.push(JSON.parse(options.body)); return Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0', fingerprint: 'new' }, restartRequired: true }) } })
     await expect(service.installFromMarket('o/helper')).rejects.toThrow('确认替换')
     expect(calls).toHaveLength(0)
     const ui = interactiveMarket(service, 'mine')
@@ -2871,6 +2874,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(calls).toHaveLength(0)
     confirmation.props.onConfirm()
     await vi.waitFor(() => expect(service.pendingRestart.has('o/helper')).toBe(true))
+    expect(bodies).toEqual([{ id: 'o/helper', confirmedReplacement: true }])
     expect(service.state.sessionBindings.old).toBe('o/helper')
     expect(service.state.notes['o/helper']).toBe('Keep notes')
     expect(service.state.added.filter(id => id === 'o/helper')).toHaveLength(1)

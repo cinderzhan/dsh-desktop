@@ -1,6 +1,6 @@
 // Installation identity comes from the installed package, never a matching listing.
 import { createHash } from 'node:crypto'
-import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -58,9 +58,13 @@ export async function readInstallEvidence(installs, home = process.env.DSH_HOME 
   const names = new Set([...requestedNames, ...Object.values(installs).map(item => item?.pluginName)])
   for (const name of names) {
     if (typeof name !== 'string' || !safeName.test(name)) continue
+    const generation = generations.get(name)
+    const candidate = generation?.directory || join(profile, 'node_modules', name)
+    // Missing evidence must not make an existing or declared install look absent.
+    const present = generation || Object.hasOwn(dependencies, name) || await lstat(candidate).then(() => true, error => error.code !== 'ENOENT')
+    if (present) packages[name] = { origin: 'unknown', metadata: {} }
     try {
-      const generation = generations.get(name)
-      const directory = await realpath(generation?.directory || join(profile, 'node_modules', name))
+      const directory = await realpath(candidate)
       const manifest = await json(join(directory, 'package.json'))
       if (manifest.name !== name || !manifest.dsh?.client) continue
       const sourceSpec = generation?.sourceSpec || dependencies[name]
