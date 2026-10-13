@@ -1,3 +1,4 @@
+import { readInstallEvidence } from './install-evidence.mjs'
 import Schema from '@deepseek-ai/schemastery'
 import { CatalogError, createCatalogReader } from './catalog.mjs'
 import { awaitHandle, createMarketInstallStore, MarketInstallError, resolveInstallTarget } from './market-install.mjs'
@@ -177,8 +178,13 @@ export function apply(ctx, config) {
     path: '/api/desktop-workbenches/market-installs',
     methods: ['GET'],
     requestBody: 'buffered',
-    async fetch() {
-      try { return Response.json({ installs: await marketInstalls.read() }, { headers: { 'cache-control': 'no-store' } }) }
+    async fetch(request) {
+      try {
+        const installs = await marketInstalls.read()
+        const requested = new URL(request.url).searchParams.getAll('package').slice(0, 64)
+        const listed = await readCatalog().then(value => value.catalog.workbenches.map(item => item.distribution?.name).filter(Boolean), () => [])
+        return Response.json({ installs, packages: await readInstallEvidence(installs, undefined, [...requested, ...listed]) }, { headers: { 'cache-control': 'no-store' } })
+      }
       catch (error) { return installFailure(error, 'Could not read workbench market installs.') }
     }
   })
@@ -208,6 +214,8 @@ export function apply(ctx, config) {
             await awaitHandle(handle)
           } finally { await target.cleanup() }
           const install = { catalogId: entry.id, pluginName: target.expectedPluginName, version: entry.version, source: entry.distribution.type, installedAt: new Date().toISOString() }
+          const evidence = (await readInstallEvidence({}, undefined, [install.pluginName]))[install.pluginName]
+          if (evidence?.fingerprint) install.fingerprint = evidence.fingerprint
           await marketInstalls.record(id, install)
           return Response.json({ install, restartRequired: true }, { headers: { 'cache-control': 'no-store' } })
         } catch (error) { return installFailure(error, 'Could not install the workbench.') }

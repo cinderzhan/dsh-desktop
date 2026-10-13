@@ -126,6 +126,7 @@ describe('workbench market install routes', () => {
   const KEY = 'o/project-helper'
   async function host(desktopPnpm) {
     const home = await tempRoot()
+    vi.stubEnv('DSH_HOME', home)
     const root = join(home, 'desktop-workbenches')
     const routes = []
     const connection = { fetch: { register(route) { routes.push(route) } } }
@@ -144,7 +145,7 @@ describe('workbench market install routes', () => {
   it('stays browse-only when Desktop has no package service', async () => {
     const { call } = await host(undefined)
     expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toBeUndefined()
-    expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {} })
+    expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {} })
   })
 
   it('installs the index entry, records it, and asks for a restart', async () => {
