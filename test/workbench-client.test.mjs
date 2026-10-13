@@ -1284,12 +1284,11 @@ describe('desktop workbench client navigation', () => {
   })
 
   it.each([
-    { customFrame: false, language: 'zh', title: '合同审核工作台', expected: '合同审核工作台' },
-    { customFrame: true, language: 'en', title: '合同审核工作台', titleEn: 'Contract Workbench', expected: 'Contract Workbench' },
-    { customFrame: true, language: 'zh', title: '<img src=x onerror=alert(1)>', expected: '<img src=x onerror=alert(1)>' },
-    { customFrame: false, language: 'en', title: ' ', expected: 'This workbench' },
-    { customFrame: true, language: 'zh', title: '跨部门合同审核与合规风险管理工作台'.repeat(8), expected: '跨部门合同审核与合规风险管理工作台'.repeat(8) }
-  ])('identifies the failed workbench and recovery steps ($customFrame, $language, $expected)', async ({ customFrame, language, title, titleEn, expected }) => {
+    { customFrame: false, language: 'zh' },
+    { customFrame: true, language: 'en' },
+    { customFrame: true, language: 'zh' },
+    { customFrame: false, language: 'en' }
+  ])('shows concise workbench failure recovery steps ($customFrame, $language)', async ({ customFrame, language }) => {
     const { JSDOM } = await import('jsdom')
     const ReactDOM = await import('react-dom')
     const { createRoot } = await import('react-dom/client')
@@ -1311,18 +1310,16 @@ describe('desktop workbench client navigation', () => {
       const snapshot = ctx.workspaces.list.getSnapshot()
       ctx.workspaces.list.getSnapshot = () => snapshot
       ctx.workspaces.list.subscribe = ctx.sessions.list.subscribe = () => () => {}
-      registerProvider(service, ctx, 'broken', { title, titleEn, customFrame }, () => { throw new Error('private diagnostic') })
-      if (titleEn) {
-        service.remoteCatalog.find(entry => entry.id === 'broken').nameEn = titleEn
-        service.rebuildProviders()
-      }
+      registerProvider(service, ctx, 'broken', { title: '合同审核工作台', customFrame }, () => { throw new Error('private diagnostic') })
       await service.add('broken')
       await service.open('broken')
       root = createRoot(dom.window.document.getElementById('root'))
       await React.act(async () => root.render(React.createElement(Frame, { service, conversation: React.createElement('div', null, 'Native conversation') })))
       const alert = dom.window.document.querySelector('[role="alert"]')
       expect(alert.querySelector('h2').textContent).toBe(language === 'en' ? 'Workbench failed to load' : '工作台加载失败')
-      expect(alert.querySelector('p').textContent).toBe(expected)
+      expect(alert.querySelectorAll('p')).toHaveLength(1)
+      expect(alert.textContent).not.toContain('合同审核工作台')
+      expect(alert.textContent).not.toContain(language === 'en' ? 'from the sidebar' : '从侧栏')
       expect(alert.textContent).toContain(language === 'en' ? 'contact the workbench author' : '联系工作台作者修复')
       expect(alert.textContent).toContain(language === 'en' ? 'restart DSH' : '重启 DSH')
       expect(alert.textContent).not.toContain('private diagnostic')
