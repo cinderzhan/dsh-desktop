@@ -2811,7 +2811,13 @@ describe('workbench market screenshot and metadata display', () => {
     await service.refreshNative()
     const ui = interactiveMarket(service, 'mine')
     const card = ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'owner/local')[0]
-    expect(ui.find(card, node => node.props?.className === 'dshWbUninstallReason')[0].props.children[0]).toContain('宿主管理')
+    const hint = ui.find(card, node => node.props?.className === 'dshWbFailureHint dshWbRemovalHint')[0]
+    const icon = ui.find(hint, node => node.props?.className === 'dshWbFailureIcon')[0]
+    const tooltip = ui.find(hint, node => node.props?.role === 'tooltip')[0]
+    expect(icon.props.tabIndex).toBe(0)
+    expect(icon.props['aria-describedby']).toBe(tooltip.props.id)
+    expect(icon.props['aria-label']).toContain('宿主管理')
+    expect(tooltip.props.children[0]).toContain('宿主管理')
     expect(ui.find(card, node => node.props?.className === 'dshWbUninstall dshWbLocalUninstall')[0].props.disabled).toBe(true)
   })
 
