@@ -1298,7 +1298,7 @@ window.__ModuleLoader__.load({
       .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
       .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column;position:relative}
       /* Keep unrelated mode-action contributions available in workbench conversations. */
-      .dshWbFrame[data-dsh-workbench-active] .dso-actions,.dshWbFrame[data-dsh-workbench-active] button[data-desktop-ppt]{display:none}
+      .dshWbFrame[data-dsh-workbench-active] .dso-actions,.dshWbFrame[data-dsh-workbench-active] button[data-office-mode],.dshWbFrame[data-dsh-workbench-active] button[data-desktop-ppt]{display:none}
       /* shell.leading owns the collapsed Mac caption controls. Let an embedded
          workbench's semantic top header share that row after its reserved width. */
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbBusiness[data-side=left][data-embedded=true] > :first-child > header:first-child,
