@@ -20,10 +20,12 @@ const DOWNLOAD_TIMEOUT_MS = 60_000
 const INSTALLS_FILE = 'market-installs.json'
 
 export class MarketInstallError extends Error {
-  constructor(message, status = 400) {
+  constructor(message, status = 400, code, params) {
     super(message)
     this.name = 'MarketInstallError'
     this.status = status
+    this.code = code
+    this.params = params
   }
 }
 const fail = (message, status) => { throw new MarketInstallError(message, status) }
@@ -53,15 +55,15 @@ function networkDiagnostic(error) {
 
 async function download(url, { fetchImpl, maxBytes, what }) {
   let address
-  try { address = new URL(url) } catch { fail(`The download URL for ${what} is invalid.`, 502) }
+  try { address = new URL(url) } catch { throw new MarketInstallError(`The download URL for ${what} is invalid.`, 502, 'invalid_download_url') }
   if (address.protocol !== 'https:' || address.username || address.password || address.port) {
-    fail(`The download URL for ${what} must use HTTPS without credentials or a custom port.`, 502)
+    throw new MarketInstallError(`The download URL for ${what} must use HTTPS without credentials or a custom port.`, 502, 'unsafe_download_url')
   }
   let response
   try {
     response = await (fetchImpl ?? selectMarketFetch())(url, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
   } catch (error) {
-    fail(`Could not download ${what}: ${networkDiagnostic(error)}.`, 502)
+    throw new MarketInstallError(`Could not download ${what}: ${networkDiagnostic(error)}.`, 502, 'download_failed', { diagnostic: networkDiagnostic(error) })
   }
   if (!response.ok) fail(`Downloading ${what} returned HTTP ${response.status}.`, 502)
   const declared = Number(response.headers.get('content-length'))
@@ -83,7 +85,7 @@ async function download(url, { fetchImpl, maxBytes, what }) {
     }
   } catch (error) {
     if (error instanceof MarketInstallError) throw error
-    fail(`Could not finish downloading ${what}: ${networkDiagnostic(error)}.`, 502)
+    throw new MarketInstallError(`Could not finish downloading ${what}: ${networkDiagnostic(error)}.`, 502, 'download_interrupted', { diagnostic: networkDiagnostic(error) })
   } finally { reader.releaseLock() }
   return Buffer.concat(chunks)
 }

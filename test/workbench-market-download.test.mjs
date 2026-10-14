@@ -46,8 +46,19 @@ describe('workbench download transport', () => {
     [new Error('https://host/?token=private'), 'NETWORK_ERROR']
   ])('reports only safe network diagnostics', async (error, code) => {
     await expect(resolveInstallTarget(release, { fetchImpl: async () => { throw error } })).rejects.toMatchObject({
-      status: 502, message: `Could not download the Release package: ${code}.`
+      status: 502, code: 'download_failed', params: { diagnostic: code }, message: `Could not download the Release package: ${code}.`
     })
+  })
+
+  it.each([
+    ['not a URL', 'invalid_download_url'],
+    ['http://example.com/package.tgz', 'unsafe_download_url'],
+    ['https://user:private@example.com/package.tgz', 'unsafe_download_url'],
+    ['https://example.com:444/package.tgz', 'unsafe_download_url']
+  ])('rejects unsafe download addresses with stable locale codes', async (url, code) => {
+    const fetchImpl = vi.fn()
+    await expect(resolveInstallTarget({ distribution: { ...release.distribution, url } }, { fetchImpl })).rejects.toMatchObject({ status: 502, code, params: undefined })
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('normalizes an interrupted response and creates no partial package', async () => {
@@ -59,7 +70,7 @@ describe('workbench download transport', () => {
         else controller.error(new TypeError('terminated private', { cause: Object.assign(new Error('private'), { code: 'UND_ERR_SOCKET' }) }))
       } })
       await expect(resolveInstallTarget(release, { temporaryRoot: root, fetchImpl: async () => new Response(body) })).rejects.toMatchObject({
-        status: 502, message: 'Could not finish downloading the Release package: UND_ERR_SOCKET.'
+        status: 502, code: 'download_interrupted', params: { diagnostic: 'UND_ERR_SOCKET' }, message: 'Could not finish downloading the Release package: UND_ERR_SOCKET.'
       })
       expect(body.locked).toBe(false)
       expect(await readdir(root)).toEqual([])
