@@ -35,6 +35,12 @@ async function mountCard({ state = 'normal', language = 'zh' } = {}) {
     service.state.pinned = ['owner/helper']
     if (state !== 'load-failure' && state !== 'restart') service.register({ title: 'Helper', repository: 'https://github.com/owner/helper', version: '1.0.0' }, () => null)
   }
+  if (state === 'unremovable') {
+    service.remoteCatalog = []
+    service.installs = {}
+    service.native.bundles.helper.removable = false
+    service.native.bundles.helper.readOnlyReason = 'management-required'
+  }
   service.ready = true
   if (state === 'loading') service.installing = 'owner/helper'
   if (state === 'restart') service.pendingRestart.add('owner/helper')
@@ -92,6 +98,28 @@ describe('compact workbench card states', () => {
         await React.act(async () => dismiss.click())
         expect(ui.document.querySelector('.dshWbFailureHint')).toBeNull()
       }
+    } finally { await ui.close() }
+  })
+
+  it.each(['zh', 'en'])('makes a disabled uninstall reason keyboard reachable in %s', async language => {
+    const ui = await mountCard({ state: 'unremovable', language })
+    try {
+      const installedTab = [...ui.document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.startsWith(language === 'en' ? 'Installed' : '已安装'))
+      await React.act(async () => installedTab.click())
+      const card = ui.document.querySelector('article.dshWbCard')
+      const uninstall = card.querySelector('.dshWbUninstall')
+      expect(uninstall.disabled).toBe(true)
+      const icon = card.querySelector('.dshWbRemovalHint [tabindex="0"]')
+      expect(icon).not.toBeNull()
+      icon.focus()
+      expect(ui.document.activeElement).toBe(icon)
+      const tooltip = ui.document.getElementById(icon.getAttribute('aria-describedby'))
+      expect(tooltip.getAttribute('role')).toBe('tooltip')
+      expect(tooltip.textContent).toContain(language === 'en' ? 'managed by the host' : '由宿主管理')
+      expect(icon.getAttribute('aria-label')).toBe(tooltip.textContent)
+      expect(uninstall.getAttribute('aria-describedby')).toBe(tooltip.id)
+      await React.act(async () => uninstall.click())
+      expect(ui.document.querySelector('[role="dialog"]')).toBeNull()
     } finally { await ui.close() }
   })
 
