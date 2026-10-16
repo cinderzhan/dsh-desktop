@@ -77,7 +77,16 @@ function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'eve
     dismissedTransientPhase = null
     detailOpen = true
   }
-  if (status.phase === 'error' && (accepting || installing)) detailOpen = true
+  const failedActiveUpdate = delivery === 'event' && status.phase === 'error' &&
+    (accepting || installing || currentStatus?.phase === 'downloading' || currentStatus?.phase === 'downloaded')
+  if (failedActiveUpdate) {
+    // A live failure is actionable even when the download was restored from a
+    // snapshot or its progress card was dismissed. Historical errors stay quiet.
+    dismissedPresentationId = undefined
+    dismissedVersion = null
+    dismissedTransientPhase = null
+    detailOpen = true
+  }
   if (status.phase === 'idle') detailOpen = false
   currentStatus = status
   if (host) {

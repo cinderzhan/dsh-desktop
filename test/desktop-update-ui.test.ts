@@ -98,7 +98,8 @@ describe('desktop update presentation at the IPC boundary', () => {
     expect(ui.shadow.querySelector('[role="dialog"]')).toBeNull()
     expect(ui.shadow.textContent).toContain('75%')
     ui.emit(status('error', { message: 'Old download failed' }))
-    expect(ui.host.style.display).toBe('none')
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('Old download failed')
+    expect(Array.from(ui.shadow.querySelectorAll('button')).some(button => button.textContent === 'Retry')).toBe(true)
   })
 
   it.each(['available', 'up-to-date'] as const)('does not carry an open manual dialog into a fresh automatic %s result', async phase => {
@@ -125,6 +126,67 @@ describe('desktop update presentation at the IPC boundary', () => {
     await Promise.resolve()
     expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('Checking for updates')
     expect(ui.host.dataset.updatePhase).toBe('checking')
+  })
+
+  it('reports a main-process download error even when the download invoke resolves, and allows a real retry sequence', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    const failure = status('error', { manual: false, source: 'startup', message: 'Download connection interrupted' })
+    ipc.invoke.mockImplementation(async channel => {
+      if (channel === 'updates:download') {
+        ui.emit(status('downloading', { manual: false, source: 'startup', availableVersion: '1.1.0', percent: 15 }))
+        ui.emit(failure)
+        return failure
+      }
+      if (channel === 'updates:check') {
+        ui.emit(status('checking', { presentationId: 8 }))
+        ui.emit(status('available', { presentationId: 8, availableVersion: '1.1.0' }))
+      }
+      return undefined
+    })
+    ui.emit(status('available', { manual: false, source: 'startup', availableVersion: '1.1.0' }))
+    expect(ui.shadow.querySelector('[role="dialog"]')).toBeNull()
+    Array.from(ui.shadow.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update')?.click()
+    await Promise.resolve()
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('Download connection interrupted')
+    const retry = Array.from(ui.shadow.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Retry')
+    expect(retry).toBeDefined()
+    retry?.click()
+    expect(ipc.invoke).toHaveBeenCalledWith('updates:check')
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('New version')
+    Array.from(ui.shadow.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update')?.click()
+    await Promise.resolve()
+    expect(ipc.invoke.mock.calls.filter(([channel]) => channel === 'updates:download')).toHaveLength(2)
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('Download connection interrupted')
+  })
+
+  it('does not suppress a new download failure with an old dismissed error, or replay the new error after closing it', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.emit(status('error', { message: 'Previous manual failure' }))
+    ui.shadow.querySelector<HTMLButtonElement>('.confirm:last-child')?.click()
+    expect(ui.host.style.display).toBe('none')
+    const failure = status('error', { manual: false, source: 'runtime', message: 'New automatic download failed' })
+    ipc.invoke.mockImplementation(async () => {
+      ui.emit(status('downloading', { manual: false, source: 'runtime', availableVersion: '1.1.0', percent: 25 }))
+      ui.emit(failure)
+      return failure
+    })
+    ui.emit(status('checking', { manual: false, source: 'runtime' }))
+    ui.emit(status('available', { manual: false, source: 'runtime', availableVersion: '1.1.0' }))
+    Array.from(ui.shadow.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update')?.click()
+    await Promise.resolve()
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('New automatic download failed')
+    ui.shadow.querySelector<HTMLButtonElement>('.confirm:last-child')?.click()
+    ui.emit(failure)
+    expect(ui.host.style.display).toBe('none')
+  })
+
+  it('surfaces a fresh failure after historical manual download progress was dismissed', async () => {
+    const ui = await mount(Promise.resolve(status('downloading', { availableVersion: '1.1.0', percent: 25 })))
+    Array.from(ui.shadow.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Ignore')?.click()
+    expect(ui.host.style.display).toBe('none')
+    ui.emit(status('error', { message: 'Restored download failed' }))
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('Restored download failed')
+    expect(Array.from(ui.shadow.querySelectorAll('button')).some(button => button.textContent === 'Retry')).toBe(true)
   })
 
   it('keeps live manual errors and explicit retry centered', async () => {
