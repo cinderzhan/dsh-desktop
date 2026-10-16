@@ -10,7 +10,7 @@ const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.
 
 // Mount the public Market component and its real controller. Layout dimensions
 // are verified separately in Electron: jsdom only checks DOM/state/accessibility.
-async function mountCard({ state = 'normal', language = 'zh', listed = true, origin = 'market', favorite = false, request = async () => { throw new Error('Unexpected network request') } } = {}) {
+async function mountCard({ state = 'normal', language = 'zh', listed = true, origin = 'market', evidence = {}, favorite = false, request = async () => { throw new Error('Unexpected network request') } } = {}) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' })
   const previous = { window: globalThis.window, document: globalThis.document, act: globalThis.IS_REACT_ACT_ENVIRONMENT }
   globalThis.window = dom.window
@@ -30,7 +30,7 @@ async function mountCard({ state = 'normal', language = 'zh', listed = true, ori
   if (installed) {
     service.native = { status: 'ready', bundles: { helper: { name: 'helper', installed: true, enabled: true, version: '1.0.0', removable: true } } }
     service.installs = { 'owner/helper': { catalogId: 'owner/helper', pluginName: 'helper', version: '1.0.0' } }
-    service.packageEvidence = { helper: { origin, contentVerified: origin === 'market' } }
+    service.packageEvidence = { helper: { origin, contentVerified: origin === 'market', ...evidence } }
   }
   if (installed) {
     service.state.added = ['owner/helper']
@@ -65,6 +65,84 @@ async function mountCard({ state = 'normal', language = 'zh', listed = true, ori
 }
 
 describe('compact workbench card states', () => {
+  it.each([
+    ['local', {}, 'zh', '本地修改不会带入新版本'],
+    ['market', { updateRisk: 'modified', contentVerified: false }, 'zh', '检测到当前安装内容已被修改'],
+    ['market', { updateRisk: 'modified' }, 'en', 'The installed content has been modified']
+  ])('uses the compact confirmation only for reliable %s risk in %s', async (origin, evidence, language, copy) => {
+    let requests = 0
+    const ui = await mountCard({ state: 'update-available', origin, evidence, language, request: async () => { requests++; return Response.json({ error: 'simulated only' }, { status: 400 }) } })
+    try {
+      const update = ui.document.querySelector('.dshWbUpdate')
+      update.focus()
+      await React.act(async () => update.click())
+      const dialog = ui.document.querySelector('[role="dialog"]')
+      expect(dialog).not.toBeNull()
+      expect(requests).toBe(0)
+      expect(dialog.classList.contains('dshWbConfirm')).toBe(true)
+      expect(dialog.querySelector('.dshWbConfirmIcon svg')).not.toBeNull()
+      expect(dialog.querySelector('h2').textContent).toBe(language === 'en' ? 'Update “Helper”?' : '更新「Helper」？')
+      expect(dialog.querySelector('h2').style.fontSize).toBe('18px')
+      expect(dialog.querySelector('.dshWbMuted').textContent).toContain(copy)
+      expect(ui.document.defaultView.getComputedStyle(dialog).maxWidth).toBe('430px')
+      expect(ui.document.defaultView.getComputedStyle(dialog).padding).toBe('24px')
+      expect(ui.document.defaultView.getComputedStyle(dialog.querySelector('.dshWbActions')).justifyContent).toBe('flex-end')
+      const [cancel, confirm] = [...dialog.querySelectorAll('button')]
+      expect(ui.document.activeElement).toBe(cancel)
+      // Existing compact confirmation rules handle narrow windows; the shared
+      // CSS stacks its buttons at 640px instead of overflowing the dialog.
+      expect(code).toContain('.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}')
+      confirm.focus()
+      await React.act(async () => ui.document.dispatchEvent(new ui.document.defaultView.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })))
+      expect(ui.document.activeElement).toBe(cancel)
+      await React.act(async () => { ui.service.installing = 'owner/helper'; ui.service.publish() })
+      expect(cancel.disabled).toBe(true)
+      expect(confirm.disabled).toBe(true)
+      await React.act(async () => ui.document.dispatchEvent(new ui.document.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      expect(ui.document.querySelector('[role="dialog"]')).toBe(dialog)
+      await React.act(async () => ui.document.querySelector('.dshWbModalBackdrop').click())
+      expect(ui.document.querySelector('[role="dialog"]')).toBe(dialog)
+      await React.act(async () => { ui.service.installing = null; ui.service.publish() })
+      await React.act(async () => ui.document.dispatchEvent(new ui.document.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      expect(ui.document.querySelector('[role="dialog"]')).toBeNull()
+      expect(requests).toBe(0)
+    } finally { await ui.close() }
+  })
+
+  it.each([
+    ['market', { contentVerified: false }],
+    ['market', { contentVerified: undefined }],
+    ['unknown', { contentVerified: false }]
+  ])('updates an ordinary %s installation without interrupting for unverified legacy evidence', async (origin, evidence) => {
+    let requests = 0
+    const ui = await mountCard({ state: 'update-available', origin, evidence, request: async () => { requests++; return Response.json({ error: 'simulated only' }, { status: 400 }) } })
+    try {
+      await React.act(async () => ui.document.querySelector('.dshWbUpdate').click())
+      expect(ui.document.querySelector('[role="dialog"]')).toBeNull()
+      expect(requests).toBe(1)
+    } finally { await ui.close() }
+  })
+
+  it.each(['local', 'modified'])('opens the compact dialog when the API discovers fresh %s risk after the page loaded', async risk => {
+    let requests = 0
+    const ui = await mountCard({ state: 'update-available', evidence: { updateRisk: null }, request: async () => {
+      requests++
+      return Response.json({ error: 'Confirm update', code: 'confirmation_required', params: { updateRisk: risk } }, { status: 409 })
+    } })
+    try {
+      await React.act(async () => ui.document.querySelector('.dshWbUpdate').click())
+      const dialog = ui.document.querySelector('[role="dialog"]')
+      expect(dialog.classList.contains('dshWbConfirm')).toBe(true)
+      expect(dialog.querySelector('.dshWbMuted').textContent).toContain(risk === 'local' ? '本地修改不会带入新版本' : '检测到当前安装内容已被修改')
+      expect(ui.service.error).toBe('')
+      expect(ui.service.installFailures.size).toBe(0)
+      expect(ui.document.querySelector('.dshWbFailureHint')).toBeNull()
+      await React.act(async () => [...dialog.querySelectorAll('button')].find(button => button.textContent === '取消').click())
+      expect(ui.document.querySelector('[role="dialog"]')).toBeNull()
+      expect(requests).toBe(1)
+    } finally { await ui.close() }
+  })
+
   it.each([['zh', '正在更新目录…'], ['en', 'Updating catalog…']])('announces lightweight catalog progress in %s without blocking cached cards', async (language, label) => {
     const ui = await mountCard({ state: 'catalog-refresh', language })
     try {

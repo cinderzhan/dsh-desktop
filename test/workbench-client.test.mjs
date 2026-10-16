@@ -3350,12 +3350,17 @@ describe('workbench market screenshot and metadata display', () => {
     }
   })
 
-  it('updates verified market installs directly without a confirmation dialog', async () => {
+  it.each([
+    { origin: 'market', contentVerified: true },
+    { origin: 'market', contentVerified: false },
+    { origin: 'market' },
+    { origin: 'unknown' }
+  ])('updates ordinary $origin installs with contentVerified=$contentVerified without confirmation', async evidence => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
     service.remoteCatalog = [listed({ version: '1.1.0' })]
     setFiberPackage(ctx, 'helper')
     service.register({ title: 'Helper', version: '1.0.0' }, () => null)
-    service.packageEvidence = { helper: { origin: 'market', contentVerified: true } }
+    service.packageEvidence = { helper: evidence }
     service.publish()
     const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => {
       expect(JSON.parse(options.body)).toEqual({ id: 'o/helper' })
@@ -3370,15 +3375,15 @@ describe('workbench market screenshot and metadata display', () => {
 
   it.each([
     { origin: 'local', contentVerified: false },
-    { origin: 'unknown', contentVerified: false },
-    { origin: 'market', contentVerified: false },
-    { origin: 'market', contentVerified: undefined }
-  ])('confirms a newer update for $origin installs with contentVerified=$contentVerified and preserves existing session identity', async ({ origin, contentVerified }) => {
+    { origin: 'unknown', contentVerified: false, updateRisk: 'modified' },
+    { origin: 'market', contentVerified: false, updateRisk: 'modified' },
+    { origin: 'market', contentVerified: undefined, updateRisk: 'local' }
+  ])('confirms a newer update for $origin installs with contentVerified=$contentVerified and preserves existing session identity', async ({ origin, contentVerified, updateRisk }) => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'], sessionBindings: { old: 'o/helper' }, notes: { 'o/helper': 'Keep notes' } })
     service.remoteCatalog = [listed({ version: '1.1.0' })]
     setFiberPackage(ctx, 'helper')
     service.register({ title: 'Local', version: '1.0.0' }, () => null)
-    service.packageEvidence = { helper: { origin, ...(contentVerified === undefined ? {} : { contentVerified }) } }
+    service.packageEvidence = { helper: { origin, updateRisk, ...(contentVerified === undefined ? {} : { contentVerified }) } }
     service.publish()
     const bodies = []
     const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => { bodies.push(JSON.parse(options.body)); return Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.1.0', fingerprint: 'new' }, restartRequired: true }) } })
@@ -3388,7 +3393,8 @@ describe('workbench market screenshot and metadata display', () => {
     ui.find(ui.render(), node => node.props?.className === 'dshWbUpdate')[0].props.onClick()
     const confirmation = ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')[0]
     expect(confirmation).toBeDefined()
-    expect(confirmation.props.origin).toBe(origin)
+    expect(confirmation.props.risk).toBe(updateRisk || 'local')
+    expect(confirmation.props.entry.title).toBeDefined()
     expect(calls).toHaveLength(0)
     confirmation.props.onCancel()
     expect(ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')).toHaveLength(0)
@@ -3400,6 +3406,64 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.state.sessionBindings.old).toBe('o/helper')
     expect(service.state.notes['o/helper']).toBe('Keep notes')
     expect(service.state.added.filter(id => id === 'o/helper')).toHaveLength(1)
+  })
+
+  it.each([
+    ['local', false], ['modified', false], ['local', true], ['modified', true]
+  ])('handles fresh API %s risk as confirmation (confirm=%s) without reporting an installation failure', async (risk, confirm) => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '1.0.0' }, () => null)
+    service.packageEvidence = { helper: { origin: 'market', updateRisk: null } }
+    service.publish()
+    const bodies = []
+    withMarket(service, { '/api/desktop-workbenches/market-install': options => {
+      const body = JSON.parse(options.body)
+      bodies.push(body)
+      return body.confirmedReplacement
+        ? Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.1.0' }, restartRequired: true })
+        : Response.json({ error: 'Confirm the modified installation', code: 'confirmation_required', params: { updateRisk: risk } }, { status: 409 })
+    } })
+    const ui = interactiveMarket(service)
+    ui.find(ui.render(), node => node.props?.className === 'dshWbUpdate')[0].props.onClick()
+    await vi.waitFor(() => expect(ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')).toHaveLength(1))
+    const modal = ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')[0]
+    expect(modal.props.risk).toBe(risk)
+    expect(service.installFailures.has('o/helper')).toBe(false)
+    expect(service.pendingRestart.has('o/helper')).toBe(false)
+    expect(service.error).toBe('')
+    expect(bodies).toEqual([{ id: 'o/helper' }])
+    if (confirm) {
+      modal.props.onConfirm()
+      await vi.waitFor(() => expect(service.pendingRestart.has('o/helper')).toBe(true))
+      expect(bodies).toEqual([{ id: 'o/helper' }, { id: 'o/helper', confirmedReplacement: true }])
+    } else {
+      modal.props.onCancel()
+      expect(ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')).toHaveLength(0)
+      expect(bodies).toEqual([{ id: 'o/helper' }])
+    }
+    expect(service.error).toBe('')
+    service.dispose()
+  })
+
+  it.each([
+    { code: 'conflict', params: { updateRisk: 'modified' } },
+    { code: 'confirmation_required', params: { updateRisk: 'unknown' } }
+  ])('keeps unrelated or invalid-risk conflicts in the existing error flow: $code', async data => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '1.0.0' }, () => null)
+    service.packageEvidence = { helper: { origin: 'market' } }
+    service.publish()
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ error: 'Other conflict', ...data }, { status: 409 }) })
+    const ui = interactiveMarket(service)
+    ui.find(ui.render(), node => node.props?.className === 'dshWbUpdate')[0].props.onClick()
+    await vi.waitFor(() => expect(service.error).toBe('Other conflict'))
+    expect(service.installFailures.get('o/helper').kind).toBe('update')
+    expect(ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')).toHaveLength(0)
+    service.dispose()
   })
 
   it('does not offer a same-version local-to-market switch', async () => {

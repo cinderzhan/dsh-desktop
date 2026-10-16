@@ -1,3 +1,13 @@
+export interface WorkbenchInstallEvidence {
+  origin: 'local' | 'market' | 'unknown'
+  contentVerified: boolean
+  /** Only positive evidence of local or changed content requires update confirmation. */
+  updateRisk: 'local' | 'modified' | null
+  version?: string
+  fingerprint?: string
+  metadata: Record<string, string | undefined>
+}
+
 export interface MarketInstallRecord {
   catalogId: string
   pluginName: string
@@ -18,8 +28,8 @@ export interface MarketInstallStore {
 export function createMarketInstallStore(root: string): MarketInstallStore
 
 export class MarketInstallError extends Error {
-  constructor(message: string, status?: number, code?: 'download_failed' | 'download_interrupted' | 'invalid_download_url' | 'unsafe_download_url', params?: { diagnostic: string })
+  constructor(message: string, status?: number, code?: 'download_failed' | 'download_interrupted' | 'invalid_download_url' | 'unsafe_download_url' | 'confirmation_required', params?: { diagnostic: string } | { updateRisk: 'local' | 'modified' })
   status: number
-  code?: 'download_failed' | 'download_interrupted' | 'invalid_download_url' | 'unsafe_download_url'
-  params?: { diagnostic: string }
+  code?: 'download_failed' | 'download_interrupted' | 'invalid_download_url' | 'unsafe_download_url' | 'confirmation_required'
+  params?: { diagnostic: string } | { updateRisk: 'local' | 'modified' }
 }

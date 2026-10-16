@@ -35,13 +35,13 @@ describe('actual workbench installation evidence', () => {
     expect((await readInstallEvidence(records, home)).workbench.origin).toBe('market')
     await writeFile(join(directory, 'client.js'), 'different code, unchanged version')
     const next = (await readInstallEvidence(records, home)).workbench
-    expect(next).toMatchObject({ origin: 'market', contentVerified: false })
+    expect(next).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: 'modified' })
     expect(next.fingerprint).not.toBe(initial.fingerprint)
   })
   it.each(['1.0.0', 'github:owner/workbench#commit', 'file:/tmp/release.tgz'])('recognizes historical market installs from %s', async spec => {
     const { home } = await fixture(spec)
     const records = { market: { pluginName: 'workbench', version: '1.0.0', source: spec.startsWith('file:') ? 'github-release' : 'npm' } }
-    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false })
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
     expect((await readInstallEvidence({ market: { ...records.market, version: '0.9.0' } }, home)).workbench.origin).not.toBe('market')
   })
 
@@ -90,6 +90,9 @@ describe('actual workbench installation evidence', () => {
     for (const name of (await readdir(physical)).sort((a, b) => a.localeCompare(b))) hash.update(name).update('\0').update(await readFile(join(physical, name))).update('\0')
     const records = { market: { pluginName: 'workbench', version: '1.0.0', fingerprint: hash.digest('hex') } }
     expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: true })
+    // Historical aliases may retain different receipts for the same package.
+    records.other = { pluginName: 'workbench', version: '1.0.0', fingerprint: `v2:${'a'.repeat(64)}` }
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: true, updateRisk: null })
   })
 
   it('reads release generations without sourceSpec and skips unreadable sibling generations', async () => {
@@ -101,7 +104,28 @@ describe('actual workbench installation evidence', () => {
     await writeFile(join(root, 'desired.json'), JSON.stringify(['broken', id]))
     await writeFile(join(root, 'live', id, 'generation.json'), JSON.stringify({ pluginName: 'workbench', version: '1.0.0' }))
     const records = { market: { pluginName: 'workbench', version: '1.0.0', source: 'release' } }
-    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false })
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
+  })
+
+  it('does not infer edits from a legacy path-bound fingerprint mismatch', async () => {
+    const { home } = await fixture('1.0.0')
+    const records = { market: { pluginName: 'workbench', version: '1.0.0', fingerprint: 'a'.repeat(64) } }
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
+  })
+
+  it('does not compare current content against receipts for another version', async () => {
+    const { home } = await fixture('1.0.0')
+    const records = { market: { pluginName: 'workbench', version: '2.0.0', fingerprint: `v2:${'a'.repeat(64)}` } }
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'unknown', contentVerified: false, updateRisk: null })
+  })
+
+  it('does not mark unhashable content modified even with a v2 receipt', async () => {
+    const { home, directory } = await fixture('1.0.0')
+    const initial = (await readInstallEvidence({}, home, ['workbench'])).workbench
+    const { symlink } = await import('node:fs/promises')
+    await symlink('/tmp', join(directory, 'external'))
+    const records = { market: { pluginName: 'workbench', version: '1.0.0', fingerprint: initial.fingerprint } }
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
   })
 
   it('reads real generation IDs, source specs, and local metadata translations', async () => {
@@ -118,14 +142,21 @@ describe('actual workbench installation evidence', () => {
     expect(result).toMatchObject({ origin: 'local', metadata: { title: '本机名称', titleEn: 'Actual name', description: '本机说明', descriptionEn: 'Actual description' } })
   })
 
-  it('keeps declared or present unreadable packages unknown while absent packages stay absent', async () => {
+  it('preserves declared local risk for unreadable packages while absent packages stay absent', async () => {
     const { home, directory } = await fixture()
     await writeFile(join(directory, 'package.json'), '{invalid')
-    expect((await readInstallEvidence({}, home, ['workbench'])).workbench.origin).toBe('unknown')
+    expect((await readInstallEvidence({}, home, ['workbench'])).workbench).toMatchObject({ origin: 'local', updateRisk: 'local' })
     await rm(directory, { recursive: true })
-    expect((await readInstallEvidence({}, home, ['workbench'])).workbench.origin).toBe('unknown')
+    expect((await readInstallEvidence({}, home, ['workbench'])).workbench).toMatchObject({ origin: 'local', updateRisk: 'local' })
     await writeFile(join(home, 'profiles', 'web', 'package.json'), JSON.stringify({ dependencies: {} }))
     expect(await readInstallEvidence({}, home, ['workbench'])).toEqual({})
+  })
+
+  it.each(['release', 'github-release'])('retains market channel for unreadable %s archive receipts', async source => {
+    const { home, directory } = await fixture('file:/tmp/release.tgz')
+    const records = { market: { pluginName: 'workbench', version: '1.0.0', source } }
+    await writeFile(join(directory, 'package.json'), '{invalid')
+    expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
   })
 
   it('does not follow plugin-owned symlinks as verified content', async () => {

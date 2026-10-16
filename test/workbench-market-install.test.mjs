@@ -217,31 +217,64 @@ describe('workbench market install routes', () => {
     expect(installWorkbenchGeneration).toHaveBeenCalledTimes(2)
   })
 
-  it('requires confirmation for unknown, changed and unreadable installs', async () => {
+  it('requires confirmation only for positively detected market content changes', async () => {
     const installWorkbenchGeneration = vi.fn(() => handle())
     const { call, home, root } = await host({ installWorkbenchGeneration })
     const directory = await installedPackage(home, '1.2.0')
-    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
     const initial = (await readInstallEvidence({}, home, ['project-helper']))['project-helper']
     await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', version: '1.2.0', fingerprint: initial.fingerprint })
     await writeFile(join(directory, 'client.js'), 'changed same-version code')
-    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
+    expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toMatchObject({ status: 409, body: { code: 'confirmation_required', params: { updateRisk: 'modified' } } })
+    expect(installWorkbenchGeneration).not.toHaveBeenCalled()
+    expect((await call('/api/desktop-workbenches/market-install', { id: KEY, confirmedReplacement: true })).status).toBe(200)
+    expect(installWorkbenchGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['1.2.0', 'npm', undefined],
+    ['github:o/project-helper#commit', 'github-source', undefined],
+    ['file:/tmp/market-release.tgz', 'github-release', undefined],
+    ['1.2.0', 'npm', 'a'.repeat(64)],
+    ['file:/tmp/market-release.tgz', 'github-release', 'a'.repeat(64)]
+  ])('updates historical market installs without prompting (%s, %s)', async (spec, source, fingerprint) => {
+    const installWorkbenchGeneration = vi.fn(() => handle())
+    const { call, home, root } = await host({ installWorkbenchGeneration })
+    await installedPackage(home, spec)
+    await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', version: '1.2.0', source, fingerprint })
+    const packages = (await call('/api/desktop-workbenches/market-installs')).body.packages
+    expect(packages['project-helper']).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
+    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(200)
+    expect(installWorkbenchGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['file:/development/local', 'link:/development/local', 'file:/development/local.tgz'])('protects unreadable explicitly local installs (%s)', async spec => {
+    const installWorkbenchGeneration = vi.fn(() => handle())
+    const { call, home } = await host({ installWorkbenchGeneration })
+    const directory = await installedPackage(home, spec)
     await writeFile(join(directory, 'package.json'), '{invalid')
-    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
-    await rm(directory, { recursive: true })
-    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
+    expect((await readInstallEvidence({}, home, ['project-helper']))['project-helper']).toMatchObject({ origin: 'local', updateRisk: 'local' })
+    expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toMatchObject({ status: 409, body: { code: 'confirmation_required', params: { updateRisk: 'local' } } })
     expect(installWorkbenchGeneration).not.toHaveBeenCalled()
   })
 
-  it('requires confirmation for recognized historical market installs without verified content', async () => {
+  it('updates unreadable historical release archives without inferring local modifications', async () => {
     const installWorkbenchGeneration = vi.fn(() => handle())
     const { call, home, root } = await host({ installWorkbenchGeneration })
-    await installedPackage(home, '1.2.0')
-    await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', version: '1.2.0', source: 'npm' })
-    const packages = (await call('/api/desktop-workbenches/market-installs')).body.packages
-    expect(packages['project-helper']).toMatchObject({ origin: 'market', contentVerified: false })
-    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
-    expect(installWorkbenchGeneration).not.toHaveBeenCalled()
+    const directory = await installedPackage(home, 'file:/tmp/release.tgz')
+    await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', version: '1.2.0', source: 'github-release' })
+    await writeFile(join(directory, 'package.json'), '{invalid')
+    expect((await readInstallEvidence(await createMarketInstallStore(root).read(), home))['project-helper']).toMatchObject({ origin: 'market', updateRisk: null })
+    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(200)
+    expect(installWorkbenchGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not treat unknown or unreadable remote evidence as detected local modifications', async () => {
+    const installWorkbenchGeneration = vi.fn(() => handle())
+    const { call, home } = await host({ installWorkbenchGeneration })
+    const directory = await installedPackage(home, '1.2.0')
+    await writeFile(join(directory, 'package.json'), '{invalid')
+    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(200)
+    expect(installWorkbenchGeneration).toHaveBeenCalledTimes(1)
   })
 
   it('reports install failures without recording anything', async () => {

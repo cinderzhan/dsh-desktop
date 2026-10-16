@@ -229,8 +229,10 @@ export function apply(ctx, config) {
           const requireReplacement = async (names) => {
             if (confirmedReplacement === true) return
             const packages = await readInstallEvidence(installs, undefined, names)
-            if (names.some(name => packages[name] && (packages[name].origin !== 'market' || packages[name].contentVerified !== true))) {
-              throw new MarketInstallError('Confirm updating the installed workbench code; local changes may be overwritten.', 409)
+            const risk = names.map(name => packages[name]).find(item => item && (item.origin === 'local' || ['local', 'modified'].includes(item.updateRisk)))
+            if (risk) {
+              const updateRisk = risk.origin === 'local' || risk.updateRisk === 'local' ? 'local' : 'modified'
+              throw new MarketInstallError('Confirm updating the installed workbench code; local changes may be overwritten.', 409, 'confirmation_required', { updateRisk })
             }
           }
           // Check known package identities before resolving or downloading the target.

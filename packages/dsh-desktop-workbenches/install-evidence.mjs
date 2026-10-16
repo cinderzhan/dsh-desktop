@@ -51,11 +51,12 @@ async function fingerprint(directory, sourceSpec) {
 
 /**
  * origin describes the installation channel; contentVerified alone proves the
- * current files match a recorded market install. Historical receipts can restore
- * market identity without granting permission to overwrite unverified content.
+ * current files match a recorded market install. updateRisk describes positive
+ * evidence of local code; missing historical verification is not a modification.
  * @param {Record<string, import('./market-install.mjs').MarketInstallRecord>} installs
  * @param {string} [home]
  * @param {string[]} [requestedNames]
+ * @returns {Promise<Record<string, import('./market-install.mjs').WorkbenchInstallEvidence>>}
  */
 export async function readInstallEvidence(installs, home = process.env.DSH_HOME || join(homedir(), '.dsh'), requestedNames = []) {
   const profile = join(home, 'profiles', 'web')
@@ -80,22 +81,28 @@ export async function readInstallEvidence(installs, home = process.env.DSH_HOME 
     const candidate = generation?.directory || join(profile, 'node_modules', name)
     // Missing evidence must not make an existing or declared install look absent.
     const present = generation || Object.hasOwn(dependencies, name) || await lstat(candidate).then(() => true, error => error.code !== 'ENOENT')
-    if (present) packages[name] = { origin: 'unknown', contentVerified: false, metadata: {} }
+    const sourceSpec = generation ? generation.sourceSpec : dependencies[name]
+    const localSpec = typeof sourceSpec === 'string' && /^(?:file:|link:|\/|[A-Za-z]:[\\/]|\.\.?[\\/])/.test(sourceSpec)
+    const archive = typeof sourceSpec === 'string' && /\.(?:tgz|tar\.gz)(?:$|[?#])/.test(sourceSpec)
+    // Release installs also used file: archives. A read failure cannot turn a
+    // known release into local development; directory/link sources stay local.
+    const releaseReceipt = archive && !sourceSpec.startsWith('link:') && Object.values(installs).some(item => item?.pluginName === name && ['release', 'github-release'].includes(item.source))
+    const fallbackLocal = localSpec && !releaseReceipt
+    if (present) packages[name] = { origin: fallbackLocal ? 'local' : releaseReceipt ? 'market' : 'unknown', contentVerified: false, updateRisk: fallbackLocal ? 'local' : null, metadata: {} }
     try {
       const directory = await realpath(candidate)
       const manifest = await json(join(directory, 'package.json'))
       if (manifest.name !== name || !manifest.dsh?.client) continue
-      const sourceSpec = generation ? generation.sourceSpec : dependencies[name]
       const digests = await fingerprint(directory, sourceSpec).catch(() => undefined)
       const records = Object.values(installs).filter(item => item?.pluginName === name && item.version === manifest.version)
       const record = records.find(item => digests && (item.fingerprint === digests.current || item.fingerprint === digests.legacy))
-      const localSpec = typeof sourceSpec === 'string' && /^(?:file:|link:|\/|[A-Za-z]:[\\/]|\.\.?[\\/])/.test(sourceSpec)
-      const archive = typeof sourceSpec === 'string' && /\.(?:tgz|tar\.gz)(?:$|[?#])/.test(sourceSpec)
-      // Release downloads used file: temporary archives too. Only a verified
-      // receipt or a historical release receipt can disambiguate these from
-      // archives the user installed locally; stale npm/Git receipts cannot.
-      const historicalRelease = records.some(item => !item.fingerprint && ['release', 'github-release'].includes(item.source))
+      // Older release receipts used temporary file: archives and path-bound v1
+      // hashes. A v1 mismatch can mean a moved generation, not edited content.
+      const historicalRelease = records.some(item => ['release', 'github-release'].includes(item.source)
+        && (!item.fingerprint || /^[a-f0-9]{64}$/.test(item.fingerprint)))
       const local = localSpec && (!archive || (!record && !historicalRelease) || sourceSpec.startsWith('link:'))
+      const comparable = records.filter(item => /^v2:[a-f0-9]{64}$/.test(item.fingerprint))
+      const modified = Boolean(digests && !record && comparable.length)
       const author = typeof manifest.author === 'string' ? manifest.author : literal(manifest.author?.name)
       const zh = await json(join(directory, 'locale', 'zh.json')).then(value => value.meta || {}, () => ({}))
       const en = await json(join(directory, 'locale', 'en.json')).then(value => value.meta || {}, () => ({}))
@@ -103,6 +110,7 @@ export async function readInstallEvidence(installs, home = process.env.DSH_HOME 
         version: literal(manifest.version), fingerprint: digests?.current,
         origin: local ? 'local' : records.length ? 'market' : 'unknown',
         contentVerified: !local && Boolean(record),
+        updateRisk: local ? 'local' : modified ? 'modified' : null,
         metadata: {
           title: literal(zh.title), titleEn: literal(en.title),
           description: literal(zh.description) || literal(manifest.description), descriptionEn: literal(en.description),
