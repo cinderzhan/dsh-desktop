@@ -243,7 +243,7 @@ async function fixture(initial = emptyState()) {
     }
   }
   const request = vi.fn(async (url, options = {}) => {
-    if (url === '/api/desktop-workbenches/catalog' || url === '/api/desktop-workbenches/catalog?force=1') return Response.json({
+    if (url === '/api/desktop-workbenches/catalog?cache=1' || url === '/api/desktop-workbenches/catalog?force=1') return Response.json({
       stale: false,
       catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [
         { id: 'writer', owner: 'test', repository: 'writer', url: 'https://github.com/test/writer', name: 'Writer', category: 'other', description: { zh: 'Writer' }, screenshots: [], version: '1.0.0', distribution: { name: 'writer' } },
@@ -264,6 +264,7 @@ async function fixture(initial = emptyState()) {
   setFiberPackage(ctx, 'research')
   service.register({ title: 'Research' }, () => null)
   await service.load()
+  await service.catalogRefresh
   return {
     service, ctx, request, list,
     saved: () => structuredClone(stored),
@@ -503,6 +504,89 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.layout.toggleSidebar).not.toHaveBeenCalled()
   })
 
+  it.each([false, true])('shows cached discovery before online refresh settles (failure=%s), with one concurrent bootstrap', async failure => {
+    const base = await fixture(boundState())
+    base.service.dispose()
+    let settleOnline
+    const online = new Promise((resolve, reject) => { settleOnline = failure ? reject : resolve })
+    const request = vi.fn((url, options) => url === '/api/desktop-workbenches/catalog?force=1' ? online : base.request(url, options))
+    const service = new Workbenches(base.ctx, request)
+    const load = service.load()
+    expect(service.load()).toBe(load)
+    service.showMarket()
+    await load
+    expect(service.ready).toBe(true)
+    expect(service.catalogRefreshing).toBe(true)
+    expect(service.catalogStale).toBe(false)
+    expect(service.remoteCatalog.map(entry => entry.id)).toEqual(['writer', 'research'])
+    expect(request.mock.calls.filter(([url]) => url.includes('cache=1'))).toHaveLength(1)
+    expect(request.mock.calls.filter(([url]) => url.includes('force=1'))).toHaveLength(1)
+    const ui = interactiveMarket(service)
+    const notice = ui.find(ui.render(), node => node.type?.name === 'Notice')[0]
+    expect(JSON.stringify(notice.type(notice.props))).toContain('正在更新目录…')
+    const before = structuredClone(service.state)
+    service.setMarketOpen(false)
+    base.ctx.layout.selectPanel.mockClear()
+    if (failure) settleOnline(new Error('offline'))
+    else settleOnline(Response.json({ stale: false, catalog: { categories: [], workbenches: [{ id: 'owner/new', name: 'New', category: 'other', description: { zh: 'New' }, screenshots: [] }] } }))
+    await service.catalogRefresh
+    expect(service.state).toEqual(before)
+    expect(service.marketOpen).toBe(false)
+    expect(base.ctx.layout.selectPanel).not.toHaveBeenCalled()
+    expect(service.catalogRefreshing).toBe(false)
+    expect(service.remoteCatalog.map(entry => entry.id)).toEqual(failure ? ['writer', 'research'] : ['owner/new'])
+    if (failure) {
+      const notice = ui.find(ui.render(), node => node.type?.name === 'Notice')[0]
+      const tree = notice.type(notice.props)
+      expect(JSON.stringify(tree)).toContain('在线市场暂时无法更新，正在显示上一次成功读取的目录。')
+      expect(ui.button(tree, '重试').props.disabled).toBe(false)
+    } else expect(service.catalogError).toBe('')
+    service.dispose()
+  })
+
+  it('keeps installed workbenches ready without a cache and avoids a false empty market during first discovery', async () => {
+    const base = await fixture(boundState())
+    base.service.dispose()
+    let rejectOnline
+    const online = new Promise((_resolve, reject) => { rejectOnline = reject })
+    const request = vi.fn((url, options) => url.endsWith('?cache=1') ? Response.json({ catalog: null, stale: false }) : url.endsWith('?force=1') ? online : base.request(url, options))
+    const service = new Workbenches(base.ctx, request)
+    setFiberPackage(base.ctx, 'writer')
+    service.register({ title: 'Writer' }, () => null)
+    await service.load()
+    expect(service.ready).toBe(true)
+    expect(service.catalogLoaded).toBe(false)
+    const mine = interactiveMarket(service, 'mine')
+    expect(mine.find(mine.render(), node => node.type === 'article').length).toBeGreaterThan(0)
+    const market = interactiveMarket(service)
+    const notice = market.find(market.render(), node => node.type?.name === 'Notice')[0]
+    expect(JSON.stringify(notice.type(notice.props))).toContain('正在首次读取市场目录…')
+    expect(market.find(market.render(), node => node.props?.className === 'dshWbEmpty')).toHaveLength(0)
+    rejectOnline(new Error('offline'))
+    await service.catalogRefresh
+    expect(service.ready).toBe(true)
+    expect(JSON.stringify(market.render())).toContain('市场目录暂不可用')
+    expect(JSON.stringify(market.render())).not.toContain('没有找到匹配的工作台')
+    service.dispose()
+  })
+
+  it('does not let a late disk snapshot overwrite a newer online directory', async () => {
+    const base = await fixture()
+    base.service.dispose()
+    let settleCache
+    const cache = new Promise(resolve => { settleCache = resolve })
+    const fresh = { categories: [], workbenches: [{ id: 'owner/fresh', name: 'Fresh', category: 'other', description: { zh: 'Fresh' }, screenshots: [] }] }
+    const request = vi.fn((url, options) => url.endsWith('?cache=1') ? cache : url.endsWith('?force=1') ? Response.json({ catalog: fresh, stale: false }) : base.request(url, options))
+    const service = new Workbenches(base.ctx, request)
+    const load = service.load()
+    await service.refreshCatalog()
+    settleCache(Response.json({ catalog: { categories: [], workbenches: [{ id: 'owner/old', name: 'Old', category: 'other', description: { zh: 'Old' }, screenshots: [] }] }, stale: true }))
+    await load
+    await service.catalogRefresh
+    expect(service.remoteCatalog.map(entry => entry.id)).toEqual(['owner/fresh'])
+    service.dispose()
+  })
+
   it('migrates legacy market identities to repository identities and preserves owned data', async () => {
     const legacy = { ...emptyState(), added: ['ming-life'], pinned: ['ming-life'], favorites: ['ming-life'], active: 'ming-life',
       sessionBindings: { old: 'ming-life' }, recentSessions: { 'ming-life': 'old' }, notes: { 'ming-life': 'Keep me' }, hiddenWorkspaces: { 'ming-life': ['project-1'] } }
@@ -592,7 +676,7 @@ describe('desktop workbench client navigation', () => {
   it('merges Awesome metadata with loaded providers without treating remote entries as installed', async () => {
     const { service, request } = await fixture()
     request.mockImplementation(async (url, options = {}) => {
-      if (url === '/api/desktop-workbenches/catalog') return Response.json({ stale: false, catalog: {
+      if (url === '/api/desktop-workbenches/catalog?cache=1') return Response.json({ stale: false, catalog: {
         schemaVersion: 2, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容', en: 'Content' } }],
         workbenches: [{ id: 'owner/remote', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
           name: '远程工作台', nameEn: 'Remote Workbench', category: 'content', description: { zh: '中文简介', en: 'English description' },
@@ -1486,7 +1570,7 @@ describe('desktop workbench client navigation', () => {
   it('uses the browser default fetch without rebinding its receiver to the controller', async () => {
     let BrowserWorkbenches
     const reply = vi.fn(async (url, options = {}) => {
-      if (url === '/api/desktop-workbenches/catalog') return Response.json({
+      if (url === '/api/desktop-workbenches/catalog?cache=1') return Response.json({
         stale: false, catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [
           { id: 'example/writer', name: 'Writer', category: 'writing', owner: 'example', url: 'https://github.com/example/writer', version: '1.0.0', description: { zh: '' }, screenshots: [], distribution: { type: 'npm', name: 'writer' } }
         ] }
@@ -1518,8 +1602,8 @@ describe('desktop workbench client navigation', () => {
     setFiberPackage(ctx, 'writer')
     service.register({ title: 'Writer' }, () => null)
     await service.add('example/writer')
-    // state, catalog and market installs on load, then one state write.
-    expect(reply).toHaveBeenCalledTimes(5)
+    // State, cached catalog, installs, submissions, online refresh, then state write.
+    expect(reply).toHaveBeenCalledTimes(6)
     expect(service.revision).toBe(1)
     expect(service.state.added).toEqual(['example/writer'])
   })
@@ -1547,6 +1631,44 @@ describe('desktop workbench client navigation', () => {
       expect(doc.querySelector('.dshWbConversationCaption')).toBeNull()
     }
     dom.window.close()
+  })
+
+  it('keeps catalog refresh and failure notices out of normal workbench sessions while preserving local notices', async () => {
+    const { JSDOM } = await import('jsdom')
+    const ReactDOM = await import('react-dom')
+    const { createRoot } = await import('react-dom/client')
+    const dom = new JSDOM('<div id="root"></div>')
+    const previous = { window: globalThis.window, document: globalThis.document, act: globalThis.IS_REACT_ACT_ENVIRONMENT }
+    globalThis.window = dom.window; globalThis.document = dom.window.document; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    const { service, ctx } = await fixture(boundState())
+    let root
+    try {
+      let Frame
+      vm.runInNewContext(code, { console, MutationObserver: dom.window.MutationObserver, document: dom.window.document, window: { localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
+        Frame = factory(name => name === 'react-dom' ? ReactDOM : name === '@deepseek-ai/cordis' ? { Service } : React).Frame
+      } } } })
+      const snapshot = ctx.workspaces.list.getSnapshot()
+      ctx.workspaces.list.getSnapshot = () => snapshot; ctx.workspaces.list.subscribe = () => () => {}; ctx.sessions.list.subscribe = () => () => {}
+      await service.open('writer')
+      root = createRoot(dom.window.document.getElementById('root'))
+      await React.act(async () => root.render(React.createElement(Frame, { service, conversation: React.createElement('div', null, 'Native session') })))
+      for (const refreshing of [true, false]) {
+        await React.act(async () => { service.catalogRefreshing = refreshing; service.catalogError = 'offline'; service.catalogStale = true; service.publish() })
+        expect(dom.window.document.querySelector('.dshWbNotice')).toBeNull()
+        expect(dom.window.document.querySelector('.dshWbConversation').textContent).toContain('Native session')
+      }
+      await React.act(async () => { service.restartNeeded = true; service.publish() })
+      expect(dom.window.document.querySelector('.dshWbNotice').textContent).toContain('工作台安装变更需要重启 Harness')
+      await React.act(async () => { service.error = 'Local state failed'; service.publish() })
+      expect(dom.window.document.querySelector('.dshWbNotice').getAttribute('role')).toBe('alert')
+      expect(dom.window.document.querySelector('.dshWbNotice').textContent).toContain('Local state failed')
+      await React.act(async () => { service.error = ''; service.restartNeeded = false; service.ready = false; service.publish() })
+      expect(dom.window.document.querySelector('.dshWbNotice').textContent).toBe('正在读取本地工作台…')
+    } finally {
+      if (root) await React.act(async () => root.unmount())
+      service.dispose(); dom.window.close()
+      globalThis.window = previous.window; globalThis.document = previous.document; globalThis.IS_REACT_ACT_ENVIRONMENT = previous.act
+    }
   })
 
   it.each([{ customFrame: true }, { customFrame: false, layout: { businessSide: 'left' } }, { customFrame: false, layout: { businessSide: 'right' } }, { customFrame: true, headerLayout: 'default' }])('resolves one nested compact toolbar and safely falls back when markers change (%j)', async descriptor => {

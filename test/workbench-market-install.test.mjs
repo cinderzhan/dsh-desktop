@@ -126,14 +126,14 @@ describe('workbench market install routes', () => {
     return { stdout, stderr, done, cancel() {} }
   }
   const KEY = 'o/project-helper'
-  async function host(desktopPnpm, catalog = index) {
+  async function host(desktopPnpm, catalog = index, fetchCatalog) {
     const home = await tempRoot()
     vi.stubEnv('DSH_HOME', home)
     const root = join(home, 'desktop-workbenches')
     const routes = []
     const connection = { fetch: { register(route) { routes.push(route) } } }
     // The catalog reader captures fetch when the plugin applies.
-    vi.stubGlobal('fetch', vi.fn(async url => Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
+    vi.stubGlobal('fetch', fetchCatalog || vi.fn(async url => Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
     apply({ effect: fn => fn(), reflect: { provide() {} }, connection, inject(deps, callback) { if (desktopPnpm) callback({ connection, desktopPnpm }) } }, { root })
     const call = async (path, body) => {
       const route = routes.find(value => value.path === path)
@@ -148,6 +148,20 @@ describe('workbench market install routes', () => {
     const { call } = await host(undefined)
     expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toBeUndefined()
     expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {} })
+  })
+
+  it('reads local installation readiness without starting or awaiting catalog network requests', async () => {
+    let resolve
+    const fetchCatalog = vi.fn(() => new Promise(done => { resolve = done }))
+    const { call } = await host(undefined, index, fetchCatalog)
+    expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {} })
+    expect(fetchCatalog).not.toHaveBeenCalled()
+    const refresh = call('/api/desktop-workbenches/catalog')
+    try {
+      expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {} })
+      expect(fetchCatalog).toHaveBeenCalledTimes(1)
+    } finally { resolve(Response.json(index)) }
+    expect((await refresh).status).toBe(200)
   })
 
   it('installs the index entry, records it, and asks for a restart', async () => {

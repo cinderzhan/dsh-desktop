@@ -44,6 +44,9 @@ async function mountCard({ state = 'normal', language = 'zh', listed = true, ori
     service.native.bundles.helper.readOnlyReason = 'management-required'
   }
   service.ready = true
+  if (state === 'catalog-refresh') { service.catalogLoaded = true; service.catalogRefreshing = true }
+  if (state === 'first-catalog-load') { service.remoteCatalog = []; service.catalogRefreshing = true }
+  if (state === 'catalog-stale') { service.catalogLoaded = true; service.catalogStale = true }
   if (favorite) service.state.favorites = ['owner/helper']
   if (state === 'loading') service.installing = 'owner/helper'
   if (state === 'restart') service.pendingRestart.add('owner/helper')
@@ -62,6 +65,38 @@ async function mountCard({ state = 'normal', language = 'zh', listed = true, ori
 }
 
 describe('compact workbench card states', () => {
+  it.each([['zh', '正在更新目录…'], ['en', 'Updating catalog…']])('announces lightweight catalog progress in %s without blocking cached cards', async (language, label) => {
+    const ui = await mountCard({ state: 'catalog-refresh', language })
+    try {
+      const progress = ui.document.querySelector('.dshWbCatalogProgress')
+      expect(progress.getAttribute('role')).toBe('status')
+      expect(progress.getAttribute('aria-live')).toBe('polite')
+      expect(progress.textContent).toBe(label)
+      expect(progress.querySelector('svg')).not.toBeNull()
+      expect(ui.document.querySelectorAll('article')).toHaveLength(1)
+      expect(ui.document.querySelector('.dshWbMediaOpen').disabled).toBe(false)
+      expect(ui.document.querySelector('.dshWbFavorite').disabled).toBe(false)
+      expect(ui.document.querySelector('.dshWbRefresh').getAttribute('aria-busy')).toBe('true')
+    } finally { await ui.close() }
+  })
+
+  it('shows first catalog loading instead of a false empty discovery result', async () => {
+    const ui = await mountCard({ state: 'first-catalog-load' })
+    try {
+      expect(ui.document.querySelector('.dshWbCatalogProgress').textContent).toBe('正在首次读取市场目录…')
+      expect(ui.document.querySelector('.dshWbEmpty')).toBeNull()
+    } finally { await ui.close() }
+  })
+
+  it('keeps cached cards and offers retry when the online refresh returns stale data', async () => {
+    const ui = await mountCard({ state: 'catalog-stale' })
+    try {
+      expect(ui.document.querySelector('.dshWbNotice').textContent).toContain('在线市场暂时无法更新，正在显示上一次成功读取的目录。')
+      expect([...ui.document.querySelectorAll('.dshWbNotice button')].find(button => button.textContent === '重试').disabled).toBe(false)
+      expect(ui.document.querySelectorAll('article')).toHaveLength(1)
+    } finally { await ui.close() }
+  })
+
   it.each(['local', 'unknown'])('hides market affordances for an unlisted %s provider in card and detail', async origin => {
     const ui = await mountCard({ listed: false, origin })
     try {
