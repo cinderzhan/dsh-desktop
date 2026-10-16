@@ -197,7 +197,7 @@ describe('workbench market install routes', () => {
   it('allows explicitly confirmed replacement and verified market updates', async () => {
     const installWorkbenchGeneration = vi.fn(() => handle())
     const { call, home } = await host({ installWorkbenchGeneration })
-    await installedPackage(home)
+    await installedPackage(home, '1.2.0')
     expect((await call('/api/desktop-workbenches/market-install', { id: KEY, confirmedReplacement: true })).status).toBe(200)
     expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(200)
     expect(installWorkbenchGeneration).toHaveBeenCalledTimes(2)
@@ -209,12 +209,23 @@ describe('workbench market install routes', () => {
     const directory = await installedPackage(home, '1.2.0')
     expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
     const initial = (await readInstallEvidence({}, home, ['project-helper']))['project-helper']
-    await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', fingerprint: initial.fingerprint })
+    await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', version: '1.2.0', fingerprint: initial.fingerprint })
     await writeFile(join(directory, 'client.js'), 'changed same-version code')
     expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
     await writeFile(join(directory, 'package.json'), '{invalid')
     expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
     await rm(directory, { recursive: true })
+    expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
+    expect(installWorkbenchGeneration).not.toHaveBeenCalled()
+  })
+
+  it('requires confirmation for recognized historical market installs without verified content', async () => {
+    const installWorkbenchGeneration = vi.fn(() => handle())
+    const { call, home, root } = await host({ installWorkbenchGeneration })
+    await installedPackage(home, '1.2.0')
+    await createMarketInstallStore(root).record(KEY, { pluginName: 'project-helper', version: '1.2.0', source: 'npm' })
+    const packages = (await call('/api/desktop-workbenches/market-installs')).body.packages
+    expect(packages['project-helper']).toMatchObject({ origin: 'market', contentVerified: false })
     expect((await call('/api/desktop-workbenches/market-install', { id: KEY })).status).toBe(409)
     expect(installWorkbenchGeneration).not.toHaveBeenCalled()
   })

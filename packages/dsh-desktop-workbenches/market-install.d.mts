@@ -4,6 +4,7 @@ export interface MarketInstallRecord {
   version: string
   source?: string
   installedAt?: string
+  /** v2:<sha256> hashes content independently of installation path; bare hashes are legacy v1. */
   fingerprint?: string
 }
 

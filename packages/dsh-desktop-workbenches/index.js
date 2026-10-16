@@ -224,7 +224,7 @@ export function apply(ctx, config) {
           const requireReplacement = async (names) => {
             if (confirmedReplacement === true) return
             const packages = await readInstallEvidence(installs, undefined, names)
-            if (names.some(name => packages[name] && packages[name].origin !== 'market')) {
+            if (names.some(name => packages[name] && (packages[name].origin !== 'market' || packages[name].contentVerified !== true))) {
               throw new MarketInstallError('Confirm updating the installed workbench code; local changes may be overwritten.', 409)
             }
           }

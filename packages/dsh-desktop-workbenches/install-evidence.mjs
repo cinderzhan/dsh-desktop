@@ -1,4 +1,4 @@
-// Installation identity comes from the installed package, never a matching listing.
+// Installation identity comes from the installed package and its install receipt, never a matching listing.
 import { createHash } from 'node:crypto'
 import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -11,6 +11,7 @@ const literal = value => typeof value === 'string' ? value : undefined
 const fingerprintCache = new Map()
 async function fingerprint(directory, sourceSpec) {
   const hash = createHash('sha256')
+  const legacyHash = createHash('sha256')
   let size = 0, count = 0
   const files = []
   async function walk(relative = '', depth = 0) {
@@ -33,14 +34,29 @@ async function fingerprint(directory, sourceSpec) {
   const signature = JSON.stringify([sourceSpec, files])
   const cached = fingerprintCache.get(directory)
   if (cached?.signature === signature) return cached.digest
-  hash.update(directory).update('\0').update(typeof sourceSpec === 'string' ? sourceSpec : '').update('\0')
-  for (const file of files) hash.update(file.path).update('\0').update(await readFile(join(directory, file.path))).update('\0')
-  const digest = hash.digest('hex')
+  // v2 identifies package content across generation moves and source-spec changes.
+  // Keep v1 verification for records written before this format existed.
+  hash.update('dsh-workbench-content-v2\0')
+  legacyHash.update(directory).update('\0').update(typeof sourceSpec === 'string' ? sourceSpec : '').update('\0')
+  for (const file of files) {
+    const content = await readFile(join(directory, file.path))
+    hash.update(file.path).update('\0').update(content).update('\0')
+    legacyHash.update(file.path).update('\0').update(content).update('\0')
+  }
+  const digest = { current: `v2:${hash.digest('hex')}`, legacy: legacyHash.digest('hex') }
   if (fingerprintCache.size > 128) fingerprintCache.clear()
   fingerprintCache.set(directory, { signature, digest })
   return digest
 }
 
+/**
+ * origin describes the installation channel; contentVerified alone proves the
+ * current files match a recorded market install. Historical receipts can restore
+ * market identity without granting permission to overwrite unverified content.
+ * @param {Record<string, import('./market-install.mjs').MarketInstallRecord>} installs
+ * @param {string} [home]
+ * @param {string[]} [requestedNames]
+ */
 export async function readInstallEvidence(installs, home = process.env.DSH_HOME || join(homedir(), '.dsh'), requestedNames = []) {
   const profile = join(home, 'profiles', 'web')
   const dependencies = await json(join(profile, 'package.json')).then(value => value.dependencies || {}, () => ({}))
@@ -50,8 +66,10 @@ export async function readInstallEvidence(installs, home = process.env.DSH_HOME 
     for (const id of await json(join(root, 'desired.json'))) {
       if (typeof id !== 'string' || !/^[a-zA-Z0-9._+-]+$/.test(id)) continue
       const directory = join(root, 'live', id)
-      const generation = await json(join(directory, 'generation.json'))
-      if (safeName.test(generation.pluginName)) generations.set(generation.pluginName, { directory: join(directory, 'node_modules', generation.pluginName), sourceSpec: generation.sourceSpec })
+      try {
+        const generation = await json(join(directory, 'generation.json'))
+        if (typeof generation.pluginName === 'string' && safeName.test(generation.pluginName)) generations.set(generation.pluginName, { directory: join(directory, 'node_modules', generation.pluginName), sourceSpec: generation.sourceSpec })
+      } catch { /* One unreadable generation must not hide the other active packages. */ }
     }
   } catch { /* Legacy profiles have no generation registry; inspect their dependency tree. */ }
   const packages = {}
@@ -62,23 +80,29 @@ export async function readInstallEvidence(installs, home = process.env.DSH_HOME 
     const candidate = generation?.directory || join(profile, 'node_modules', name)
     // Missing evidence must not make an existing or declared install look absent.
     const present = generation || Object.hasOwn(dependencies, name) || await lstat(candidate).then(() => true, error => error.code !== 'ENOENT')
-    if (present) packages[name] = { origin: 'unknown', metadata: {} }
+    if (present) packages[name] = { origin: 'unknown', contentVerified: false, metadata: {} }
     try {
       const directory = await realpath(candidate)
       const manifest = await json(join(directory, 'package.json'))
       if (manifest.name !== name || !manifest.dsh?.client) continue
-      const sourceSpec = generation?.sourceSpec || dependencies[name]
-      const digest = await fingerprint(directory, sourceSpec).catch(() => undefined)
-      const record = Object.values(installs).find(item => item?.pluginName === name && digest && item.fingerprint === digest)
-      const historical = Object.values(installs).find(item => item?.pluginName === name && !item.fingerprint)
-      const ambiguousArchive = historical && typeof sourceSpec === 'string' && /\.(?:tgz|tar\.gz)(?:$|[?#])/.test(sourceSpec)
-      const local = !ambiguousArchive && typeof sourceSpec === 'string' && /^(?:file:|link:|\/|[A-Za-z]:[\\/]|\.\.?[\\/])/.test(sourceSpec)
+      const sourceSpec = generation ? generation.sourceSpec : dependencies[name]
+      const digests = await fingerprint(directory, sourceSpec).catch(() => undefined)
+      const records = Object.values(installs).filter(item => item?.pluginName === name && item.version === manifest.version)
+      const record = records.find(item => digests && (item.fingerprint === digests.current || item.fingerprint === digests.legacy))
+      const localSpec = typeof sourceSpec === 'string' && /^(?:file:|link:|\/|[A-Za-z]:[\\/]|\.\.?[\\/])/.test(sourceSpec)
+      const archive = typeof sourceSpec === 'string' && /\.(?:tgz|tar\.gz)(?:$|[?#])/.test(sourceSpec)
+      // Release downloads used file: temporary archives too. Only a verified
+      // receipt or a historical release receipt can disambiguate these from
+      // archives the user installed locally; stale npm/Git receipts cannot.
+      const historicalRelease = records.some(item => !item.fingerprint && ['release', 'github-release'].includes(item.source))
+      const local = localSpec && (!archive || (!record && !historicalRelease) || sourceSpec.startsWith('link:'))
       const author = typeof manifest.author === 'string' ? manifest.author : literal(manifest.author?.name)
       const zh = await json(join(directory, 'locale', 'zh.json')).then(value => value.meta || {}, () => ({}))
       const en = await json(join(directory, 'locale', 'en.json')).then(value => value.meta || {}, () => ({}))
       packages[name] = {
-        version: literal(manifest.version), fingerprint: digest,
-        origin: record ? 'market' : local ? 'local' : 'unknown',
+        version: literal(manifest.version), fingerprint: digests?.current,
+        origin: local ? 'local' : records.length ? 'market' : 'unknown',
+        contentVerified: !local && Boolean(record),
         metadata: {
           title: literal(zh.title), titleEn: literal(en.title),
           description: literal(zh.description) || literal(manifest.description), descriptionEn: literal(en.description),
