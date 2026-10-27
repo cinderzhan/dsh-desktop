@@ -70,6 +70,26 @@ describe('bundled workbench development guide', () => {
     expect(read(GUIDE_EN_SOURCE)).toContain('customFrame: true')
   })
 
+  it('documents local identity separately from market publication in both languages', () => {
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE]) {
+      const guide = read(path)
+      expect(guide).toContain('2026-10-27')
+      expect(guide).toContain('local:@scope/name')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不需要 GitHub 账号' : 'require no GitHub account')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不会自动迁移本地会话' : 'does not automatically migrate local sessions')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '阶段和原因' : 'stage, and reason')
+    }
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE]) {
+      const guide = read(path)
+      const clientExample = guide.split('window.__ModuleLoader__.load({')[1].split('```')[0]
+      expect(clientExample).toContain('desktopWorkbenches.register({')
+      expect(clientExample).not.toContain('repository:')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '仅在准备市场投稿' : 'Only when preparing a market submission')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不能替代真实 UI 验收' : 'do not replace real UI acceptance')
+      expect(guide).not.toMatch(/(?:必须|must)\*\*提供.*(?:规范的 GitHub|canonical GitHub)/)
+    }
+  })
+
   it('covers development and the local self-test only', () => {
     const guide = read(GUIDE_TARGET)
     expect(guide).toBe(read(GUIDE_SOURCE))

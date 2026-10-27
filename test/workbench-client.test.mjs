@@ -4198,11 +4198,13 @@ describe('local workbench installation restart notice', () => {
 
   it('preserves current notice on older hosts/errors and ignores late results after disposal', async () => {
     const { service, request } = await fixture()
-    service.restartNeeded = true
+    request.mockResolvedValue(Response.json({ restartRequired: true, runtimeId: 'before' }))
+    await service.refreshRestartStatus()
     request.mockResolvedValue(new Response('', { status: 404 }))
     await service.refreshRestartStatus()
     expect(service.restartNeeded).toBe(true)
-    service.restartNeeded = false
+    request.mockResolvedValue(Response.json({ restartRequired: false, runtimeId: 'after' }))
+    await service.refreshRestartStatus()
     const response = deferred()
     request.mockReturnValue(response.promise)
     const reading = service.refreshRestartStatus()
@@ -4210,5 +4212,101 @@ describe('local workbench installation restart notice', () => {
     response.resolve(Response.json({ restartRequired: true }))
     await reading
     expect(service.restartNeeded).toBe(false)
+  })
+})
+
+describe('repository-free local registration', () => {
+  it('registers and pins scoped package identity, preserves it across market discovery and reload', async () => {
+    const { service, ctx, saved, request } = await fixture()
+    setFiberPackage(ctx, '@team/local-review')
+    const unregister = service.register({ title: 'Local review' }, () => null)
+    await service.queue
+    const id = 'local:@team/local-review'
+    expect(service.catalog.get(id)?.sourcePackage).toBe('@team/local-review')
+    expect(saved().state.added).toContain(id)
+    expect(saved().state.pinned).toContain(id)
+    expect(service.getSnapshot().catalog.find(entry => entry.id === id)).toMatchObject({ local: true, installed: true })
+    service.remoteCatalog.push({ id: 'owner/published', name: 'Published', description: { zh: '' }, screenshots: [], distribution: { name: '@team/local-review' } })
+    service.rebuildProviders()
+    expect(service.catalog.has(id)).toBe(true)
+    service.native = { status: 'ready', bundles: { '@team/local-review': { name: '@team/local-review', installed: true, enabled: true } } }
+    const cards = service.marketCatalog()
+    expect(cards.find(entry => entry.id === id)).toMatchObject({ installed: true, local: true, listed: false })
+    expect(cards.find(entry => entry.id === 'owner/published')).toMatchObject({ installed: false, local: false, listed: true, loadFailure: '' })
+    await service.commit(state => { state.sessionBindings.old = id })
+    expect(service.ownsSession('old')).toBe(true)
+    unregister()
+    service.dispose()
+    const restored = new Workbenches(ctx, request)
+    restored.register({ title: 'Local review', repository: 'https://github.com/owner/published' }, () => null)
+    await restored.load()
+    await restored.queue
+    expect(restored.catalog.has(id)).toBe(true)
+    expect(saved().state.sessionBindings.old).toBe(id)
+    restored.dispose()
+  })
+
+  it('keeps a fresh local installation separate from a same-package market listing at startup', async () => {
+    const { service, ctx, saved } = await fixture()
+    const source = '@team/startup-local'
+    service.packageEvidence = { [source]: { origin: 'local' } }
+    service.remoteCatalog.push({ id: 'owner/startup-market', name: 'Published', description: { zh: '' }, screenshots: [], distribution: { name: source } })
+    setFiberPackage(ctx, source)
+    service.register({ title: 'Local startup' }, () => null)
+    await service.queue
+    expect(service.catalog.has('local:@team/startup-local')).toBe(true)
+    expect(service.catalog.has('owner/startup-market')).toBe(false)
+    expect(saved().state.added).toContain('local:@team/startup-local')
+    expect(saved().state.added).not.toContain('owner/startup-market')
+    service.dispose()
+  })
+
+  it('shows actionable registration diagnostics without hiding healthy providers and clears them after correction/disposal', async () => {
+    const { service, ctx } = await fixture()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    setFiberPackage(ctx, 'broken-local')
+    expect(() => service.register({ title: 'Broken', repository: 'invalid' }, () => null)).toThrow()
+    expect(service.getSnapshot().registrationFailures).toEqual([expect.objectContaining({ sourcePackage: 'broken-local', stage: 'register', message: expect.stringContaining('GitHub URL') })])
+    ctx.locale = { bind: vi.fn(namespace => key => `${namespace}:${key}`) }
+    const ui = interactiveMarket(service, 'mine')
+    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(1)
+    expect(ctx.locale.bind).toHaveBeenCalledWith('dsh-desktop-workbenches.registration')
+    expect(service.catalog.has('writer')).toBe(true)
+    const dispose = service.register({ title: 'Fixed' }, () => null)
+    expect(service.getSnapshot().registrationFailures).toEqual([])
+    expect(() => service.register({ title: 'Duplicate' }, () => null)).toThrow('Duplicate')
+    expect(service.getSnapshot().registrationFailures[0]).toMatchObject({ sourcePackage: 'broken-local', stage: 'register' })
+    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(1)
+    dispose()
+    expect(service.catalog.has('local:broken-local')).toBe(false)
+    expect(service.registrationFailures.size).toBe(0)
+    delete ctx.fiber.entry
+    expect(() => service.register({ title: 'Missing source' }, () => null)).toThrow('client package entry name')
+    expect(service.getSnapshot().registrationFailures[0]).toMatchObject({ sourcePackage: '(unknown package)', stage: 'register' })
+    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(1)
+    warn.mockRestore()
+    service.dispose()
+  })
+
+  it('reports ambiguity without breaking other providers, recovers on rebuild, and rejects invalid source names', async () => {
+    const { service, ctx } = await fixture()
+    setFiberPackage(ctx, 'conflict-local')
+    service.remoteCatalog.push({ id: 'owner/one', name: 'One', description: { zh: '' }, screenshots: [], distribution: { name: 'conflict-local' } }, { id: 'owner/two', name: 'Two', description: { zh: '' }, screenshots: [], distribution: { name: 'conflict-local' } })
+    const dispose = service.register({ title: 'Conflict' }, () => null)
+    expect(service.catalog.has('writer')).toBe(true)
+    expect(service.getSnapshot().registrationFailures[0]).toMatchObject({ stage: 'identity', sourcePackage: 'conflict-local' })
+    service.remoteCatalog = service.remoteCatalog.filter(entry => entry.id !== 'owner/two')
+    service.rebuildProviders()
+    expect(service.catalog.has('owner/one')).toBe(true)
+    expect(service.registrationFailures.size).toBe(0)
+    dispose()
+    for (const source of ['Bad', '../bad', '/Users/alice/private/foo', '@team/Bad', 'constructor', 'x'.repeat(215)]) {
+      setFiberPackage(ctx, source)
+      expect(() => service.register({ title: 'Invalid' }, () => null)).toThrow('Invalid local workbench package name')
+      const failures = service.getSnapshot().registrationFailures
+      expect(failures.find(failure => failure.stage === 'register').sourcePackage).toBe('(invalid package identity)')
+      expect(JSON.stringify(failures)).not.toContain('/Users/alice/private/foo')
+    }
+    service.dispose()
   })
 })

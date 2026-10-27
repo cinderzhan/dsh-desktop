@@ -1,6 +1,8 @@
 # 工作台开发：六步速览
 
-版本：2026-10-12 · 详细规则见[工作台开发规范](https://dshdesktop.com/workbench/docs/development/)；投稿见[工作台市场验收规范](https://dshdesktop.com/workbench/docs/market-acceptance/)。
+版本：2026-10-27 · 详细规则见[工作台开发规范](https://dshdesktop.com/workbench/docs/development/)；投稿见[工作台市场验收规范](https://dshdesktop.com/workbench/docs/market-acceptance/)。
+
+本地开发、安装和使用不需要 GitHub 账号或仓库 URL；默认调用 `register({ title }, BusinessPanel)`，省略 `repository` 且不要填写 `id`。宿主从真实客户端 npm 包名派生 `local:<npm 包名>`（scoped 包为 `local:@scope/name`）。版本或目录变化不改身份，包名变化生成新身份。市场投稿另用真实仓库，不会自动迁移本地会话。注册失败时检查工作台管理中的包名、阶段和原因；修复重载成功后诊断清除。使用当前版本支持的原生插件安装界面或 CLI，不依赖未提供的本地安装 API。
 
 **面向用户的沟通**：需求引导、布局建议、确认选项以及安装和完成状态都使用业务语言，例如“整页展示业务内容，需要时再打开 AI 对话”或“边对话边查看辅助资料”。不要要求普通用户确认 `customFrame`、`register()`、`repository`、`dshHomePath`、`reconcileLocalProviders` 等代码字段、内部身份或占位仓库地址，也不要大段呈现内部实现后让用户选择。技术字段由 Agent 在开发执行时按本规范处理；缺少发布身份不能阻断已明确的本地开发，不得捏造真实仓库。确实需要用户提供信息时，只询问影响业务或安装的实际问题，例如“要保存在哪个文件夹？”；用户主动询问技术细节时再简短解释。完成汇报先说明能做什么、哪些操作已实测和哪些仍待验证，修改文件与技术检查作为简短附录，最后按下方要求提示用户如何开始使用。
 

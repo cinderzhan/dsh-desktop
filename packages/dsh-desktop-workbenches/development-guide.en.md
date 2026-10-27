@@ -1,6 +1,6 @@
 # Workbench Development Standard
 
-Version: 2026-10-12 · The website is authoritative; DSH Desktop bundles a copy for offline use.
+Version: 2026-10-27 · The website is authoritative; DSH Desktop bundles a copy for offline use.
 
 Official page: https://dshdesktop.com/workbench/docs/development-en/
 
@@ -17,6 +17,8 @@ A workbench is a DSH plugin. It must first be a valid DSH plugin package that `d
 Rule levels are **required** (failure prevents installation or loading), **recommended** (strongly advised for usability and future listing), and **optional**.
 
 ## 1. Execution principles
+
+Before development, read the latest Markdown standard on the website above; use the bundled copy only when offline and state its version.
 
 **Communication with users**: Use business language for requirements discovery, layout suggestions, confirmation choices, and installation or completion status, such as “Show the business content on a full page and open AI conversation when needed” or “Talk while viewing supporting information.” Do not ask ordinary users to confirm code fields such as `customFrame`, `register()`, `repository`, `dshHomePath`, or `reconcileLocalProviders`, internal identities, or placeholder repository URLs; do not present lengthy implementation details as choices. The Agent handles technical fields during development under this standard. Missing publication identity must not block confirmed local development, and a real repository must never be fabricated. Ask only for practical information affecting the business or installation, such as “Which folder should hold the data?” Explain technical details briefly when the user asks. Lead completion reports with what works, actual operations tested, and items still pending verification; put changed files and technical checks in a short appendix, then end with the usage handoff required below.
 
@@ -55,16 +57,19 @@ A workbench package is simultaneously:
 
 - **An npm package** with `name` and `version`, installable from a local directory or `.tgz`, and after listing potentially from npm or GitHub.
 - **A DSH plugin (bundle)** whose `package.json` declares `dsh.bundle.patch`; `cordis.patch.yml` inserts the server entry into the Harness plugin tree.
-- **A Desktop workbench** whose client calls `desktopWorkbenches.register()` to register a business panel. Desktop resolves repository identity from `repository`, installation records, and market distribution mapping.
+- **A Desktop workbench** whose client calls `desktopWorkbenches.register()` to register a business panel. When a local package omits `repository`, Desktop derives a stable local identity from the actual calling client npm package name; valid existing repository identities are retained.
 
-Three identifiers have distinct purposes and must not be conflated:
+The following identifiers have distinct purposes and must not be conflated:
 
 | Identifier | Location | Purpose |
 |---|---|---|
 | npm package name | `package.json` `name` | Installation, dependency resolution, `cordis.patch.yml` `name:` |
 | Plugin entry ID | `id` of an `insert` row in `cordis.patch.yml` | Locate that row in the Harness plugin tree |
-| Workbench identity | Canonical GitHub `repository` URL and market entry `id` | Lowercase `owner/repository`, shared by market card, sidebar entry, and session ownership |
+| Local workbench identity | Derived by the host from the actual client npm package name | `local:<npm package name>`, such as `local:my-workbench-package` or `local:@scope/name`; shared by sidebar entry and session ownership |
+| Repository workbench identity | Valid GitHub `repository` URL, market entry `id`, and existing attribution records | Lowercase `owner/repository`; existing identities stay compatible, shared by market card, sidebar entry, and session ownership |
 | Legacy ID for compatibility | Old `register({ id })` and catalog `workbenchId` | Migration of old data only; omit from new packages and submissions |
+
+Local development, installation, and use require no GitHub account, repository URL, repository creation, or code upload. Never fill a fabricated or placeholder repository. The host uses actual client package provenance; authors must not supply a local ID manually. Version upgrades and project-directory moves preserve local identity; renaming the npm package creates a new identity. Later market publication does not automatically migrate local sessions or silently replace local identity. Migration must be explicitly designed and confirmed; this standard provides no automatic local-to-market migration.
 
 Desktop lowercases GitHub owner and repository, so `https://github.com/Owner/Repo` corresponds to `owner/repo`. A rename or transfer changes workbench identity; migrate existing sessions under the migration rules rather than changing only the URL. The legacy `wb-owner-repo` is only a compatibility mapping, not a registration ID for new packages.
 
@@ -151,7 +156,6 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       ctx.effect(() => ctx.desktopWorkbenches.register({
         title: 'My Workbench',
-        repository: 'https://github.com/owner/repository',
         description: 'Describe the problem it solves'
       }, BusinessPanel))
     }
@@ -161,7 +165,9 @@ window.__ModuleLoader__.load({
 ```
 
 - `require` can access only the shared baseline (React, Cordis, etc.), loaded plugins, and modules listed in `dsh.client.external`. Bundle other dependencies into the client file at build time.
-- `register()` **must** provide a `title`, business component, and canonical GitHub `repository` URL. New packages **must not specify** `register({ id })`. Desktop resolves `owner/repo` from `repository` and cross-checks the caller client package, market distribution, or installation record. A source conflict prevents provider exposure. An old package's `id` is only for migration, not the new protocol.
+- `register()` **must** provide a `title` and business component. For local development, omit `repository` by default; the host derives `local:<npm package name>` from the actual calling client package. New packages **must not specify** `register({ id })`. Valid existing repository attribution keeps `owner/repo`; source conflicts must not fall back to another identity. Legacy `id` is only for compatibility migration.
+- Only when preparing a market submission with a real repository, separately add `repository: 'https://github.com/your-org/your-workbench'`. It is not a prerequisite for local installation. Do not skip `register()` because `repository` is absent.
+- On registration failure, Workbench management shows the package name, failure stage, and reason, and the console emits a warning. A successful reload after fixing the issue clears the corresponding diagnostic. If the client has not executed or dependencies are missing, investigate that loading stage; a missing entry alone does not establish identity failure.
 - `workbench.json` and submission YAML `workbenchId` are not required for new workbenches. The runtime package name must correspond to `window.__ModuleLoader__.load({ id })`.
 - Optional registration fields: `description`, `panelTitle`, `icon`, `audience`, `requirements`, `layout` (`businessSide` is `left` or `right`; `businessWidth` is 0.25–0.7), `customFrame` (boolean; Section 4), `headerLayout` (Section 4), and `initialization`.
 - Give the unregister function returned by registration to `ctx.effect`.
@@ -171,6 +177,7 @@ window.__ModuleLoader__.load({
 - The client file **must** already be built as a single file. Desktop does not build it for you.
 - **Detect capabilities first; do not guess from a version number.** Record the version shown in Desktop About, platform, and architecture. Look for local installation in “Workbench management / Installed workbenches”; then check whether the installed version's plugin installation UI or `dsh plugin add --help` accepts local `.tgz`. Install only when the UI or command explicitly supports this input. Do not infer capability from the website publication date. Record the entry point and output used.
 - Install the `.tgz` produced by `pnpm pack` through a confirmed supported path. For CLI, follow its actual `--help` syntax. Complete the restart indicated by Desktop, then use either optional path in Section 1 for independent trial or continued Agent verification; during verification, confirm the Installed entry, switch entry, and real business panel. If the agent is running inside the target DSH Desktop, follow the Section 1 restart boundary: the user must click “Restart now” in the top banner or choose Harness → Restart Harness. `dsh --profile web --dump-config` showing a plugin layer proves configuration only, not UI loading.
+- Use the native plugin installation UI or CLI explicitly supported by the current version, not an unavailable `/local-install` API.
 - If the current Desktop lacks a local package installer, CLI support is absent, or installation fails, deliver the verified `.tgz` and package contents/check record. State Desktop version, capability findings, and failure reason. Mark “install, load after restart, installed list, sidebar entry, business operation” individually **untested**; do not claim local acceptance passed.
 - If installation or build scripts need to run (pnpm 10 blocks them by default), understand each script and obtain separate authorization.
 
@@ -201,7 +208,7 @@ Any `customFrame: true` provider, or a standard split with `layout.businessSide:
 
 ```js
 ctx.desktopWorkbenches.register({
-  title: 'Business tool', repository: 'https://github.com/your-org/your-workbench',
+  title: 'Business tool',
   customFrame: true, headerLayout: 'compact'
 }, BusinessPanel)
 // Exactly one same-document toolbar rendered by BusinessPanel:
@@ -265,6 +272,8 @@ Mode switching must not collapse or expand the left session sidebar automaticall
 First entry may show a home page, empty-session state, or initialize a session under workbench conventions, but the business panel must not depend on session initialization. Later entries restore that workbench's most recent session. Navigation and switching must not delete sessions, business records, project files, favorites, or notes.
 
 ## 8. Local self-test checklist
+
+Verify a local package without `repository` (including a scoped npm package name): after installation and loading, its entry is marked “Local,” appears in the switcher, and opens the business panel. Reloads and version updates preserve identity and session ownership. Verify that registration failures show the package, stage, and reason in Workbench management and clear after a successful reload. Module HTTP 200, successful imports, and passing tests do not replace real UI acceptance.
 
 Check each applicable responsibility after development. “Host responsibility” means observe current Desktop behavior and report issues; plugin authors must not copy host UI. For “only when using this capability,” mark “not applicable” with a reason if unused. Claim local self-test passed only with evidence for all applicable items.
 
