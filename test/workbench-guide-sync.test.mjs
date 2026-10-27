@@ -79,6 +79,7 @@ describe('bundled workbench development guide', () => {
       for (const phrase of phrases) expect(guide).toContain(phrase)
       if ([GUIDE_SOURCE, GUIDE_EN_SOURCE].includes(path)) {
         expect(guide).toContain('installBundle')
+        expect(guide).toContain('install_local_workbench')
         expect(guide).toContain('restart-required')
       }
     }
@@ -164,7 +165,7 @@ describe('bundled workbench development guide', () => {
     try {
       const routes = []
       const connection = { fetch: { register(route) { routes.push(route) } } }
-      apply({ effect: fn => fn(), inject: (_deps, callback) => callback({ connection, pluginManager: {}, effect: fn => fn() }), reflect: { provide() {} }, connection }, { root })
+      apply({ effect: fn => fn(), inject: (deps, callback) => { if (!deps.includes('tools')) callback({ connection, pluginManager: {}, effect: fn => fn() }) }, reflect: { provide() {} }, connection }, { root })
       expect(routes.length).toBeGreaterThan(5)
       for (const route of routes) expect([route.path, route.requestBody]).toEqual([route.path, 'buffered'])
     } finally { await rm(root, { recursive: true, force: true }) }

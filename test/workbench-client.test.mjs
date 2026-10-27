@@ -4324,27 +4324,3 @@ describe('repository-free local registration', () => {
     service.dispose()
   })
 })
-
-describe('local workbench installation through the manager route', () => {
-  it.each(['applied', 'restart-required'])('uses the returned %s outcome without a market receipt', async application => {
-    const { service } = await fixture()
-    service.refreshNative = vi.fn(async () => {})
-    service.refreshRestartStatus = vi.fn(async () => {})
-    service.request = vi.fn(async () => Response.json({ packageName: 'local-helper', result: { application, changed: true } }))
-    expect(await service.installLocal('/tmp/local-helper.tgz', true)).toMatchObject({ application })
-    expect(JSON.parse(service.request.mock.calls[0][1].body)).toEqual({ path: '/tmp/local-helper.tgz', replace: true })
-    expect(service.request.mock.calls[0][0]).toBe('/api/desktop-workbenches/local-install')
-    expect(service.restartNeeded).toBe(application === 'restart-required')
-    expect(service.installs).toEqual({})
-    expect(service.installing).toBeNull()
-  })
-
-  it('retains original failure diagnostics and clears the busy state', async () => {
-    const { service } = await fixture()
-    service.request = vi.fn(async () => Response.json({ packageName: 'local-helper', result: { application: 'failed', error: { diagnostic: 'peer dependency missing' } } }, { status: 409 }))
-    await expect(service.installLocal('/tmp/local-helper.tgz')).rejects.toThrow('peer dependency missing')
-    expect(service.restartNeeded).toBe(false)
-    expect(service.installing).toBeNull()
-    expect(service.installs).toEqual({})
-  })
-})

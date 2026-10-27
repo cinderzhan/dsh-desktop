@@ -45,7 +45,7 @@ Markdown 原文（供 Agent 读取）：https://dshdesktop.com/workbench/docs/de
 5. **包校验**：运行 `pnpm pack`，检查 tarball 内 `package.json`、声明的入口和 `cordis.patch.yml`，检查大小和敏感文件。
 6. **本机安装实测**：按 3.6 探测当前 Desktop 的安装能力、安装该 tarball、完成所需重启，并按第 8 节记录真实 UI 与加载证据。在目标 DSH Desktop 内开发时，按下方“同机重启边界”交给用户手动重启。
 
-本地安装统一通过 Plugin Manager 的 `installBundle`：在「工作台市场 → 已安装 → 安装本地工作台」填写 `.tgz` 的完整路径；替换同名包时明确勾选替换。安装结果为 `applied` 时直接检查工作台实际界面；仅 `restart-required` 时提示用户点击「立即重启」或菜单「Harness → 重启 Harness」。失败或取消不视为安装完成，也不以重启代替排错。
+模型完成构建和包校验后，直接调用 `install_local_workbench({ path: "<本机 .tgz 绝对路径>", replace: false })`，内部统一使用 Plugin Manager 的 `installBundle`，无需用户填写路径或操作安装页面。更新用户已授权修改的同名工作台时传 `replace: true`。读取 `application`：`applied` 时直接核验界面，只有 `restart-required` 才提示用户重启 Harness；失败、取消和 overridden 不算已生效。
 
 **同机重启边界**：Agent 不要自行关闭或重启 DSH Desktop、Harness，也不要用 `ps`、`pgrep` 等进程探测管理重启；请用户手动重启。用户重启 Harness 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。运行在目标应用之外的 Agent 可按正常重启流程操作。
 
@@ -175,10 +175,10 @@ window.__ModuleLoader__.load({
 ### 3.6 构建与本地安装
 
 - 客户端文件**必须**是构建好的单文件，Desktop 不会替你构建。
-- **先探测能力**：记录 Desktop 版本、平台和架构，确认当前版本具有上述本地安装入口。不要从文档发布日期推断已安装旧版本具备该能力。
-- 本地安装统一通过 Plugin Manager 的 `installBundle`：在「工作台市场 → 已安装 → 安装本地工作台」填写 `.tgz` 的完整路径；替换同名包时明确勾选替换。安装结果为 `applied` 时直接检查工作台实际界面；仅 `restart-required` 时提示用户点击「立即重启」或菜单「Harness → 重启 Harness」。失败或取消不视为安装完成，也不以重启代替排错。
-- 自动化可通过当前应用已认证的连接调用 `POST /api/desktop-workbenches/local-install`，JSON 为 `{ "path": "<本机 .tgz 绝对路径>", "replace": false }`，读取 `result.application` 与原始诊断。此接口委托 `installBundle`，不直接运行 pnpm。不得通过 `dsh plugin add` 或直接修改 Profile 绕过它；入口不可用时交付包并说明需要升级，不自动降级为 CLI 安装。
-- 当前 Desktop 无统一本地包安装入口或安装失败时，交付已校验的 `.tgz` 与包内容/校验记录，写明 Desktop 版本、探测结果和失败原因；将“安装、重启后加载、已安装列表、左侧入口、业务操作”逐项列为**未实测**，不能宣称本机验收通过。
+- **先探测能力**：记录 Desktop 版本、平台和架构，确认当前会话能发现 `install_local_workbench` 工具。不能从文档发布日期推断旧版本已具备该工具。
+- 模型完成构建和包校验后，直接调用 `install_local_workbench({ path: "<本机 .tgz 绝对路径>", replace: false })`，内部统一使用 Plugin Manager 的 `installBundle`，无需用户填写路径或操作安装页面。更新用户已授权修改的同名工作台时传 `replace: true`。读取 `application`：`applied` 时直接核验界面，只有 `restart-required` 才提示用户重启 Harness；失败、取消和 overridden 不算已生效。
+- 工具遵循宿主插件管理权限：已具备完整权限时直接执行，否则走宿主现有审批。被拒绝时不得用 CLI 绕过。安装脚本审批仅使用 `pendingBuilds` 返回的包名，并在明确授权后传 `approvedBuilds`。仅旧版本没有该工具时，检查实际 `dsh plugin --help`，可按其支持的方式使用 `dsh plugin add` 安装，并分别验证安装、所需重启和实际加载；不要调用不存在的 HTTP 安装接口。
+- 工具与 CLI 均不可用或安装失败时，交付已校验的 `.tgz`，记录失败原因和未实测项，不声称加载成功。
 - 需要运行安装或构建脚本时（pnpm 10 默认阻止），要明确知道每个脚本做什么，再单独授权。
 
 ## 4. 界面边界
