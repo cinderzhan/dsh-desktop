@@ -982,7 +982,7 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('发给你常用的 AI 助手（DSH、WorkBuddy、Codex 等）')
     expect(source).toContain('重启 Harness，试试你的工作台')
     expect(source).toContain('来开发并安装到本机')
-    expect(source).toContain('安装完成后，等 AI 助手完成任务')
+    expect(source).toContain('安装完成后，仅当提示需要重启时')
     expect(source).toContain('试试你平时会用到的功能，看看是否符合预期')
     expect(source).toContain('想上架？把提交指令发给 AI 助手')
     // The website is the only visible document entry point in this flow.
@@ -1072,8 +1072,8 @@ describe('desktop workbench client navigation', () => {
     const prompt = developmentWorkbenchAgentPrompt(english)
     const heading = english ? 'After every workbench development handoff' : '每次完成工作台开发后'
     const handoff = prompt.slice(prompt.indexOf(heading))
-    expect(prompt).toContain(english ? "no separate Agent API call is needed" : "无需 Agent 另行调用接口")
-    expect(prompt).toContain(english ? "does not support the automatic notice or no banner appears" : "不支持自动提示或未显示横幅")
+    expect(prompt).toContain('installBundle')
+    expect(prompt).toContain('restart-required')
     expect(prompt.indexOf(heading)).toBeGreaterThan(prompt.indexOf(english ? 'Report changed files' : '报告修改的文件'))
     expect(handoff).toContain(english ? 'after all change descriptions, self-test results, file links, and technical appendices' : '放在所有修改说明、自测结果、文件链接和技术附录之后')
     expect(handoff).toContain(english ? 'do not append any content after these three points' : '不能在这三点之后追加内容')
@@ -4322,5 +4322,29 @@ describe('repository-free local registration', () => {
       expect(JSON.stringify(failures)).not.toContain('/Users/alice/private/foo')
     }
     service.dispose()
+  })
+})
+
+describe('local workbench installation through the manager route', () => {
+  it.each(['applied', 'restart-required'])('uses the returned %s outcome without a market receipt', async application => {
+    const { service } = await fixture()
+    service.refreshNative = vi.fn(async () => {})
+    service.refreshRestartStatus = vi.fn(async () => {})
+    service.request = vi.fn(async () => Response.json({ packageName: 'local-helper', result: { application, changed: true } }))
+    expect(await service.installLocal('/tmp/local-helper.tgz', true)).toMatchObject({ application })
+    expect(JSON.parse(service.request.mock.calls[0][1].body)).toEqual({ path: '/tmp/local-helper.tgz', replace: true })
+    expect(service.request.mock.calls[0][0]).toBe('/api/desktop-workbenches/local-install')
+    expect(service.restartNeeded).toBe(application === 'restart-required')
+    expect(service.installs).toEqual({})
+    expect(service.installing).toBeNull()
+  })
+
+  it('retains original failure diagnostics and clears the busy state', async () => {
+    const { service } = await fixture()
+    service.request = vi.fn(async () => Response.json({ packageName: 'local-helper', result: { application: 'failed', error: { diagnostic: 'peer dependency missing' } } }, { status: 409 }))
+    await expect(service.installLocal('/tmp/local-helper.tgz')).rejects.toThrow('peer dependency missing')
+    expect(service.restartNeeded).toBe(false)
+    expect(service.installing).toBeNull()
+    expect(service.installs).toEqual({})
   })
 })

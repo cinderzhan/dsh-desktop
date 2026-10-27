@@ -1,3 +1,4 @@
+import { prepareLocalInstall } from './local-install.mjs'
 import { createRestartStatus, readLocalWorkbenchSnapshot } from './restart-status.mjs'
 import { readInstallEvidence } from './install-evidence.mjs'
 import { randomUUID } from 'node:crypto'
@@ -258,6 +259,38 @@ export function apply(ctx, config) {
         ...(failed ? { error: result.error?.message || result.error?.code || 'Plugin operation did not complete.', code: result.error?.code || result.application } : {})
       }, { status: failed ? 409 : 200, headers: { 'cache-control': 'no-store' } })
     }
+    ctx.connection.fetch.register({
+      path: '/api/desktop-workbenches/local-install',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        let target
+        try {
+          const payload = await readPayload(request, 8192, 'Request is too large.')
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+            || Object.keys(payload).some(key => !['path', 'replace'].includes(key))
+            || (payload.replace !== undefined && typeof payload.replace !== 'boolean')) throw new MarketInstallError('Invalid local install request.')
+          target = await prepareLocalInstall(payload.path)
+          const result = await manager.installBundle(target.spec, {
+            expectedName: target.name, expectedVersion: target.version, replace: payload.replace === true
+          })
+          if (result?.application === 'applied') {
+            // Fingerprint polling is a fallback for unmanaged disk edits. The
+            // manager's successful activation is authoritative for this package.
+            try { await restartStatus.acknowledge(target.name) }
+            catch (error) { ctx.logger?.warn?.('Local installation applied, but restart status reconciliation failed: %s', error.message) }
+          }
+          return lifecycleResponse(result, { packageName: target.name, version: target.version })
+        } catch (error) {
+          ctx.logger?.warn?.('Local workbench install failed: %s', error.message)
+          return installFailure(error, 'Could not install the local workbench. Check the archive path and host diagnostics.')
+        } finally {
+          // Cleanup must not replace the manager's completed lifecycle result.
+          try { await target?.cleanup() }
+          catch (error) { ctx.logger?.warn?.('Could not remove local install staging: %s', error.message) }
+        }
+      }
+    })
     ctx.connection.fetch.register({
       path: '/api/desktop-workbenches/market-install',
       methods: ['POST'],

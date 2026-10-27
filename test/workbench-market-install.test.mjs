@@ -143,6 +143,44 @@ describe('workbench market install routes', () => {
     return { root, home, call }
   }
 
+  const localManifest = { name: 'local-helper', version: '1.0.0', exports: { './client': './client.js' },
+    dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web', inject: ['dsh-desktop-workbenches'] } } }
+
+  it.each(['applied', 'restart-required', 'failed', 'cancelled', 'overridden'])('local install preserves manager outcome %s without market receipts', async application => {
+    let snapshot
+    const pm = manager({ installBundle: vi.fn(async spec => {
+      snapshot = spec
+      expect(readPackedManifest(await readFile(spec))).toEqual(localManifest)
+      return outcome(application, { error: application === 'failed' ? { code: 'invalid-spec', diagnostic: 'inner cause' } : undefined })
+    }) })
+    const { home, root, call } = await host(pm)
+    const archive = join(home, 'local.tgz')
+    await writeFile(archive, packed(localManifest))
+    const response = await call('/api/desktop-workbenches/local-install', { path: archive })
+    expect(pm.installBundle).toHaveBeenCalledWith(snapshot, { expectedName: 'local-helper', expectedVersion: '1.0.0', replace: false })
+    expect(snapshot).not.toBe(archive)
+    expect(existsSync(snapshot)).toBe(false)
+    expect(response.body).toMatchObject({ packageName: 'local-helper', application, restartRequired: application === 'restart-required', result: { application } })
+    expect(response.status).toBe(['failed', 'cancelled'].includes(application) ? 409 : 200)
+    expect(existsSync(join(root, 'market-installs.json'))).toBe(false)
+  })
+
+  it('requires explicit replacement and rejects invalid local inputs before manager mutation', async () => {
+    const pm = manager()
+    const { home, call } = await host(pm)
+    const archive = join(home, 'local.tgz')
+    await writeFile(archive, packed(localManifest))
+    for (const payload of [{ path: 'relative.tgz' }, { path: 'https://example.test/a.tgz' }, { path: archive, replace: 'yes' }, { path: archive, extra: true }]) {
+      expect((await call('/api/desktop-workbenches/local-install', payload)).status).toBe(400)
+    }
+    await writeFile(archive, packed({ name: 'ordinary', version: '1.0.0' }))
+    expect((await call('/api/desktop-workbenches/local-install', { path: archive })).status).toBe(400)
+    expect(pm.installBundle).not.toHaveBeenCalled()
+    await writeFile(archive, packed(localManifest))
+    await call('/api/desktop-workbenches/local-install', { path: archive, replace: true })
+    expect(pm.installBundle.mock.calls[0][1].replace).toBe(true)
+  })
+
   it('stays browse-only when Desktop has no package service', async () => {
     const { call } = await host(undefined)
     expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toBeUndefined()
