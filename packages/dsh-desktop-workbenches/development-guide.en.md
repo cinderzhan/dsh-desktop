@@ -1,3 +1,5 @@
+> Bundled offline snapshot: use only after online retrieval fails. This is not guaranteed to be the latest standard and must not override the online version. Report the retrieval failure, this offline source, and document version.
+
 # Workbench Development Standard
 
 Version: 2026-10-12 · The website is authoritative; DSH Desktop bundles a copy for offline use.
@@ -17,6 +19,8 @@ A workbench is a DSH plugin. It must first be a valid DSH plugin package that `d
 Rule levels are **required** (failure prevents installation or loading), **recommended** (strongly advised for usability and future listing), and **optional**.
 
 ## 1. Execution principles
+
+**Standard retrieval order**: Before development, actually fetch and read the complete online Markdown above and record its URL and document version; prior knowledge or bundled documents do not count. Use a bundled offline copy only if online retrieval fails, and report the failure reason, offline source, and version. Offline copies are packaged snapshots, may be outdated, and must never silently replace the online standard. If the latest standard conflicts with the running version, explain capability differences and blocked steps; do not override it with an older standard.
 
 **Communication with users**: Use business language for requirements discovery, layout suggestions, confirmation choices, and installation or completion status, such as “Show the business content on a full page and open AI conversation when needed” or “Talk while viewing supporting information.” Do not ask ordinary users to confirm code fields such as `customFrame`, `register()`, `repository`, `dshHomePath`, or `reconcileLocalProviders`, internal identities, or placeholder repository URLs; do not present lengthy implementation details as choices. The Agent handles technical fields during development under this standard. Missing publication identity must not block confirmed local development, and a real repository must never be fabricated. Ask only for practical information affecting the business or installation, such as “Which folder should hold the data?” Explain technical details briefly when the user asks. Lead completion reports with what works, actual operations tested, and items still pending verification; put changed files and technical checks in a short appendix, then end with the usage handoff required below.
 
