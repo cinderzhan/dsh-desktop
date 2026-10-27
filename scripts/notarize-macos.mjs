@@ -18,6 +18,36 @@ function transientCommandFailure(error) {
   )
 }
 
+function transientNetworkFailure(error) {
+  const detail = `${error?.message ?? ''} ${error?.stderr ?? ''} ${error?.stdout ?? ''}`
+  return /NSURLErrorDomain Code=-(1001|1005|1009)\b|The request timed out|The network connection was lost|ETIMEDOUT|ECONNRESET/u.test(detail)
+}
+
+/** Resume an accepted upload; never retry submission when its outcome is unknown. */
+async function resumeNotarization(error, options, { run, wait, log }) {
+  if (!(error instanceof Error)) throw error
+  const id = error.message.match(/\/submissions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/iu)?.[1]
+  if (!id || !transientNetworkFailure(error)) throw error
+  const auth = ['--key', options.appleApiKey, '--key-id', options.appleApiKeyId, '--issuer', options.appleApiIssuer]
+  if (auth.some(value => typeof value !== 'string' || !value)) throw error
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    log(`Resuming Apple notarization ${id} in ${attempt * 10}s (${attempt}/6)`)
+    await wait(attempt * 10_000)
+    let result
+    try {
+      result = await run('xcrun', ['notarytool', 'wait', id, ...auth, '--output-format', 'json', '--timeout', '5m'], { timeout: 360_000 })
+    } catch (retryError) {
+      if (attempt === 6 || !transientNetworkFailure(retryError)) throw retryError
+      continue
+    }
+    const response = JSON.parse(result.stdout)
+    if (response.id !== id || response.status !== 'Accepted') {
+      throw new Error(`Apple notarization ${id}: ${response.status ?? 'missing status'}`)
+    }
+    return
+  }
+}
+
 /** Recover ticket propagation/network failures without submitting the app again. */
 export async function notarizeWithStapleRetry(options, {
   submit = notarize, run = exec, wait = setTimeout, log = console.log
@@ -25,9 +55,11 @@ export async function notarizeWithStapleRetry(options, {
   try {
     await submit(options)
   } catch (error) {
-    if (!transientStapleFailure(error)) throw error
+    if (!transientStapleFailure(error)) {
+      await resumeNotarization(error, options, { run, wait, log })
+    }
     for (let attempt = 1; attempt <= 6; attempt++) {
-      log(`App ticket stapling failed; retrying in ${attempt * 10}s (${attempt}/6)`)
+      log(`Stapling app ticket in ${attempt * 10}s (${attempt}/6)`)
       await wait(attempt * 10_000)
       try {
         await run('xcrun', ['stapler', 'staple', options.appPath], { timeout: 60_000 })

@@ -68,6 +68,58 @@ describe('macOS app notarization', () => {
     }
   })
 
+  it('resumes a network timeout using the existing submission without uploading again', async () => {
+    const id = '7b346e97-577f-4a45-94f5-8bbac285e775'
+    const deps = dependencies()
+    deps.submit.mockRejectedValue(new Error(`NSURLErrorDomain Code=-1001 The request timed out. LocalDataTask <00000000-0000-0000-0000-000000000000> /submissions/${id}?`))
+    deps.run.mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ id, status: 'Accepted' }) })
+      .mockResolvedValue({})
+    await notarizeWithStapleRetry({ ...options, appleApiKey: '/fixture/key.p8', appleApiKeyId: 'key-id', appleApiIssuer: 'issuer' }, deps)
+    expect(deps.submit).toHaveBeenCalledTimes(1)
+    expect(deps.run.mock.calls.slice(0, 2).every(call => call[1][1] === 'wait' && call[1][2] === id)).toBe(true)
+    expect(deps.run.mock.calls.slice(2).map(call => call[1].slice(0, 2))).toEqual([['stapler', 'staple'], ['stapler', 'validate']])
+  })
+
+  it('bounds network retries and fails closed for rejection or missing submission ID', async () => {
+    const id = '7b346e97-577f-4a45-94f5-8bbac285e775'
+    const credentials = { ...options, appleApiKey: '/fixture/key.p8', appleApiKeyId: 'key-id', appleApiIssuer: 'issuer' }
+    for (const status of ['Invalid', 'Rejected']) {
+      const deps = dependencies()
+      deps.submit.mockRejectedValue(new Error(`The request timed out /submissions/${id}`))
+      deps.run.mockResolvedValue({ stdout: JSON.stringify({ id, status }) })
+      await expect(notarizeWithStapleRetry(credentials, deps)).rejects.toThrow(status)
+      expect(deps.run).toHaveBeenCalledTimes(1)
+    }
+    const deps = dependencies()
+    deps.submit.mockRejectedValue(new Error(`The request timed out /submissions/${id}`))
+    deps.run.mockRejectedValue(new Error('ECONNRESET'))
+    await expect(notarizeWithStapleRetry(credentials, deps)).rejects.toThrow('ECONNRESET')
+    expect(deps.run).toHaveBeenCalledTimes(6)
+    const missing = dependencies()
+    missing.submit.mockRejectedValue(new Error('The request timed out'))
+    await expect(notarizeWithStapleRetry(credentials, missing)).rejects.toThrow('timed out')
+    expect(missing.run).not.toHaveBeenCalled()
+  })
+
+  it('does not retry authentication failures or staple an unverified response', async () => {
+    const id = '7b346e97-577f-4a45-94f5-8bbac285e775'
+    const credentials = { ...options, appleApiKey: '/fixture/key.p8', appleApiKeyId: 'key-id', appleApiIssuer: 'issuer' }
+    for (const reply of ['not json', JSON.stringify({ id: 'different-id', status: 'Accepted' })]) {
+      const deps = dependencies()
+      deps.submit.mockRejectedValue(new Error(`The request timed out /submissions/${id}`))
+      deps.run.mockResolvedValue({ stdout: reply })
+      await expect(notarizeWithStapleRetry(credentials, deps)).rejects.toThrow()
+      expect(deps.run).toHaveBeenCalledTimes(1)
+    }
+    const deps = dependencies()
+    deps.submit.mockRejectedValue(new Error(`The request timed out /submissions/${id}`))
+    const error = new Error('HTTP 401 Unauthorized')
+    deps.run.mockRejectedValue(error)
+    await expect(notarizeWithStapleRetry(credentials, deps)).rejects.toBe(error)
+    expect(deps.run).toHaveBeenCalledTimes(1)
+  })
+
   it('skips non-macOS and unsigned development builds and rejects partial credentials', async () => {
     await afterSign({ electronPlatformName: 'win32' })
     const saved = { ...process.env }
