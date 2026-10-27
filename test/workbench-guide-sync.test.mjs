@@ -6,19 +6,42 @@
 
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../packages/dsh-desktop-workbenches/index.js'
 import { renderDocumentPage } from '../scripts/workbench-doc-page.mjs'
-import { SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, ACCEPTANCE_EN_SOURCE, ACCEPTANCE_EN_TARGET, GUIDE_SOURCE, GUIDE_TARGET, GUIDE_EN_SOURCE, GUIDE_EN_TARGET, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource, renderEnglishGuideFromSource, renderEnglishAcceptanceFromSource, renderEnglishQuickstartFromSource } from '../scripts/build-workbench-guide.mjs'
+import { renderBundledGuide, SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, ACCEPTANCE_EN_SOURCE, ACCEPTANCE_EN_TARGET, GUIDE_SOURCE, GUIDE_TARGET, GUIDE_EN_SOURCE, GUIDE_EN_TARGET, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource, renderEnglishGuideFromSource, renderEnglishAcceptanceFromSource, renderEnglishQuickstartFromSource } from '../scripts/build-workbench-guide.mjs'
 
 const root = join(import.meta.dirname, '..')
 const read = path => readFileSync(join(root, path), 'utf8')
 
 describe('bundled workbench development guide', () => {
+  it('keeps offline fallback notices out of website output and requires online retrieval in prompts', () => {
+    for (const [render, language, notice] of [[renderGuideFromSource, 'zh', '内置离线快照'], [renderEnglishGuideFromSource, 'en', 'Bundled offline snapshot']]) {
+      const online = render(read)
+      expect(online).not.toContain(notice)
+      expect(renderBundledGuide(online, language)).toContain(notice)
+      expect(renderBundledGuide(online, language)).toContain(online)
+    }
+    const client = read('packages/dsh-desktop-workbenches/client.js')
+    for (const phrase of ['必须先实际获取', '记录实际获取地址和文档版本', '只有在线获取失败', '能力差异', 'actually fetch and read', 'Record the fetched URL and document version', 'Only if online retrieval fails', 'capability differences']) expect(client).toContain(phrase)
+  })
+
+  it('generates website Markdown and reading pages without bundled-copy notices', async () => {
+    const site = await mkdtemp(join(tmpdir(), 'dsh-workbench-site-'))
+    try {
+      execFileSync(process.execPath, [join(root, 'scripts/build-workbench-guide.mjs'), '--site', site])
+      for (const [doc, source, notice] of [[SITE_DOCUMENTS.development, GUIDE_SOURCE, '内置离线快照'], [SITE_DOCUMENTS.developmentEn, GUIDE_EN_SOURCE, 'Bundled offline snapshot']]) {
+        expect(readFileSync(join(site, doc.file), 'utf8')).toBe(read(source))
+        expect(readFileSync(join(site, doc.page), 'utf8')).not.toContain(notice)
+      }
+    } finally { await rm(site, { recursive: true, force: true }) }
+  })
+
   it('equals the development spec shipped to authors and Agents', () => {
-    expect(read(GUIDE_TARGET)).toBe(renderGuideFromSource(read))
+    expect(read(GUIDE_TARGET)).toBe(renderBundledGuide(renderGuideFromSource(read)))
   })
 
   it('guides progressive requirements conversations in both languages without a combined questionnaire', () => {
@@ -92,7 +115,7 @@ describe('bundled workbench development guide', () => {
 
   it('covers development and the local self-test only', () => {
     const guide = read(GUIDE_TARGET)
-    expect(guide).toBe(read(GUIDE_SOURCE))
+    expect(guide).toBe(renderBundledGuide(read(GUIDE_SOURCE)))
     expect(guide).toContain('## 1. 执行原则')
     expect(guide).not.toContain('开发时可以把需求与本文一起交给 AI')
     expect(guide).toContain('## 3. 包格式')
@@ -123,9 +146,9 @@ describe('bundled workbench development guide', () => {
   })
 
   it('ships complete English development and acceptance sources for offline use', () => {
-    expect(read(GUIDE_EN_TARGET)).toBe(renderEnglishGuideFromSource(read))
+    expect(read(GUIDE_EN_TARGET)).toBe(renderBundledGuide(renderEnglishGuideFromSource(read), 'en'))
     expect(read(ACCEPTANCE_EN_TARGET)).toBe(renderEnglishAcceptanceFromSource(read))
-    expect(read(GUIDE_EN_TARGET)).toBe(read(GUIDE_EN_SOURCE))
+    expect(read(GUIDE_EN_TARGET)).toBe(renderBundledGuide(read(GUIDE_EN_SOURCE), 'en'))
     expect(read(ACCEPTANCE_EN_TARGET)).toBe(read(ACCEPTANCE_EN_SOURCE))
     expect(read(GUIDE_EN_TARGET)).toContain('## 8. Local self-test checklist')
     expect(read(ACCEPTANCE_EN_TARGET)).toContain('**Acceptance checklist**')

@@ -148,10 +148,10 @@ window.__ModuleLoader__.load({
     const ACCEPTANCE_EN_PAGE_URL = 'https://dshdesktop.com/workbench/docs/market-acceptance-en/'
     const developmentPageUrl = () => isEnglish() ? DEVELOPMENT_EN_PAGE_URL : DEVELOPMENT_PAGE_URL
     const acceptancePageUrl = () => isEnglish() ? ACCEPTANCE_EN_PAGE_URL : ACCEPTANCE_PAGE_URL
-    const GUIDE_READING = `先阅读并遵循工作台开发规范：${DEVELOPMENT_DOC_URL} 。它包含包格式、运行规则和本地自测清单。`
+    const GUIDE_READING = `必须先实际获取并阅读全文在线工作台开发规范 Markdown：${DEVELOPMENT_DOC_URL} 。记录实际获取地址和文档版本；不能只凭已有知识或内置文档声称已阅读。只有在线获取失败时才可使用内置离线副本，并明确报告失败原因、离线来源和版本；离线副本是随版本打包的快照，不保证最新，不得默默替代在线规范。最新规范与当前运行版本冲突时，明确说明能力差异和受阻步骤，不得用旧规范覆盖在线规范。它包含包格式、运行规则和本地自测清单。`
     const DEVELOPMENT_GUIDE_READING = `${GUIDE_READING}当前任务只做本地开发和安装，不需要处理市场投稿或发布。`
     const ACCEPTANCE_READING = `先阅读并遵循工作台市场验收规范：${ACCEPTANCE_DOC_URL} 。它包含上传 GitHub、安装来源、上架资料、收录 PR 和验收清单。`
-    const DEVELOPMENT_EN_READING = `First read and follow the Workbench Development Standard: ${DEVELOPMENT_EN_DOC_URL}. It covers package format, runtime rules, and the local self-test checklist. This task is for local development and installation only, without market submission or publication.`
+    const DEVELOPMENT_EN_READING = `First actually fetch and read the complete online Workbench Development Standard Markdown: ${DEVELOPMENT_EN_DOC_URL}. Record the fetched URL and document version; prior knowledge or a bundled document does not count as fetching it. Only if online retrieval fails may you use the bundled offline copy: report the failure reason, offline source, and version. That copy is a packaged snapshot, may be outdated, and must never silently replace the online standard. If the latest standard conflicts with the running version, explain the capability differences and blocked steps; do not override the online standard with an older one. It covers package format, runtime rules, and the local self-test checklist. This task is for local development and installation only, without market submission or publication.`
     const ACCEPTANCE_EN_READING = `First read and follow the Workbench Market Acceptance Standard: ${ACCEPTANCE_EN_DOC_URL}. It covers GitHub publication, installation sources, listing materials, the listing PR, and the acceptance checklist.`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const MARKET_OPEN_SESSION = 'dsh-desktop-workbenches.market-open.v1'

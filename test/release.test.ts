@@ -404,6 +404,11 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('-SessionVariable harnessSession')
     expect(workflow).toContain('-WebSession $harnessSession')
     expect(workflow).toContain('Packaged Windows Harness smoke test passed.')
+    expect(workflow).toContain('$desktop.Kill($true)')
+    expect(workflow).toContain('$desktop.WaitForExit(10000)')
+    expect(workflow).toContain('node scripts/archive-windows-release.mjs "$env:ARCHIVE_DIST"')
+    expect(workflow).toContain("&& 'dist' || 'dist-dev'")
+    expect(workflow).not.toContain('tar -czf dist/win-unpacked.tar.gz')
     expect(workflow).toContain('payload = @{ args = @{ request = $request } }')
     expect(workflow).toContain("Invoke-HarnessRpc 'workspace/create'")
     expect(workflow).toContain("Invoke-HarnessRpc 'session/create'")
@@ -460,7 +465,7 @@ describe('GitHub release contract', () => {
     )
   })
 
-  it('builds the runtime once per native job before tests and packaging', async () => {
+  it('builds once before shared checks and each native packaging job', async () => {
     const workflow = parse(await readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')) as {
       jobs: Record<string, { steps: Array<{ run?: string; uses?: string; with?: Record<string, unknown> }> }>
     }
