@@ -12,7 +12,7 @@ const patchedJs = [...new Set(readdirSync('patches').filter(name => name.endsWit
 ))]
 
 it('all patched JavaScript has no unresolved local identifiers', () => {
-  // TypeScript 5.9 semantic inference crashes on Cordis's minified named
+// TypeScript 5.9 semantic inference crashes on Cordis's minified named
   // class static computed assignment. Bind lexical references instead of asking
   // for unrelated type inference; every patched file remains checked.
   const failures = unresolvedPatchedIdentifiers(patchedJs)

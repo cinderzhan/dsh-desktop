@@ -191,7 +191,6 @@ window.__ModuleLoader__.load({
         this.disposed = false
         this.listeners = new Set()
         this.catalog = new Map()
-        this.hostRestartRequired = false
         this.providers = new Map()
         this.registrationFailures = new Map()
         this.knownProviders = readKnownProviders()
@@ -216,6 +215,7 @@ window.__ModuleLoader__.load({
         this.removedWorkbenchIds = new Set()
         this.installing = null
         this.applicationOutcomes = new Map()
+        this.hostRestartNeeded = false
         this.installFailures = new Map()
         this.draftNotes = new Map()
         this.noteTimers = new Map()
@@ -232,7 +232,7 @@ window.__ModuleLoader__.load({
       }
       getSnapshot = () => this.snapshot
       subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
-      get restartNeeded() { return this.hostRestartRequired || [...this.applicationOutcomes.values()].some(result => result.application === 'restart-required') }
+get restartNeeded() { return this.hostRestartNeeded || [...this.applicationOutcomes.values()].some(result => result.application === 'restart-required') }
       get reloadNeeded() { return [...this.applicationOutcomes.values()].some(result => result.application === 'reload-required') }
       pendingApplications(application) {
         return new Set([...this.applicationOutcomes.values()].filter(result => result.stage === 'install' && result.application === application).map(result => result.catalogId))
@@ -328,11 +328,16 @@ window.__ModuleLoader__.load({
           if (this.disposed) return
           const restarted = typeof data.runtimeId === 'string' && this.restartRuntimeId && data.runtimeId !== this.restartRuntimeId
           if (typeof data.runtimeId === 'string') this.restartRuntimeId = data.runtimeId
-          if ((data.restartRequired === true || (restarted && data.restartRequired === false)) && (this.hostRestartRequired !== data.restartRequired || (restarted && this.applicationOutcomes.size))) {
-            this.hostRestartRequired = data.restartRequired
-            if (restarted && !data.restartRequired) this.applicationOutcomes.clear()
-            this.publish()
+          const before = this.restartNeeded
+          if (data.restartRequired === true) this.hostRestartNeeded = true
+          if (restarted && data.restartRequired === false) {
+            this.hostRestartNeeded = false
+            // A confirmed runtime replacement has applied local restart-only outcomes too.
+            for (const [name, result] of this.applicationOutcomes) {
+              if (result.application === 'restart-required') this.applicationOutcomes.delete(name)
+            }
           }
+          if (before !== this.restartNeeded) this.publish()
         })().catch(() => {
           // Restart guidance is supplementary; a disconnected host must not
           // replace the user's conversation with a polling error.
